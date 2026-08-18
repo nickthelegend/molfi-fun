@@ -118,6 +118,29 @@ export default async function Contracts() {
                 </a>
               </div>
 
+              {/* How much contract is actually deployed, read from the class on chain rather
+                  than from a local build artefact. */}
+              {(row.programLength !== undefined || row.externalFns !== undefined) && (
+                <p className="mt-3 text-xs text-[var(--text-mute)]">
+                  {row.externalFns !== undefined && (
+                    <>
+                      <span className="font-mono text-[var(--text-dim)]">{row.externalFns}</span>{" "}
+                      external function{row.externalFns === 1 ? "" : "s"}
+                    </>
+                  )}
+                  {row.programLength !== undefined && (
+                    <>
+                      {row.externalFns !== undefined ? " · " : ""}
+                      <span className="font-mono text-[var(--text-dim)]">
+                        {row.programLength.toLocaleString("en-US")}
+                      </span>{" "}
+                      Sierra instructions
+                    </>
+                  )}
+                  , read from the deployed class
+                </p>
+              )}
+
               <dl className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
                   <dt className="text-xs tracking-wide text-[var(--text-mute)] uppercase">
