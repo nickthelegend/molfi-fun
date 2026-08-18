@@ -170,3 +170,45 @@ describe("assessPrivacy", () => {
     expect(a.factors.filter((f) => !f.ok).length).toBe(3);
   });
 });
+
+/**
+ * The weighting the detective-pool explainer prints.
+ *
+ * That page shows a worked example with specific numbers, and a worked example that has
+ * drifted from the rule it claims to illustrate is worse than no example. These pin the
+ * figures on the page to the function the contract's payout follows.
+ */
+describe("detective weighting, as the explainer prints it", () => {
+  const ROUNDS = 4;
+  const impostors = [2, 5];
+
+  it("pays rounds-remaining-plus-one per correct vote", () => {
+    // Seat 0 on the page: correct in rounds 1 and 2, weight 4 + 3 = 7.
+    const weight = detectiveWeight(
+      [
+        { round: 1, target: 2 },
+        { round: 2, target: 5 },
+      ],
+      impostors,
+      ROUNDS,
+    );
+    expect(weight).toBe(7);
+  });
+
+  it("pays a final-round read the minimum", () => {
+    // Seat 3 on the page: correct once, in round 4, weight 1.
+    expect(detectiveWeight([{ round: 4, target: 2 }], impostors, ROUNDS)).toBe(1);
+  });
+
+  it("pays an impostor who named their own partner", () => {
+    // Seat 5 on the page: weight 3. The pool asks whether you were right, not whose side
+    // you were on, and the explainer leans on exactly that.
+    expect(detectiveWeight([{ round: 2, target: 2 }], impostors, ROUNDS)).toBe(3);
+  });
+
+  it("makes the early read four times the late one", () => {
+    const early = detectiveWeight([{ round: 1, target: 2 }], impostors, ROUNDS);
+    const late = detectiveWeight([{ round: 4, target: 2 }], impostors, ROUNDS);
+    expect(early / late).toBe(4);
+  });
+});

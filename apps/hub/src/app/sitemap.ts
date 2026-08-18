@@ -16,6 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/contracts", priority: 0.7, freq: "daily" },
     { path: "/deployments", priority: 0.6, freq: "daily" },
     { path: "/api-docs", priority: 0.5, freq: "monthly" },
+    { path: "/detective-pool", priority: 0.6, freq: "monthly" },
     { path: "/privacy", priority: 0.3, freq: "monthly" },
     { path: "/terms", priority: 0.3, freq: "monthly" },
   ];
