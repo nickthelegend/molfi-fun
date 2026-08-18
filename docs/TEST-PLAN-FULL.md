@@ -114,3 +114,52 @@ fails, regardless of how it looks.
 | H4 | Test suites | Cairo, protocol, keeper, poker all green |
 | H5 | Typecheck | All three apps typecheck clean |
 | H6 | No mocks in shipped paths | Every mock hit is devnet-only or a bundling shim, and named |
+
+---
+
+# Results
+
+67 items. **65 PASS, 2 untested** (both need a credential that does not exist here). Two
+items failed on the first run and were fixed; both were re-run from the start afterwards,
+then the whole plan was run again top to bottom.
+
+## The two failures, and the fixes
+
+**B2/A2 — the hub reported a node outage as six undeployed contracts.** With the Starknet
+node unreachable the proof strip printed "0 of 6 contracts live on Sepolia". That is a
+different and much worse claim than the truth, which is that nobody could ask. The contracts
+page already separated "unreadable" from "not deployed"; the home page did not, so the two
+pages disagreed about the same event. Now reads "unreadable / contract status", worded
+distinctly from the block cell so the two do not read as one repeated message. The games
+cell deliberately keeps its zero: a probe that fails is a real answer about that game.
+
+**H3 — the archive overflowed 56px at 380px.** A regression from adding the "Verify a match"
+link: four controls on a row that could not wrap. It wraps now.
+
+## What was verified by playing, not by reading
+
+The map, the seat purchase and settlement were tested by playing a real match rather than
+inspecting code. Connected the devnet key, bought seat #0 with real signed transactions,
+watched the house agents fill the table, match 624 start, the ship render with straight
+orthogonal corridors and a fixed frame, and the match settle as a crew win over 4 rounds.
+
+Match 624 then audits 5 of 5 against an independent recomputation, and its ballots come back
+through 107 real contract reads. The counters moved with it, 604 settled to 605, and the hub
+and the keeper still reconcile exactly.
+
+## Untested, and honestly so
+
+| # | Item | Why |
+| --- | --- | --- |
+| G8 | Create a poker table | Needs a funded Sepolia wallet signing through Cartridge |
+| G9 | Play a poker hand | Needs two funded Sepolia wallets |
+
+Everything up to the signature is verified for both: the controls exist, they are correctly
+gated, and they point at contracts confirmed live on chain. Neither is marked PASS.
+
+## Confirmation
+
+Zero console errors and zero failed network requests on every page tested. Zero mocks or
+stubs in any shipped path: every remaining hit is a devnet-only pool driving real signed
+transactions on a real chain, a Cairo test double, a browser shim for a Node logger, or a
+read-only account that never signs. Each is named in the sweep rather than filtered out.
