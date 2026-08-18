@@ -1,7 +1,7 @@
 "use client";
 
 import { NO_TARGET, type MatchView } from "@crewkill/protocol";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Crewmate } from "./sprite";
 
 /**
@@ -40,6 +40,61 @@ export function VotingScreen({
   const alive = seats.filter((seat) => seat.alive);
   const you = yourSeat === null ? null : seats[yourSeat];
   const canVote = Boolean(you?.alive) && match.roundPhase === "voting";
+
+  /**
+   * Voting from the keyboard.
+   *
+   * A vote is on a clock, and hunting for a small seat marker with a mouse while the timer
+   * runs is the worst moment in the round to be fighting the interface. Number keys pick the
+   * seat with that number, Enter casts, S skips, Escape backs out.
+   *
+   * Bound to the seat's own displayed number rather than its position in the list, so the key
+   * you press matches the label you can see. Pressing a dead seat's number, or your own,
+   * does nothing rather than selecting something you cannot vote for.
+   */
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (!canVote || busy) return;
+
+      const key = event.key.toLowerCase();
+
+      if (key === "s") {
+        event.preventDefault();
+        onVote(NO_TARGET);
+        return;
+      }
+
+      if (key === "enter") {
+        if (selected === null) return;
+        event.preventDefault();
+        onVote(selected);
+        return;
+      }
+
+      if (key >= "0" && key <= "9") {
+        const wanted = Number(key);
+        const seat = seats.find((s) => s.index === wanted);
+        // Only seats you could have clicked. Same rule as the buttons, so the two agree.
+        if (!seat || !seat.alive || seat.index === yourSeat) return;
+        event.preventDefault();
+        setSelected((current) => (current === seat.index ? null : seat.index));
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canVote, busy, selected, seats, yourSeat, onVote, onClose]);
 
   // The table. Radius is in percent of the plate so it scales with the viewport.
   const position = (index: number, total: number) => {
@@ -154,6 +209,15 @@ export function VotingScreen({
                 {busy ? "Casting" : "Cast ballot"}
               </button>
             </div>
+
+            {/* The shortcuts, stated where they are used. A binding nobody is told about
+                does not exist. */}
+            <p className="tele mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span><kbd className="vote-key">0-9</kbd> pick seat</span>
+              <span><kbd className="vote-key">Enter</kbd> cast</span>
+              <span><kbd className="vote-key">S</kbd> skip</span>
+              <span><kbd className="vote-key">Esc</kbd> close</span>
+            </p>
           </div>
         )}
       </div>

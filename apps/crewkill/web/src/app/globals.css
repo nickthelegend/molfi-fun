@@ -355,3 +355,14 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .drift-left, .drift-right { animation: none; opacity: 0.28; }
 }
+
+/* Key caps in the voting shortcut legend. Small, quiet, and readable against the plate. */
+.vote-key {
+  border: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-ink) 6%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--color-dim);
+}
