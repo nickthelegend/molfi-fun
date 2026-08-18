@@ -9,14 +9,18 @@
     "dev:sepolia": "vite --mode sepolia",
     "build": "tsc -b && vite build",
     "preview": "vite preview --port 3300",
-    "copy-artifacts": "node scripts/copy-artifacts.mjs"
+    "copy-artifacts": "node scripts/copy-artifacts.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aztec/bb.js": "=3.0.0-nightly.20251104",
     "@cartridge/connector": "^0.12.2",
     "@cartridge/controller": "^0.12.2",
     "@mental-poker/sdk": "workspace:*",
+    "@noir-lang/acvm_js": "=1.0.0-beta.16",
     "@noir-lang/noir_js": "=1.0.0-beta.16",
+    "@noir-lang/noirc_abi": "=1.0.0-beta.16",
     "@starknet-react/chains": "^5.0.3",
     "@starknet-react/core": "^5.0.3",
     "buffer": "^6.0.3",
@@ -26,9 +30,7 @@
     "starknet": "^8.7.0",
     "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.5.0",
-    "@noir-lang/noirc_abi": "=1.0.0-beta.16",
-    "@noir-lang/acvm_js": "=1.0.0-beta.16"
+    "vite-plugin-wasm": "^3.5.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",
@@ -38,6 +40,7 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.7.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "vitest": "^2.1.9"
   }
 }

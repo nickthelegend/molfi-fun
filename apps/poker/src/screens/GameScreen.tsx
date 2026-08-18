@@ -1,5 +1,6 @@
 import { PokerTable } from '../components/PokerTable';
 import { BettingPanel } from '../components/BettingPanel';
+import { HandStrength } from '../components/HandStrength';
 import { EventLog } from '../components/EventLog';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import type { CardSlot, LogEntry, PolledState } from '../types';
@@ -169,7 +170,10 @@ export function GameScreen({
         {/* Action bar — fixed height, bottom of table column */}
         <div className="flex-shrink-0 h-[100px] flex items-center justify-center px-4">
           {isBetting && currentAction.type === 'BET' ? (
-            <div className="w-full max-w-2xl">
+            <div className="flex w-full max-w-2xl flex-col gap-1.5">
+              <div className="flex justify-center">
+                <HandStrength holeCards={myHoleCards} communityCards={communityCards} />
+              </div>
               <BettingPanel
                 options={currentAction.options}
                 currentBet={polledState.currentBet}

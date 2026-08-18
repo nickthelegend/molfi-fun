@@ -131,3 +131,43 @@ describe("the three ships are actually different", () => {
     expect(Math.max(...density) - Math.min(...density)).toBeGreaterThan(0.1);
   });
 });
+
+/**
+ * Every sabotage needs somewhere it can be repaired.
+ *
+ * A sabotage is defined by the fixture that clears it, and the keeper looks for that fixture
+ * across the map's rooms. If no room has one, the sabotage fires and can never be cleared:
+ * on a non critical one the ship simply stays broken for the rest of the match, and on a
+ * critical one the crew lose to a timer they were never able to stop.
+ *
+ * This shipped. Kuiper Relay had no wiring panel anywhere, so its lights could never come
+ * back on, and Deep Core had neither wiring nor a server, so lights and comms were both
+ * permanently broken. Only Obsidian Prime was complete, and Obsidian Prime is the map the
+ * demo opens on, which is exactly why nobody noticed.
+ *
+ * The list below is duplicated from the keeper's SABOTAGE_CONFIG on purpose. Importing it
+ * would make this test pass automatically if a sabotage were ever removed from the config to
+ * work around a missing fixture, which is the failure this is meant to catch.
+ */
+const REPAIR_FIXTURES: Array<{ sabotage: string; fixture: string }> = [
+  { sabotage: "Lights", fixture: "wiring" },
+  { sabotage: "Reactor meltdown", fixture: "reactor" },
+  { sabotage: "O2 depletion", fixture: "oxygen" },
+  { sabotage: "Comms sabotage", fixture: "server" },
+];
+
+describe("every map can repair every sabotage", () => {
+  for (const map of SHIP_MAPS) {
+    for (const { sabotage, fixture } of REPAIR_FIXTURES) {
+      it(`${map.name} can fix ${sabotage.toLowerCase()}`, () => {
+        const rooms = map.rooms.filter((room) =>
+          room.fixtures.some((f) => f.kind === fixture),
+        );
+        expect(
+          rooms.length,
+          `${map.name} has no room with a ${fixture} fixture, so ${sabotage} can never be repaired`,
+        ).toBeGreaterThan(0);
+      });
+    }
+  }
+});

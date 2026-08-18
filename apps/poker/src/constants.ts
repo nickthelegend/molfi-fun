@@ -1,5 +1,18 @@
 export const SUITS = ['spades', 'hearts', 'diamonds', 'clubs'] as const;
-export const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'] as const;
+/**
+ * Rank order, and it has to be this one.
+ *
+ * A card value is 0-51, rank is value % 13, and the protocol counts from the two: 0 is a two
+ * and 12 is an ace. This table used to start at the ace, which shifted every rank by one and
+ * put the ace at the bottom where the two belongs. The table showed you A-spades while the
+ * evaluator, which reads the same value correctly, scored it as a two - so the winner
+ * announced at showdown disagreed with the cards on screen. Not one of the thirteen ranks
+ * matched.
+ *
+ * Pinned against the SDK's own mapping by tests/card-encoding.test.ts, which is what makes
+ * this comment enforceable rather than a warning nobody reads.
+ */
+export const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'] as const;
 
 export const SUIT_SYMBOLS: Record<string, string> = {
   spades: '\u2660',

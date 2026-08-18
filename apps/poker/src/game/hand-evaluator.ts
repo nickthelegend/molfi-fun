@@ -1,6 +1,8 @@
 // Card encoding: value 0-51
 // rank = value % 13  → 0=2, 1=3, 2=4, 3=5, 4=6, 5=7, 6=8, 7=9, 8=Ten, 9=J, 10=Q, 11=K, 12=A
-// suit = Math.floor(value / 13) → 0=clubs, 1=diamonds, 2=hearts, 3=spades
+// suit = Math.floor(value / 13) → 0=spades, 1=hearts, 2=diamonds, 3=clubs
+// (Ranking only ever asks whether five suits are equal, so this ordering does not affect a
+//  result - but it named the wrong suits, and a wrong comment is worse than none.)
 
 const RANK_LABELS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'] as const;
 

@@ -20,5 +20,10 @@
     "setup": "scarb --manifest-path cairo/Scarb.toml build && pnpm --filter @crewkill/keeper exec prisma generate",
     "dev:hub": "pnpm --filter @molfi/hub dev",
     "dev:crewkill": "pnpm --filter @crewkill/web dev"
+  },
+  "pnpm": {
+    "overrides": {
+      "@swc/core": "1.13.5"
+    }
   }
 }

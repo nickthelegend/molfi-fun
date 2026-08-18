@@ -252,6 +252,7 @@ const KUIPER: ShipMap = {
       id: 1, name: "North Dock", x: 1970, y: 150, width: 700, height: 520,
       wall: "#3a5a6a", floor: "#48697a", pattern: "plate", hasTasks: true,
       fixtures: [
+        { kind: "wiring", x: 540, y: 140, w: 110, h: 170 },
         { kind: "console", x: 200, y: 130, w: 300, h: 150 },
         { kind: "window", x: 150, y: 330, w: 400, h: 120 },
       ],
@@ -358,6 +359,7 @@ const DEEPCORE: ShipMap = {
       id: 1, name: "Upper Lift", x: 170, y: 830, width: 460, height: 420,
       wall: "#3f4a5a", floor: "#4d5b6e", pattern: "plate", hasTasks: false,
       fixtures: [
+        { kind: "wiring", x: 90, y: 280, w: 140, h: 90 },
         { kind: "console", x: 130, y: 120, w: 200, h: 120 },
         { kind: "vent", x: 380, y: 330 },
       ],
@@ -385,6 +387,7 @@ const DEEPCORE: ShipMap = {
       id: 4, name: "Shaft Watch", x: 140, y: 1430, width: 520, height: 460,
       wall: "#3a4a6a", floor: "#455680", pattern: "plate", hasTasks: false,
       fixtures: [
+        { kind: "server", x: 400, y: 280, w: 90, h: 140 },
         { kind: "camera", x: 130, y: 90, w: 260, h: 160 },
         { kind: "console", x: 170, y: 290, w: 200, h: 100 },
       ],

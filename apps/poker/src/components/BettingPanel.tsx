@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { potOdds, formatPotOdds, clampRaise } from '../game/betting';
 
 interface Props {
   options: ('fold' | 'check' | 'call' | 'raise')[];
@@ -87,9 +88,72 @@ export function BettingPanel({
   };
 
   const handleRaise = () => {
-    const amt = raiseAmount < minRaise ? minRaise : raiseAmount > maxRaise ? maxRaise : raiseAmount;
-    onRaise(amt);
+    onRaise(clampRaise(raiseAmount, minRaise, maxRaise));
   };
+
+  /**
+   * Pot odds, computed rather than quoted.
+   *
+   * The share of the final pot this call represents, which is also the equity the hand needs
+   * to break even. It is the one number that turns a set of buttons into a decision, and it
+   * is arithmetic the player would otherwise be doing in their head against a clock.
+   *
+   * The maths lives in game/betting.ts so it can be tested without rendering anything.
+   */
+  const odds = useMemo(() => potOdds(callAmount, pot), [callAmount, pot]);
+
+  /**
+   * Keyboard play.
+   *
+   * Poker is played against a clock and a player who has to find a button with a mouse every
+   * street is playing a different game from one who does not. F, C and R are the bindings
+   * every online room has used for twenty years, so they need no teaching, and the legend
+   * under the buttons covers the case where they do.
+   *
+   * Bindings are dropped entirely while the panel is disabled or while a text field has
+   * focus, so typing a game id into a box never folds a hand.
+   */
+  useEffect(() => {
+    if (disabled) return;
+
+    function onKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === 'f' && options.includes('fold')) {
+        event.preventDefault();
+        onFold();
+      } else if (key === 'c') {
+        if (options.includes('check')) {
+          event.preventDefault();
+          onCheck();
+        } else if (options.includes('call')) {
+          event.preventDefault();
+          onCall();
+        }
+      } else if (key === 'r' && canRaise) {
+        event.preventDefault();
+        handleRaise();
+      } else if (key >= '1' && key <= '9' && canRaise) {
+        const preset = presets[Number(key) - 1];
+        if (preset) {
+          event.preventDefault();
+          handlePreset(preset.amount);
+        }
+      }
+    }
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [disabled, options, canRaise, presets, onFold, onCheck, onCall, raiseAmount, minRaise, maxRaise]);
+
 
   return (
     <div className="flex flex-col gap-2">
@@ -109,6 +173,18 @@ export function BettingPanel({
           <span className="text-white/30 uppercase tracking-wider text-[10px]">Blinds</span>
           <span className="text-white/60 font-mono tabular-nums">{fmtChips(bigBlind / 2n)}/{fmtChips(bigBlind)}</span>
         </div>
+        {odds !== null && (
+          <>
+            <div className="w-px h-3 bg-white/10" />
+            <div
+              className="flex items-center gap-1.5"
+              title={`Calling ${callAmount} into a ${pot + callAmount} pot. You need ${formatPotOdds(odds)}% equity to break even.`}
+            >
+              <span className="text-white/30 uppercase tracking-wider text-[10px]">Pot odds</span>
+              <span className="text-white/80 font-mono tabular-nums font-semibold">{formatPotOdds(odds)}%</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Action buttons row */}
@@ -195,6 +271,35 @@ export function BettingPanel({
           </>
         )}
       </div>
+
+      {/* Keyboard legend.
+
+          A shortcut nobody knows about is not a feature. This sits under the buttons it
+          describes, greys out with them, and lists only the keys that do something in the
+          current spot rather than the full set. */}
+      {!disabled && (
+        <div className="flex items-center justify-center gap-3 text-[10px] text-white/25">
+          {options.includes('fold') && <Key k="F" label="fold" />}
+          {options.includes('check') && <Key k="C" label="check" />}
+          {options.includes('call') && <Key k="C" label="call" />}
+          {canRaise && <Key k="R" label="raise" />}
+          {canRaise && presets.length > 0 && (
+            <Key k={presets.length > 1 ? `1-${presets.length}` : '1'} label="preset" />
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** One key cap in the legend. */
+function Key({ k, label }: { k: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-white/60">
+        {k}
+      </kbd>
+      <span className="uppercase tracking-wider">{label}</span>
+    </span>
   );
 }
