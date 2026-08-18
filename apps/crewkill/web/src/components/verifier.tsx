@@ -193,6 +193,8 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
             ))}
           </ul>
 
+          <SeedTimeline match={match} />
+          <VoteGraph match={match} />
           <Working match={match} />
           <ShareResult match={match} result={result} />
           <BadgeEmbed matchId={match.matchId} />
@@ -422,6 +424,122 @@ function BadgeEmbed({ matchId }: { matchId: number }) {
       >
         {copied ? "Markdown copied" : "Copy markdown embed"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * The commitment, then the reveal.
+ *
+ * The fairness argument rests on an ordering claim: the operator fixed their seed before
+ * anyone could know what the seats would be, and the seats committed before they could know
+ * the seed. Neither could aim at a result. That claim is invisible in a list of hex values,
+ * so this puts the two in order and names what each one made impossible.
+ */
+function SeedTimeline({ match }: { match: MatchView }) {
+  if (!match.seedCommitment || !match.finalSeed) return null;
+
+  const steps = [
+    {
+      label: "Before the lobby opened",
+      value: match.seedCommitment,
+      note: "The operator published a hash of their seed. From here they cannot change it without the hash changing.",
+    },
+    {
+      label: "As each seat was bought",
+      value: `${match.seatsFilled} seat commitments`,
+      note: "Every player committed without knowing the operator's seed, so no seat could be chosen to steer the draw.",
+    },
+    {
+      label: "When the roster locked",
+      value: match.finalSeed,
+      note: "The final seed is the operator's seed combined with every seat commitment. Neither side alone determined it.",
+    },
+  ];
+
+  return (
+    <div className="mt-4 border border-[var(--color-line)] p-3">
+      <p className="tele">Why neither side could aim at a result</p>
+      <ol className="mt-3 space-y-3">
+        {steps.map((step, i) => (
+          <li key={step.label} className="flex gap-3">
+            <span className="numeric shrink-0 text-[11px] text-[var(--color-dim)]">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12px] text-[var(--color-ink)]">{step.label}</p>
+              <p className="numeric mt-0.5 text-[11px] break-all text-[var(--color-cyan)]">
+                {step.value.startsWith("0x") ? `${step.value.slice(0, 26)}…` : step.value}
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--color-dim)]">{step.note}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * How the vote moved, round by round.
+ *
+ * A tally per round is in the match data already, and read as numbers it says very little.
+ * Read as bars it shows the thing a deduction game is actually about: whether the table
+ * converged on someone, and whether they were right. The revealed roles are known by the
+ * time anybody sees this page, so a bar can say which.
+ */
+function VoteGraph({ match }: { match: MatchView }) {
+  if (!match.tallies || match.tallies.length === 0) return null;
+
+  const impostors = new Set(
+    match.seats.filter((s) => s.revealedRole === "impostor").map((s) => s.index),
+  );
+
+  return (
+    <div className="mt-4 border border-[var(--color-line)] p-3">
+      <p className="tele">How the table voted</p>
+      <div className="mt-3 space-y-3">
+        {match.tallies.map((tally) => {
+          const most = Math.max(...tally.targets.map((t) => t.votes), 1);
+          return (
+            <div key={tally.round}>
+              <p className="tele">round {tally.round}</p>
+              <div className="mt-1.5 space-y-1">
+                {tally.targets.map((target) => {
+                  const seat = match.seats[target.seat];
+                  const wasImpostor = impostors.has(target.seat);
+                  return (
+                    <div key={target.seat} className="flex items-center gap-2">
+                      <span className="numeric w-24 shrink-0 truncate text-[11px] text-[var(--color-dim)]">
+                        {seat ? `${seat.emoji} ${seat.persona}` : `#${target.seat}`}
+                      </span>
+                      <div className="h-2 flex-1 overflow-hidden bg-[var(--color-hull)]">
+                        <div
+                          className="h-full"
+                          style={{
+                            width: `${(target.votes / most) * 100}%`,
+                            background: wasImpostor
+                              ? "var(--color-signal)"
+                              : "var(--color-line-2, var(--color-line))",
+                          }}
+                        />
+                      </div>
+                      <span className="numeric w-6 shrink-0 text-right text-[11px] text-[var(--color-ink)]">
+                        {target.votes}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-[var(--color-dim)]">
+        Bars in signal green were real impostors. During the match nobody could know that —
+        the roles were only published once play ended, which is what makes this readable now
+        and unreadable then.
+      </p>
     </div>
   );
 }
