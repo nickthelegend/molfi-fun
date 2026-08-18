@@ -94,6 +94,11 @@ export function SiteFooter() {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/api-docs" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
+                    API
+                  </Link>
+                </li>
+                <li>
                   <Link href="/privacy" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
                     Privacy
                   </Link>
