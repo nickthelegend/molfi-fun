@@ -36,6 +36,7 @@ export default function HistoryPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [config, setConfig] = useState<ChainConfig | null>(null);
   const [selected, setSelected] = useState<MatchView | null>(null);
+  const [filter, setFilter] = useState<"all" | "settled" | "live" | "aborted">("all");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -102,6 +103,31 @@ export default function HistoryPage() {
   const settled = rows.filter((row) => row.phase === MatchPhase.Settled);
   const totalStaked = rows.reduce((sum, row) => sum + BigInt(row.potAmount), 0n);
 
+  /**
+   * Filtering the archive.
+   *
+   * The list is the evidence that the state is real, and a wall of undifferentiated rows is
+   * hard to read as evidence. Filtering by outcome is the useful cut: "show me the ones the
+   * impostors won" is the question somebody actually asks, and being able to answer it from
+   * the archive rather than by opening rows one at a time is what makes the history usable.
+   *
+   * Applied to the rows already fetched. No refetch, so it stays instant and cannot fail.
+   */
+  const visible = rows.filter((row) => {
+    if (filter === "all") return true;
+    if (filter === "settled") return row.phase === MatchPhase.Settled;
+    if (filter === "aborted") return row.phase === MatchPhase.Aborted;
+    if (filter === "live") return row.phase === MatchPhase.Playing;
+    return true;
+  });
+
+  const counts = {
+    all: rows.length,
+    settled: settled.length,
+    live: rows.filter((r) => r.phase === MatchPhase.Playing).length,
+    aborted: rows.filter((r) => r.phase === MatchPhase.Aborted).length,
+  };
+
   return (
     <main className="mx-auto max-w-4xl px-5 py-10">
       <Header />
@@ -119,8 +145,32 @@ export default function HistoryPage() {
       </div>
 
       <Panel title="Every match" className="mt-4">
+        <div className="mb-3 flex flex-wrap gap-2">
+          {(["all", "settled", "live", "aborted"] as const).map((key) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              aria-pressed={filter === key}
+              className="switch text-[11px]"
+              style={
+                filter === key
+                  ? { color: "var(--color-ink)", borderColor: "var(--color-cyan)" }
+                  : undefined
+              }
+            >
+              {key} <span className="opacity-50">{counts[key]}</span>
+            </button>
+          ))}
+        </div>
+
+        {visible.length === 0 ? (
+          <p className="py-3 text-[12px] text-[var(--color-dim)]">
+            No {filter} matches on this deployment yet. That is a real answer about this set
+            of contracts, not a loading state.
+          </p>
+        ) : (
         <ol className="divide-y divide-[var(--color-line)]">
-          {rows.map((row) => (
+          {visible.map((row) => (
             <li key={row.matchId}>
               <button
                 onClick={async () => {
@@ -145,6 +195,7 @@ export default function HistoryPage() {
             </li>
           ))}
         </ol>
+        )}
       </Panel>
 
       {selected && config && (
