@@ -104,6 +104,11 @@ export function SiteFooter() {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/press" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
+                    Press kit
+                  </Link>
+                </li>
+                <li>
                   <Link href="/status" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
                     Status
                   </Link>
