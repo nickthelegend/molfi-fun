@@ -141,6 +141,17 @@ tallies, the win condition and every payout are computed by `settle`, which is p
 — anyone can call it and everyone gets the same answer, because the inputs are public and the
 rules are in the contract.
 
+### Check a match yourself
+
+`/verify/<match>` on the CrewKill app replays any settled match from its published data and
+puts its own answer next to the contract's, line by line. The recomputation runs in the
+reader's browser: the keeper is asked for the published inputs and nothing else, so a server
+that wanted to report a different outcome would have to change the seed or the role secrets,
+both of which were committed before anyone knew what they would be.
+
+You need no account, no wallet, and no part in the match. That is the point — "permissionless
+settlement" is a claim until a stranger can run it.
+
 Full protocol write-up: [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 ---

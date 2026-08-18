@@ -58,6 +58,12 @@ export default async function CrewKillPage() {
           >
             Past matches
           </a>
+          <a
+            href={`${GAME_URLS.crewkill}/verify`}
+            className="fluid rounded-lg border border-[var(--line)] px-4 py-2.5 text-sm text-[var(--text-dim)] no-underline hover:border-[var(--line-2)] hover:text-[var(--text)]"
+          >
+            Verify a match yourself
+          </a>
         </div>
 
         {/* ── What the keeper has actually done ──────────────────────────────────── */}

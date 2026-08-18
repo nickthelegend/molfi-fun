@@ -174,6 +174,9 @@ function Header() {
           substrate their system picked. */}
       <div className="flex items-center gap-2">
         <SubstrateSwitch />
+        <Link href="/verify" className="switch no-underline">
+          Verify a match
+        </Link>
         <Link href="/" className="switch no-underline">
           Back to the ship
         </Link>
@@ -312,9 +315,21 @@ function MatchDetail({ match, onClose }: { match: MatchView; onClose: () => void
     <Panel
       title={`Match #${match.matchId}`}
       right={
-        <button onClick={onClose} className="text-[11px] text-[var(--color-dim)] hover:text-[var(--color-ink)]">
-          close
-        </button>
+        <div className="flex items-center gap-3">
+          {/* A settled match is checkable by anyone, so the archive says so where somebody
+              is already looking at the result rather than burying it on another page. */}
+          {match.phase === MatchPhase.Settled && (
+            <Link
+              href={`/verify/${match.matchId}`}
+              className="text-[11px] text-[var(--color-cyan)] underline"
+            >
+              verify this yourself
+            </Link>
+          )}
+          <button onClick={onClose} className="text-[11px] text-[var(--color-dim)] hover:text-[var(--color-ink)]">
+            close
+          </button>
+        </div>
       }
       className="mt-4"
     >
