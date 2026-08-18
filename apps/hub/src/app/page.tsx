@@ -2,7 +2,8 @@ import { Reveal, WordReveal } from "@/components/reveal";
 import { SiteHeader, SiteFooter } from "@/components/chrome";
 import { StatusDot } from "@/components/bits";
 import { contractStatuses, blockNumber } from "@/lib/chain";
-import { gameStatuses, keeperStats } from "@/lib/live";
+import { gameStatuses, keeperStats, activity } from "@/lib/live";
+import { Ticker } from "@/components/ticker";
 
 /**
  * Rendered per request.
@@ -87,11 +88,12 @@ const FAQ: Array<{ q: string; a: string }> = [
 ];
 
 export default async function Hub() {
-  const [stats, services, contracts, head] = await Promise.all([
+  const [stats, services, contracts, head, feed] = await Promise.all([
     keeperStats(),
     gameStatuses(),
     contractStatuses(),
     blockNumber(),
+    activity(),
   ]);
 
   const contractsLive = contracts.filter((c) => c.live === true).length;
@@ -171,6 +173,21 @@ export default async function Hub() {
               label={head === null ? "Sepolia node" : "Sepolia block"}
               ok={head !== null}
             />
+          </div>
+        </section>
+
+        {/* ── Live feed ──────────────────────────────────────────────────────────── */}
+        <section className="mx-auto max-w-5xl px-6 pb-8">
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="text-sm font-semibold">What just happened</h2>
+              <span className="text-xs text-[var(--text-mute)]">
+                from the keeper&apos;s own event log
+              </span>
+            </div>
+            <div className="mt-3">
+              <Ticker rows={feed} />
+            </div>
           </div>
         </section>
 

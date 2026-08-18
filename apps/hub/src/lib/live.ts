@@ -195,3 +195,29 @@ export async function deployments(): Promise<DeploymentRow[] | null> {
     clearTimeout(timer);
   }
 }
+
+export interface ActivityRow {
+  id: string;
+  matchId: number;
+  kind: string;
+  text: string;
+  at: string;
+}
+
+/** The keeper's most recent events. Null when it could not be reached. */
+export async function activity(): Promise<ActivityRow[] | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 4000);
+  try {
+    const res = await fetch(`${process.env.KEEPER_URL ?? "http://localhost:8080"}/api/activity`, {
+      signal: abort.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ActivityRow[];
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

@@ -254,3 +254,35 @@ export async function deploymentHistory(activeGameAddress: string): Promise<
     })),
   );
 }
+
+/**
+ * The most recent things that actually happened, across the deployment.
+ *
+ * The hub can say six contracts are live and 21,000 transactions were signed, and both are
+ * true and neither is a heartbeat. A row that says a match settled forty seconds ago is the
+ * difference between a site describing a system and a site attached to one.
+ *
+ * Drawn from the keeper's own event log, which is written as matches run, so nothing here is
+ * generated for display.
+ */
+export async function recentActivity(
+  network: string,
+  gameAddress: string,
+  limit = 12,
+): Promise<Array<{ id: string; matchId: number; kind: string; text: string; at: string }>> {
+  const deploymentId = await activeDeploymentId(network, gameAddress);
+  const rows = await prisma.matchEvent.findMany({
+    where: { match: { deploymentId } },
+    orderBy: { id: "desc" },
+    take: Math.min(limit, 50),
+    include: { match: { select: { onchainId: true } } },
+  });
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    matchId: Number(row.match.onchainId),
+    kind: row.kind,
+    text: row.text,
+    at: row.createdAt.toISOString(),
+  }));
+}
