@@ -195,6 +195,7 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
 
           <Working match={match} />
           <ShareResult match={match} result={result} />
+          <BadgeEmbed matchId={match.matchId} />
 
           <p className="mt-4 text-[11px] leading-relaxed text-[var(--color-dim)]">
             The keeper was asked for this match&apos;s published inputs and nothing else. Every
@@ -370,5 +371,57 @@ function ShareResult({
           ? "Clipboard blocked"
           : "Copy this result as markdown"}
     </button>
+  );
+}
+
+/**
+ * The badge, and how to embed it.
+ *
+ * A check anyone can run is more useful if it can be put where people already look. This
+ * endpoint recomputes the audit on every request, so a README carrying it reports what is
+ * true when the reader loads the page rather than what was true when somebody pasted it.
+ */
+function BadgeEmbed({ matchId }: { matchId: number }) {
+  const [copied, setCopied] = useState(false);
+  const [origin, setOrigin] = useState("");
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  const src = `${origin}/badge/${matchId}`;
+  const snippet = `[![CrewKill match ${matchId}](${src})](${origin}/verify/${matchId})`;
+
+  return (
+    <div className="mt-3 border border-[var(--color-line)] p-3">
+      <p className="tele">Embed this check</p>
+      {origin && (
+        <img
+          src={src}
+          alt={`Verification badge for match ${matchId}`}
+          className="mt-2"
+          width={174}
+          height={20}
+        />
+      )}
+      <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-dim)]">
+        Recomputed on every request, so it reports what is true when somebody loads it rather
+        than when it was pasted.
+      </p>
+      <button
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(snippet);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1600);
+          } catch {
+            setCopied(false);
+          }
+        }}
+        className="switch mt-2 w-full text-[11px]"
+      >
+        {copied ? "Markdown copied" : "Copy markdown embed"}
+      </button>
+    </div>
   );
 }
