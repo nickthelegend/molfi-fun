@@ -221,3 +221,28 @@ export async function activity(): Promise<ActivityRow[] | null> {
     clearTimeout(timer);
   }
 }
+
+export interface BalanceStats {
+  totalSettled: number;
+  crewWins: number;
+  byShip: Array<{ mapId: string; settled: number; crewWins: number }>;
+  byPersona: Array<{ persona: string; played: number; survived: number; impostorRuns: number }>;
+}
+
+/** Win rates by ship and persona. Null when the keeper could not be reached. */
+export async function balance(): Promise<BalanceStats | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 5000);
+  try {
+    const res = await fetch(`${process.env.KEEPER_URL ?? "http://localhost:8080"}/api/balance`, {
+      signal: abort.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BalanceStats;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

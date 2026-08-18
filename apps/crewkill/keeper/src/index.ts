@@ -11,7 +11,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { registerActionRoutes } from "./api/actions.js";
-import { buildMatchView, listMatches, deploymentTotals, deploymentHistory, recentActivity} from "./api/views.js";
+import { buildMatchView, listMatches, deploymentTotals, deploymentHistory, recentActivity, balanceStats} from "./api/views.js";
 import { makeAccount, makeProvider } from "./chain/client.js";
 import { CrewKillContract, loadDeployment } from "./chain/crewkill.js";
 import { canDrivePrivatePool, loadConfig } from "./config.js";
@@ -153,6 +153,16 @@ async function main(): Promise<void> {
     } catch (error) {
       log.error({ err: error }, "activity failed");
       res.status(503).json({ error: "activity unavailable" });
+    }
+  });
+
+  /** Win rates by ship and by persona, across every settled match on this deployment. */
+  app.get("/api/balance", async (_req, res) => {
+    try {
+      res.json(await balanceStats(config.network.name, deployment.game));
+    } catch (error) {
+      log.error({ err: error }, "balance failed");
+      res.status(503).json({ error: "balance unavailable" });
     }
   });
 

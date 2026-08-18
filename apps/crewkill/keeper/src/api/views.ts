@@ -6,11 +6,17 @@
  * off the contract. Nothing in this file computes an outcome.
  */
 
-import { MatchPhase, NO_TARGET, type MatchView, type SeatView } from "@crewkill/protocol";
+import {
+  MatchPhase,
+  NO_TARGET,
+  shipMapById,
+  shipMapForSeed,
+  type MatchView,
+  type SeatView,
+} from "@crewkill/protocol";
 import { prisma } from "../db.js";
 import { activeDeploymentId } from "./scope.js";
 import type { CrewKillContract } from "../chain/crewkill.js";
-import { shipMapById, shipMapForSeed } from "@crewkill/protocol";
 import { SABOTAGE_CONFIG, locationName } from "../game/ship.js";
 
 export async function buildMatchView(
@@ -285,4 +291,78 @@ export async function recentActivity(
     text: row.text,
     at: row.createdAt.toISOString(),
   }));
+}
+
+/**
+ * Aggregates worth arguing about.
+ *
+ * A settled match is evidence the system works. Six hundred of them are evidence of
+ * something else: whether the game is balanced. Per-ship crew win rates say whether one map
+ * is easier than another, and per-persona rates say whether the agent strategies differ in
+ * strength - both being questions a designer would ask and neither answerable from a match
+ * list.
+ *
+ * Counted across every settled match on the deployment, so a rate is over the whole history
+ * rather than the page the archive shows.
+ */
+export async function balanceStats(
+  network: string,
+  gameAddress: string,
+): Promise<{
+  totalSettled: number;
+  crewWins: number;
+  byShip: Array<{ mapId: string; settled: number; crewWins: number }>;
+  byPersona: Array<{ persona: string; played: number; survived: number; impostorRuns: number }>;
+}> {
+  const deploymentId = await activeDeploymentId(network, gameAddress);
+
+  const settled = await prisma.match.findMany({
+    where: { deploymentId, phase: MatchPhase.Settled },
+    select: { finalSeed: true, crewWon: true },
+  });
+
+  const ships = new Map<string, { settled: number; crewWins: number }>();
+  for (const row of settled) {
+    // Which ship a match ran on is not stored - it falls out of the final seed, the same way
+    // the client derives it. Deriving it here keeps one source of truth for that mapping.
+    let key = "unknown";
+    if (row.finalSeed) {
+      try {
+        key = shipMapForSeed(BigInt(row.finalSeed)).name;
+      } catch {
+        // A seed that will not parse is counted as unknown rather than dropped, so the ship
+        // totals still add up to the settled total.
+      }
+    }
+    const entry = ships.get(key) ?? { settled: 0, crewWins: 0 };
+    entry.settled += 1;
+    if (row.crewWon) entry.crewWins += 1;
+    ships.set(key, entry);
+  }
+
+  const seats = await prisma.seat.findMany({
+    where: { match: { deploymentId, phase: MatchPhase.Settled } },
+    select: { persona: true, alive: true, isImpostor: true },
+  });
+
+  const personas = new Map<string, { played: number; survived: number; impostorRuns: number }>();
+  for (const seat of seats) {
+    const key = seat.persona ?? "unknown";
+    const entry = personas.get(key) ?? { played: 0, survived: 0, impostorRuns: 0 };
+    entry.played += 1;
+    if (seat.alive) entry.survived += 1;
+    if (seat.isImpostor) entry.impostorRuns += 1;
+    personas.set(key, entry);
+  }
+
+  return {
+    totalSettled: settled.length,
+    crewWins: settled.filter((m) => m.crewWon).length,
+    byShip: [...ships.entries()]
+      .map(([mapId, v]) => ({ mapId, ...v }))
+      .sort((a, b) => b.settled - a.settled),
+    byPersona: [...personas.entries()]
+      .map(([persona, v]) => ({ persona, ...v }))
+      .sort((a, b) => b.played - a.played),
+  };
 }
