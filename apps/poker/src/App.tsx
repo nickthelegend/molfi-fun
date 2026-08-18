@@ -17,6 +17,7 @@ import { LobbyScreen } from './screens/LobbyScreen';
 import { GameScreen } from './screens/GameScreen';
 import { ResultsScreen } from './screens/ResultsScreen';
 import { HandResultOverlay } from './components/HandResultOverlay';
+import { NetworkBanner } from './components/NetworkBanner';
 
 export default function App() {
   // --- Core state ---
@@ -110,7 +111,8 @@ export default function App() {
   }, []);
 
   const rpcUrl = deployed?.url ?? 'http://localhost:5050';
-  const { isAlive: devnetAlive } = useDevnetStatus(isLocal ? rpcUrl : 'about:blank');
+  // null off devnet, so the poller genuinely stops rather than failing on a dead URL.
+  const { isAlive: devnetAlive } = useDevnetStatus(isLocal ? rpcUrl : null);
   const { artifacts, loading: artifactsLoading } = useArtifacts();
 
   // --- Lightweight contract reader (for polling games without full SDK) ---
@@ -885,23 +887,26 @@ export default function App() {
 
   if (screen === 'lobby') {
     return (
-      <LobbyScreen
-        joinedGameId={gameId}
-        createdGameId={createdGameId}
-        numPlayers={polledState.numPlayers}
-        maxPlayers={polledState.maxPlayers}
-        loading={lobbyLoading || actions.loading}
-        loadingMessage={lobbyLoading ? lobbyStatus : actions.loadingMessage}
-        error={lobbyError || actions.error}
-        connectedAddress={!isLocal ? (controllerAddress ?? null) : undefined}
-        onConnect={!isLocal ? handleConnect : undefined}
-        onDisconnect={!isLocal ? handleDisconnect : undefined}
-        devnetAlive={isLocal ? devnetAlive : undefined}
-        artifactsReady={isLocal ? !!artifacts : undefined}
-        onCreateRoom={handleCreateRoom}
-        onJoinGame={handleJoinGame}
-        onLeaveTable={handleLeaveTable}
-      />
+      <>
+        <NetworkBanner />
+        <LobbyScreen
+          joinedGameId={gameId}
+          createdGameId={createdGameId}
+          numPlayers={polledState.numPlayers}
+          maxPlayers={polledState.maxPlayers}
+          loading={lobbyLoading || actions.loading}
+          loadingMessage={lobbyLoading ? lobbyStatus : actions.loadingMessage}
+          error={lobbyError || actions.error}
+          connectedAddress={!isLocal ? (controllerAddress ?? null) : undefined}
+          onConnect={!isLocal ? handleConnect : undefined}
+          onDisconnect={!isLocal ? handleDisconnect : undefined}
+          devnetAlive={isLocal ? devnetAlive : undefined}
+          artifactsReady={isLocal ? !!artifacts : undefined}
+          onCreateRoom={handleCreateRoom}
+          onJoinGame={handleJoinGame}
+          onLeaveTable={handleLeaveTable}
+        />
+      </>
     );
   }
 
@@ -921,6 +926,7 @@ export default function App() {
 
   return (
     <>
+      <NetworkBanner />
       <GameScreen
         myPlayerIndex={playerCtx!.playerIndex}
         polledState={polledState}
