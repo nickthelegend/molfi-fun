@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { auditMatch, type MatchView } from "@crewkill/protocol";
+import { auditMatch, roleDraw, drawIsImpostor, type MatchView } from "@crewkill/protocol";
 import { API_URL } from "@/lib/api";
 
 /**
@@ -193,12 +193,112 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
             ))}
           </ul>
 
+          <Working match={match} />
+
           <p className="mt-4 text-[11px] leading-relaxed text-[var(--color-dim)]">
             The keeper was asked for this match&apos;s published inputs and nothing else. Every
             value in the right hand column was derived from them by code running on this page,
             so a server that wanted to report a different outcome would have to change the
             published seed or the role secrets - both of which were committed before anyone
             knew what they would be.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The arithmetic, shown.
+ *
+ * A tick beside "roles agree" still asks to be believed. This prints the two published
+ * values every role is drawn from, the draw that falls out of them, and the threshold the
+ * draw is compared against - so the claim stops being "we checked" and becomes a sum anyone
+ * can redo with a poseidon implementation and a calculator.
+ *
+ * Both inputs were committed before either was known: the seed before the lobby opened, the
+ * role secret when the seat was bought. Neither side could steer the result, and that is the
+ * whole provably-fair claim in one table.
+ */
+function Working({ match }: { match: MatchView }) {
+  const [open, setOpen] = useState(false);
+
+  const seed = match.finalSeed ? BigInt(match.finalSeed) : null;
+  const revealed = match.seats.filter((seat) => seat.roleSecret);
+  if (!seed || revealed.length === 0) return null;
+
+  // Basis points out of 10,000. A draw below the threshold is an impostor.
+  const threshold = match.impostorBps;
+
+  return (
+    <div className="mt-4 border border-[var(--color-line)]">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between p-3 text-left hover:bg-[var(--color-hull)]"
+      >
+        <span className="text-[13px] text-[var(--color-ink)]">Show the working</span>
+        <span className="tele">{open ? "hide" : "show"}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-[var(--color-line)] p-3">
+          <p className="mb-3 text-[12px] leading-relaxed text-[var(--color-dim)]">
+            Each role is <code className="text-[var(--color-cyan)]">poseidon(final_seed, role_secret)</code>{" "}
+            compared against {threshold} of 10,000. The seed was fixed before the lobby opened
+            and each secret before that seat played, so neither side could aim at a result.
+          </p>
+
+          <div className="mb-3 border border-[var(--color-line)] p-2">
+            <p className="tele">final seed</p>
+            <p className="numeric mt-1 text-[11px] break-all text-[var(--color-ink)]">
+              {match.finalSeed}
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-left">
+                  <th className="tele pb-1 pr-2 font-normal">seat</th>
+                  <th className="tele pb-1 pr-2 font-normal">role secret</th>
+                  <th className="tele pb-1 pr-2 font-normal">draw mod 10000</th>
+                  <th className="tele pb-1 font-normal">role</th>
+                </tr>
+              </thead>
+              <tbody className="numeric">
+                {revealed.map((seat) => {
+                  const secret = BigInt(seat.roleSecret as string);
+                  const draw = roleDraw(seed, secret);
+                  const bucket = Number(draw % 10000n);
+                  const impostor = drawIsImpostor(draw, threshold);
+                  return (
+                    <tr key={seat.index} className="border-t border-[var(--color-line)]">
+                      <td className="py-1.5 pr-2 text-[var(--color-dim)]">#{seat.index}</td>
+                      <td className="py-1.5 pr-2 text-[var(--color-dim)]">
+                        {(seat.roleSecret as string).slice(0, 12)}…
+                      </td>
+                      <td className="py-1.5 pr-2 text-[var(--color-ink)]">
+                        {bucket} {impostor ? "<" : "\u2265"} {threshold}
+                      </td>
+                      <td
+                        className="py-1.5"
+                        style={{
+                          color: impostor ? "var(--color-alarm)" : "var(--color-cyan)",
+                        }}
+                      >
+                        {impostor ? "impostor" : "crew"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="mt-3 text-[11px] text-[var(--color-dim)]">
+            Recomputed here from the two published values. Nothing in this table was read back
+            from the server.
           </p>
         </div>
       )}
