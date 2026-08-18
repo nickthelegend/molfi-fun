@@ -95,6 +95,11 @@ export default async function Hub() {
   ]);
 
   const contractsLive = contracts.filter((c) => c.live === true).length;
+  // A read that failed is not a contract that is missing. When every read failed the node
+  // was unreachable, and printing "0 of 6 contracts live" would report a node outage as six
+  // undeployed contracts - a far worse claim, and one the contracts page already avoids.
+  const contractsUnreadable = contracts.filter((c) => c.live === null).length;
+  const nodeDown = contractsUnreadable === contracts.length;
   const gamesUp = services.filter((s) => s.health === "up").length;
 
   return (
@@ -144,15 +149,17 @@ export default async function Hub() {
               whose source did not answer says so instead of showing a zero, because zero and
               unreachable look identical in a stat block and mean opposite things. */}
           <div className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--line)] sm:grid-cols-4">
+            {/* A probe that fails is a real answer about that game, so zero is honest here
+                in a way it is not for a contract read that never completed. */}
             <LiveStat
               value={`${gamesUp} of ${services.length}`}
               label="games responding"
               ok={gamesUp === services.length}
             />
             <LiveStat
-              value={`${contractsLive} of ${contracts.length}`}
-              label="contracts live on Sepolia"
-              ok={contractsLive === contracts.length}
+              value={nodeDown ? "unreadable" : `${contractsLive} of ${contracts.length}`}
+              label={nodeDown ? "contract status" : "contracts live on Sepolia"}
+              ok={!nodeDown && contractsLive === contracts.length}
             />
             <LiveStat
               value={stats.reachable ? (stats.settled?.toLocaleString("en-US") ?? "—") : "offline"}

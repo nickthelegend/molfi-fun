@@ -172,7 +172,7 @@ function Header() {
       {/* The Archive is a surface in its own right, so it carries the same controls as the
           console. Without these, someone who lands here from a link is stuck on whichever
           substrate their system picked. */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <SubstrateSwitch />
         <Link href="/verify" className="switch no-underline">
           Verify a match
