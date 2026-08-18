@@ -113,3 +113,40 @@ html, body, #root {
 .log-panel {
   animation: slideUp 0.2s ease-out;
 }
+
+/* ── REDUCED MOTION ───────────────────────────────────────────────────────────────
+   Honoured across the whole table, not just the CSS declared in this file.
+
+   The client leans on Tailwind's animate-*, transition-* and active:scale-* utilities in
+   nearly every component, and none of them consult the user's motion preference on their
+   own. Somebody who has asked their system for less motion was getting a spinner, a scaling
+   button and a transitioning panel on every action regardless.
+
+   Movement is removed rather than shortened. A 0.01ms duration still fires transitionend and
+   animationiteration, so anything waiting on those keeps working; what goes away is the
+   motion itself. Opacity and colour changes survive, because those carry state rather than
+   movement, and losing them would cost information rather than comfort. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Tailwind's active:scale-95 and friends are transforms, and a transform with no
+     transition still snaps. Pinning the scale keeps the press feedback to colour. */
+  .active\:scale-95:active,
+  .active\:scale-\[0\.98\]:active {
+    transform: none !important;
+  }
+
+  /* The loading spinner is the one case where stopping the animation would remove the only
+     signal that anything is happening. It keeps turning, slowly enough not to be a strobe. */
+  .animate-spin {
+    animation-duration: 2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
