@@ -194,6 +194,7 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
           </ul>
 
           <Working match={match} />
+          <ShareResult match={match} result={result} />
 
           <p className="mt-4 text-[11px] leading-relaxed text-[var(--color-dim)]">
             The keeper was asked for this match&apos;s published inputs and nothing else. Every
@@ -303,5 +304,71 @@ function Working({ match }: { match: MatchView }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The result as text somebody else can act on.
+ *
+ * A verification that only exists as pixels on your screen is not much use in an argument.
+ * This puts the whole thing on the clipboard as markdown - the verdict, every check with
+ * both columns, and the permalink - so it can be pasted into an issue or a chat and the
+ * person reading it can follow the link and run the same recomputation themselves rather
+ * than taking the paste on trust.
+ */
+function ShareResult({
+  match,
+  result,
+}: {
+  match: MatchView;
+  result: ReturnType<typeof auditMatch>;
+}) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  const markdown = () => {
+    const url =
+      typeof window === "undefined"
+        ? `/verify/${match.matchId}`
+        : `${window.location.origin}/verify/${match.matchId}`;
+    const lines = [
+      `## CrewKill match ${match.matchId} — ${result.failed === 0 ? "checks out" : "does not check out"}`,
+      "",
+      `${result.passed} of ${result.checks.length} checks recomputed independently and agreeing with the contract.`,
+      "",
+      "| Check | Contract | Recomputed | Agrees |",
+      "| --- | --- | --- | --- |",
+      ...result.checks.map(
+        (c) => `| ${c.label} | \`${c.onChain}\` | \`${c.recomputed}\` | ${c.ok ? "yes" : "**no**"} |`,
+      ),
+      "",
+      `Final seed: \`${match.finalSeed ?? "not published"}\``,
+      "",
+      `Recompute it yourself: ${url}`,
+    ];
+    return lines.join("\n");
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(markdown());
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+    setTimeout(() => setState("idle"), 1800);
+  };
+
+  return (
+    <button
+      onClick={copy}
+      className="switch mt-3 w-full"
+      aria-label="Copy this verification as markdown"
+    >
+      {state === "copied"
+        ? "Copied as markdown"
+        : state === "failed"
+          ? "Clipboard blocked"
+          : "Copy this result as markdown"}
+    </button>
   );
 }
