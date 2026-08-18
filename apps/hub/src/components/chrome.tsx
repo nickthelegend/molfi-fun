@@ -13,6 +13,7 @@ const NAV: Array<{ href: string; label: string }> = [
   { href: "/crewkill", label: "CrewKill" },
   { href: "/poker", label: "Poker" },
   { href: "/contracts", label: "Contracts" },
+  { href: "/deployments", label: "Deployments" },
 ];
 
 export function SiteHeader({ current }: { current?: string }) {
@@ -85,6 +86,11 @@ export function SiteFooter() {
                 <li>
                   <Link href="/contracts" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
                     Contracts
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/deployments" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
+                    Deployments
                   </Link>
                 </li>
                 <li>

@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/crewkill", priority: 0.9, freq: "weekly" },
     { path: "/poker", priority: 0.9, freq: "weekly" },
     { path: "/contracts", priority: 0.7, freq: "daily" },
+    { path: "/deployments", priority: 0.6, freq: "daily" },
     { path: "/privacy", priority: 0.3, freq: "monthly" },
     { path: "/terms", priority: 0.3, freq: "monthly" },
   ];

@@ -160,3 +160,38 @@ export function toStrk(raw: string | null, decimals = 6): string | null {
     return null;
   }
 }
+
+export interface DeploymentRow {
+  id: number;
+  network: string;
+  gameAddress: string;
+  ballotAddress: string;
+  live: boolean;
+  matches: number;
+  settled: number;
+  transactions: number;
+  firstSeen: string;
+}
+
+/**
+ * Every deployment the keeper has recorded, live and retired.
+ *
+ * Returns an empty list rather than throwing when the keeper is down, and the page says so
+ * separately - an empty history and an unreachable keeper are different facts.
+ */
+export async function deployments(): Promise<DeploymentRow[] | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 5000);
+  try {
+    const res = await fetch(`${process.env.KEEPER_URL ?? "http://localhost:8080"}/api/deployments`, {
+      signal: abort.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as DeploymentRow[];
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

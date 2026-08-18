@@ -11,7 +11,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { registerActionRoutes } from "./api/actions.js";
-import { buildMatchView, listMatches, deploymentTotals} from "./api/views.js";
+import { buildMatchView, listMatches, deploymentTotals, deploymentHistory} from "./api/views.js";
 import { makeAccount, makeProvider } from "./chain/client.js";
 import { CrewKillContract, loadDeployment } from "./chain/crewkill.js";
 import { canDrivePrivatePool, loadConfig } from "./config.js";
@@ -133,6 +133,16 @@ async function main(): Promise<void> {
     } catch (error) {
       log.error({ err: error }, "stats failed");
       res.status(503).json({ error: "stats unavailable" });
+    }
+  });
+
+  /** Every deployment this keeper has recorded, so a retired one is visible rather than gone. */
+  app.get("/api/deployments", async (_req, res) => {
+    try {
+      res.json(await deploymentHistory(deployment.game));
+    } catch (error) {
+      log.error({ err: error }, "deployments failed");
+      res.status(503).json({ error: "deployments unavailable" });
     }
   });
 

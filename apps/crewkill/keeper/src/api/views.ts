@@ -215,3 +215,42 @@ export async function deploymentTotals(network: string, gameAddress: string): Pr
     transactions,
   };
 }
+
+/**
+ * Every deployment this keeper has ever recorded, live and retired.
+ *
+ * A deployment is a set of addresses on a chain. When a devnet restarts and the contracts go
+ * up again, the old ones do not stop having existed - the matches settled against them are
+ * still real, they are just no longer checkable, because the code they were checked by is
+ * gone. Showing them as retired rather than deleting them is the honest way to hold that.
+ */
+export async function deploymentHistory(activeGameAddress: string): Promise<
+  Array<{
+    id: number;
+    network: string;
+    gameAddress: string;
+    ballotAddress: string;
+    live: boolean;
+    matches: number;
+    settled: number;
+    transactions: number;
+    firstSeen: string;
+  }>
+> {
+  const rows = await prisma.deployment.findMany({ orderBy: { id: "asc" } });
+  return Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      network: row.network,
+      gameAddress: row.gameAddress,
+      ballotAddress: row.ballotAddress,
+      live: row.gameAddress === activeGameAddress,
+      matches: await prisma.match.count({ where: { deploymentId: row.id } }),
+      settled: await prisma.match.count({
+        where: { deploymentId: row.id, phase: MatchPhase.Settled },
+      }),
+      transactions: await prisma.chainTx.count({ where: { deploymentId: row.id } }),
+      firstSeen: row.createdAt.toISOString(),
+    })),
+  );
+}
