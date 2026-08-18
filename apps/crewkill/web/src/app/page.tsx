@@ -31,7 +31,7 @@ import { ChainLog, DeploymentCard } from"@/components/chainlog";
 import { ShipView } from"@/components/shipview";
 import { Cutscenes } from"@/components/cutscenes";
 import { Primer, PrimerButton } from"@/components/primer";
-import { MainMenu } from"@/components/mainmenu";
+import { MainMenu, type DeploymentTotals } from"@/components/mainmenu";
 import { VotingScreen } from"@/components/votingscreen";
 import { AgentCard, CrewProgress, WalkingCrew } from"@/components/roster";
 import { ActionType } from"@/lib/ship";
@@ -41,6 +41,7 @@ import {
   fetchLobby,
   fetchMatch,
   fetchMatches,
+  fetchTotals,
   subscribe,
   type ChainConfig,
 } from"@/lib/api";
@@ -77,6 +78,9 @@ export default function Home() {
   /** A joinable lobby that is not the match currently on screen. */
   const [openLobby, setOpenLobby] = useState<MatchView | null>(null);
   const [allMatches, setAllMatches] = useState<Array<{ matchId: number; phase: number; seatsFilled: number }>>([]);
+  // Whole-deployment aggregates, kept apart from the recent page above. Null until the
+  // first read lands, so a loading counter shows a dash rather than a plausible zero.
+  const [totals, setTotals] = useState<DeploymentTotals | null>(null);
   /** When this browser shielded its stake - the input to the deposit/stake timing factor. */
   const [shieldedAt, setShieldedAt] = useState<number | null>(null);
   /** The meeting table. Opens on each voting phase; dismissible to watch the ship. */
@@ -172,6 +176,7 @@ export default function Home() {
       try {
         // Keeps the landing metrics honest: they count real matches, not a guess.
         void fetchMatches().then(setAllMatches).catch(() => {});
+        void fetchTotals().then(setTotals).catch(() => {});
         const lobby = await fetchLobby();
         const current = matchIdRef.current;
         const staked = current !== null && loadSeat(current) !== null;
@@ -464,6 +469,7 @@ export default function Home() {
         <MainMenu
           lobby={match}
           matches={allMatches}
+          totals={totals}
           connected={live}
           onPlay={() => {
             document.getElementById("seat")?.scrollIntoView({ behavior: "smooth", block: "start" });

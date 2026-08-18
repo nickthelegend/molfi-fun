@@ -19,22 +19,38 @@ import { Crewmate } from "./sprite";
  * lobby server to count them and a fake number on the first screen poisons everything after
  * it.
  */
+export interface DeploymentTotals {
+  matches: number;
+  settled: number;
+  seatsFilled: number;
+  transactions: number;
+}
+
 export function MainMenu({
   lobby,
   matches,
+  totals,
   connected,
   onPlay,
   children,
 }: {
   lobby: MatchView | null;
   matches: Array<{ matchId: number; phase: number; seatsFilled: number }>;
+  /** Real aggregates over the whole deployment. Null while they are still loading. */
+  totals: DeploymentTotals | null;
   connected: boolean;
   onPlay: () => void;
   children: React.ReactNode;
 }) {
+  // Live is a count of what is happening now, so the recent page is the right source.
   const live = matches.filter((m) => m.phase === 1).length;
-  const settled = matches.filter((m) => m.phase === 3).length;
-  const seated = matches.reduce((sum, m) => sum + m.seatsFilled, 0);
+
+  // Settled and seats are history, and history is not what fits on one page. These used to
+  // be summed from the same 25-row page as `live`, which meant "Settled" could never read
+  // higher than 25 no matter how many matches had actually been played - it was showing 17
+  // against a real 604. Totals come from the keeper's aggregate now.
+  const settled = totals?.settled ?? null;
+  const seated = totals?.seatsFilled ?? null;
   const openSeats = lobby ? lobby.seatCount - lobby.seatsFilled : 0;
 
   return (
@@ -103,7 +119,8 @@ function Metric({
   pulse,
 }: {
   label: string;
-  value: number;
+  /** Null while the figure is still loading. Shown as a dash, never as a zero. */
+  value: number | null;
   tone: string;
   pulse?: boolean;
 }) {
@@ -120,7 +137,7 @@ function Metric({
         <span className="tele">{label}</span>
       </div>
       <div className="macro macro-lg numeric mt-1" style={{ color: tone }}>
-        {value}
+        {value === null ? "—" : value.toLocaleString("en-US")}
       </div>
     </div>
   );

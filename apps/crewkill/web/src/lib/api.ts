@@ -142,3 +142,20 @@ export interface Disclosure {
  */
 export const fetchDisclosure = (matchId: number) =>
   get<Disclosure>(`/api/matches/${matchId}/disclosure`);
+
+/**
+ * Real aggregates over the whole deployment.
+ *
+ * Separate from `fetchMatches`, which returns the latest 25 and is the right shape for a
+ * list and the wrong shape for a counter. Anything summing that page reports the page size
+ * forever, which is exactly what the main menu was doing.
+ */
+export const fetchTotals = () =>
+  get<{
+    matches: number;
+    settled: number;
+    aborted: number;
+    seatsFilled: number;
+    potTotal: string;
+    transactions: number;
+  }>("/api/stats");
