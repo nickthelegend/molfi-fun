@@ -246,3 +246,31 @@ export async function balance(): Promise<BalanceStats | null> {
     clearTimeout(timer);
   }
 }
+
+export interface UptimeRow {
+  service: string;
+  samples: number;
+  up: number;
+  uptimePct: number | null;
+  medianLatencyMs: number | null;
+  lastOk: string | null;
+  lastCheck: string | null;
+}
+
+/** Uptime measured by the keeper over time. Null when the keeper is unreachable. */
+export async function uptime(): Promise<UptimeRow[] | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 5000);
+  try {
+    const res = await fetch(`${process.env.KEEPER_URL ?? "http://localhost:8080"}/api/uptime`, {
+      signal: abort.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as UptimeRow[];
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

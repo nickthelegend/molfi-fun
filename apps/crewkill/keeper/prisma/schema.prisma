@@ -166,3 +166,19 @@ model ChainTx {
   @@unique([deploymentId, hash])
   @@index([matchId])
 }
+
+/// A recorded observation of whether something was up.
+///
+/// A status page that computes uptime from the request that renders it is reporting one
+/// sample and calling it a percentage. These rows are written by the keeper's own loop as it
+/// runs, so the figure is measured over time rather than asserted at page load.
+model HealthSample {
+  id        Int      @id @default(autoincrement())
+  service   String
+  ok        Boolean
+  latencyMs Int?
+  detail    String?
+  at        DateTime @default(now())
+
+  @@index([service, at])
+}

@@ -11,7 +11,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { registerActionRoutes } from "./api/actions.js";
-import { buildMatchView, listMatches, deploymentTotals, deploymentHistory, recentActivity, balanceStats} from "./api/views.js";
+import { buildMatchView, listMatches, deploymentTotals, deploymentHistory, recentActivity, balanceStats, recordHealth, uptime} from "./api/views.js";
 import { makeAccount, makeProvider } from "./chain/client.js";
 import { CrewKillContract, loadDeployment } from "./chain/crewkill.js";
 import { canDrivePrivatePool, loadConfig } from "./config.js";
@@ -163,6 +163,16 @@ async function main(): Promise<void> {
     } catch (error) {
       log.error({ err: error }, "balance failed");
       res.status(503).json({ error: "balance unavailable" });
+    }
+  });
+
+  /** Uptime, computed over samples the keeper recorded while running. */
+  app.get("/api/uptime", async (_req, res) => {
+    try {
+      res.json(await uptime());
+    } catch (error) {
+      log.error({ err: error }, "uptime failed");
+      res.status(503).json({ error: "uptime unavailable" });
     }
   });
 
@@ -340,6 +350,47 @@ async function main(): Promise<void> {
   };
   setInterval(() => void tick(), config.pollIntervalMs);
   void tick();
+
+  /**
+   * The uptime sampler.
+   *
+   * Uptime has to be measured over time or it is not uptime. This writes one observation per
+   * service per interval while the keeper runs, so a service that was down an hour ago is
+   * still down an hour ago in the record rather than being forgotten the moment it recovers.
+   *
+   * Deliberately slower than the game clock: a status history does not need per-second
+   * resolution, and writing one row a second would grow the table for no extra truth.
+   */
+  const SAMPLE_INTERVAL_MS = 30_000;
+
+  const sample = async (): Promise<void> => {
+    // The chain, which is the dependency that actually decides whether the game can run.
+    const started = Date.now();
+    try {
+      const block = await provider.getBlockLatestAccepted();
+      await recordHealth("starknet", true, Date.now() - started, `block ${block.block_number}`);
+    } catch (error) {
+      await recordHealth(
+        "starknet",
+        false,
+        null,
+        error instanceof Error ? error.message.slice(0, 180) : "unreachable",
+      ).catch(() => {});
+    }
+
+    // The database. If this write fails there is nowhere to record that it failed, which is
+    // exactly why the attempt itself is the test.
+    const dbStarted = Date.now();
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      await recordHealth("database", true, Date.now() - dbStarted, null);
+    } catch {
+      // Nothing useful to do: the store that would hold the failure is the thing that failed.
+    }
+  };
+
+  setInterval(() => void sample(), SAMPLE_INTERVAL_MS);
+  void sample();
 }
 
 /**

@@ -366,3 +366,63 @@ export async function balanceStats(
       .sort((a, b) => b.played - a.played),
   };
 }
+
+/** Records one observation. Called by the keeper's loop, not by a request handler. */
+export async function recordHealth(
+  service: string,
+  ok: boolean,
+  latencyMs: number | null,
+  detail: string | null,
+): Promise<void> {
+  await prisma.healthSample.create({ data: { service, ok, latencyMs, detail } });
+}
+
+/**
+ * Uptime, measured rather than asserted.
+ *
+ * Computed over samples the keeper wrote while running, so a service that was down an hour
+ * ago still shows as down an hour ago. A status page that probes once when somebody loads it
+ * is reporting a single sample and calling it a percentage.
+ */
+export async function uptime(): Promise<
+  Array<{
+    service: string;
+    samples: number;
+    up: number;
+    uptimePct: number | null;
+    medianLatencyMs: number | null;
+    lastOk: string | null;
+    lastCheck: string | null;
+  }>
+> {
+  const services = await prisma.healthSample.groupBy({ by: ["service"] });
+
+  return Promise.all(
+    services.map(async ({ service }) => {
+      const rows = await prisma.healthSample.findMany({
+        where: { service },
+        orderBy: { at: "desc" },
+        take: 500,
+        select: { ok: true, latencyMs: true, at: true },
+      });
+
+      const up = rows.filter((r) => r.ok).length;
+      const latencies = rows
+        .map((r) => r.latencyMs)
+        .filter((n): n is number => n !== null)
+        .sort((a, b) => a - b);
+
+      return {
+        service,
+        samples: rows.length,
+        up,
+        // Null rather than 100 when nothing has been recorded. An unmeasured service is not
+        // a healthy one.
+        uptimePct: rows.length === 0 ? null : Math.round((up / rows.length) * 1000) / 10,
+        medianLatencyMs: latencies.length ? latencies[Math.floor(latencies.length / 2)] : null,
+        lastOk: rows.find((r) => r.ok)?.at.toISOString() ?? null,
+        lastCheck: rows[0]?.at.toISOString() ?? null,
+      };
+    }),
+  );
+}
