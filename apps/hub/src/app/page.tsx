@@ -1,4 +1,18 @@
 import { Reveal, WordReveal } from "@/components/reveal";
+import { SiteHeader, SiteFooter } from "@/components/chrome";
+import { StatusDot } from "@/components/bits";
+import { contractStatuses, blockNumber } from "@/lib/chain";
+import { gameStatuses, keeperStats } from "@/lib/live";
+
+/**
+ * Rendered per request.
+ *
+ * The stat strip below used to be four hand-written numbers. On a page whose entire argument
+ * is that you should not have to take its word for anything, hand-written numbers were the
+ * weakest thing on it, so they are now read from the chain and from the keeper at load time.
+ * That only works if the page is not cached.
+ */
+export const dynamic = "force-dynamic";
 
 /**
  * molfi.fun
@@ -72,22 +86,20 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
 ];
 
-export default function Hub() {
+export default async function Hub() {
+  const [stats, services, contracts, head] = await Promise.all([
+    keeperStats(),
+    gameStatuses(),
+    contractStatuses(),
+    blockNumber(),
+  ]);
+
+  const contractsLive = contracts.filter((c) => c.live === true).length;
+  const gamesUp = services.filter((s) => s.health === "up").length;
+
   return (
     <>
-      <nav aria-label="Primary" className="sticky top-0 z-50 bg-black/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-          <span className="text-base font-semibold tracking-tight">
-            molfi<span className="text-[var(--accent)]">.fun</span>
-          </span>
-          <a
-            href="#games"
-            className="fluid rounded-lg bg-white px-3 py-2 text-sm font-semibold text-black hover:bg-[var(--accent)]"
-          >
-            Play a game
-          </a>
-        </div>
-      </nav>
+      <SiteHeader />
 
       <main id="main">
         {/* ── Hero ───────────────────────────────────────────────────────────────── */}
@@ -126,19 +138,32 @@ export default function Hub() {
             Free to play on Sepolia testnet. No real money until you choose mainnet.
           </p>
 
-          {/* Proof signal, sitting directly beside the claim it supports. */}
+          {/* Proof signal, read live rather than asserted.
+
+              Every cell here came from a request made while this page was rendering. A cell
+              whose source did not answer says so instead of showing a zero, because zero and
+              unreachable look identical in a stat block and mean opposite things. */}
           <div className="mt-12 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--line)] sm:grid-cols-4">
-            {[
-              ["2", "games open"],
-              ["39", "contract tests"],
-              ["100%", "settled onchain"],
-              ["0", "trusted dealers"],
-            ].map(([value, label]) => (
-              <div key={label} className="bg-[var(--surface)] px-4 py-5">
-                <div className="font-mono text-2xl font-semibold">{value}</div>
-                <div className="mt-1 text-sm text-[var(--text-dim)]">{label}</div>
-              </div>
-            ))}
+            <LiveStat
+              value={`${gamesUp} of ${services.length}`}
+              label="games responding"
+              ok={gamesUp === services.length}
+            />
+            <LiveStat
+              value={`${contractsLive} of ${contracts.length}`}
+              label="contracts live on Sepolia"
+              ok={contractsLive === contracts.length}
+            />
+            <LiveStat
+              value={stats.reachable ? (stats.matches?.toLocaleString("en-US") ?? "—") : "offline"}
+              label={stats.reachable ? "matches recorded" : "match counter"}
+              ok={stats.reachable}
+            />
+            <LiveStat
+              value={head === null ? "offline" : head.toLocaleString("en-US")}
+              label={head === null ? "Sepolia node" : "Sepolia block"}
+              ok={head !== null}
+            />
           </div>
         </section>
 
@@ -168,9 +193,16 @@ export default function Hub() {
                 <article className="flex h-full flex-col rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6">
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="text-xl font-semibold">{game.name}</h3>
-                    <span className="text-sm font-medium text-[var(--accent)]">
-                      {game.status === "open" ? "Open" : "Soon"}
-                    </span>
+                    <StatusDot
+                      state={
+                        services.find((s) => s.slug === game.slug)?.health ?? "unknown"
+                      }
+                      label={
+                        services.find((s) => s.slug === game.slug)?.health === "up"
+                          ? "responding"
+                          : "not responding"
+                      }
+                    />
                   </div>
 
                   <p className="mt-1 text-sm text-[var(--text-mute)]">
@@ -184,12 +216,20 @@ export default function Hub() {
                     {game.why}
                   </p>
 
-                  <a
-                    href={`https://${game.slug}.molfi.fun`}
-                    className="fluid mt-6 inline-flex w-max rounded-lg bg-white px-3 py-2 text-base font-semibold text-black hover:bg-[var(--accent)]"
-                  >
-                    Play {game.name}
-                  </a>
+                  <div className="mt-6 flex flex-wrap items-center gap-3">
+                    <a
+                      href={`https://${game.slug}.molfi.fun`}
+                      className="fluid inline-flex w-max rounded-lg bg-white px-3 py-2 text-base font-semibold text-black hover:bg-[var(--accent)]"
+                    >
+                      Play {game.name}
+                    </a>
+                    <a
+                      href={`/${game.slug}`}
+                      className="fluid inline-flex w-max rounded-lg border border-[var(--line-2)] px-3 py-2 text-base font-semibold no-underline hover:bg-[var(--surface-2)]"
+                    >
+                      How it works
+                    </a>
+                  </div>
                 </article>
               </Reveal>
             ))}
@@ -312,27 +352,28 @@ export default function Hub() {
         </section>
       </main>
 
-      <footer className="border-t border-[var(--line)]">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-8">
-          <span className="text-sm text-[var(--text-mute)]">
-            molfi.fun · staked games settled on Starknet
-          </span>
-          <nav aria-label="Footer" className="flex flex-wrap gap-5 text-sm">
-            <a href="/privacy" className="fluid text-[var(--text-dim)] hover:text-white">
-              Privacy
-            </a>
-            <a href="/terms" className="fluid text-[var(--text-dim)] hover:text-white">
-              Terms
-            </a>
-            <a
-              href="https://github.com/nickthelegend/crewkill-strk20"
-              className="fluid text-[var(--text-dim)] hover:text-white"
-            >
-              Source
-            </a>
-          </nav>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
+  );
+}
+
+/**
+ * One cell of the proof strip.
+ *
+ * The label changes with the state rather than the value alone: a failed read prints
+ * "Sepolia node / offline" instead of "Sepolia block / offline", because the second reads
+ * like a block number that happens to be missing and the first reads like what it is.
+ */
+function LiveStat({ value, label, ok }: { value: string; label: string; ok: boolean }) {
+  return (
+    <div className="bg-[var(--surface)] px-4 py-5">
+      <div
+        className="font-mono text-2xl font-semibold"
+        style={{ color: ok ? "var(--text)" : "#e0b06c" }}
+      >
+        {value}
+      </div>
+      <div className="mt-1 text-sm text-[var(--text-dim)]">{label}</div>
+    </div>
   );
 }
