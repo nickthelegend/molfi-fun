@@ -24,8 +24,10 @@ export interface KeeperStats {
   network: string | null;
   block: number | null;
   matches: number | null;
+  settled: number | null;
   seatsFilled: number | null;
   potTotal: string | null;
+  transactions: number | null;
   detail: string;
 }
 
@@ -80,18 +82,17 @@ export async function gameStatuses(): Promise<GameStatus[]> {
   );
 }
 
-interface MatchRow {
-  potAmount?: string;
-  seatsFilled?: number;
-}
-
 /**
  * Real totals from the keeper.
  *
- * Every number here is a sum over rows the keeper has actually written. If the keeper is
- * unreachable the fields stay null and the page prints that it could not reach it, which is
- * the whole reason this returns a reachable flag rather than zeroes. Zero and unknown look
- * identical in a stat block and mean completely different things.
+ * These come from /api/stats, which aggregates over every row in the deployment. The first
+ * version of this summed /api/matches instead, and that endpoint returns the latest 25 - so
+ * the hub confidently printed "25 matches recorded" and would have kept printing 25 after
+ * the thousandth match. A number that cannot move is not a measurement.
+ *
+ * If the keeper is unreachable the fields stay null and the page says it could not reach it,
+ * which is why this returns a reachable flag rather than zeroes. Zero and unknown look
+ * identical in a stat block and mean opposite things.
  */
 export async function keeperStats(): Promise<KeeperStats> {
   const empty: KeeperStats = {
@@ -99,48 +100,42 @@ export async function keeperStats(): Promise<KeeperStats> {
     network: null,
     block: null,
     matches: null,
+    settled: null,
     seatsFilled: null,
     potTotal: null,
+    transactions: null,
     detail: "keeper unreachable",
   };
 
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 5000);
   try {
-    const [healthRes, matchesRes] = await Promise.all([
+    const [healthRes, statsRes] = await Promise.all([
       fetch(`${KEEPER_URL}/health`, { signal: abort.signal, cache: "no-store" }),
-      fetch(`${KEEPER_URL}/api/matches`, { signal: abort.signal, cache: "no-store" }),
+      fetch(`${KEEPER_URL}/api/stats`, { signal: abort.signal, cache: "no-store" }),
     ]);
-    if (!healthRes.ok || !matchesRes.ok) {
-      return { ...empty, detail: `keeper returned ${healthRes.status}/${matchesRes.status}` };
+    if (!healthRes.ok || !statsRes.ok) {
+      return { ...empty, detail: `keeper returned ${healthRes.status}/${statsRes.status}` };
     }
 
     const health = (await healthRes.json()) as { network?: string; block?: number };
-    const payload = (await matchesRes.json()) as { matches?: MatchRow[] } | MatchRow[];
-    const rows: MatchRow[] = Array.isArray(payload) ? payload : (payload.matches ?? []);
-
-    // Pots are felt-unit integers wider than a JS number stays exact at, so they are summed
-    // as bigint and only turned into text at the end.
-    let pot = 0n;
-    let seats = 0;
-    for (const row of rows) {
-      if (row.potAmount) {
-        try {
-          pot += BigInt(row.potAmount);
-        } catch {
-          // A row whose pot will not parse is skipped rather than allowed to poison the sum.
-        }
-      }
-      seats += row.seatsFilled ?? 0;
-    }
+    const stats = (await statsRes.json()) as {
+      matches?: number;
+      settled?: number;
+      seatsFilled?: number;
+      potTotal?: string;
+      transactions?: number;
+    };
 
     return {
       reachable: true,
       network: health.network ?? null,
       block: health.block ?? null,
-      matches: rows.length,
-      seatsFilled: seats,
-      potTotal: pot.toString(),
+      matches: stats.matches ?? null,
+      settled: stats.settled ?? null,
+      seatsFilled: stats.seatsFilled ?? null,
+      potTotal: stats.potTotal ?? null,
+      transactions: stats.transactions ?? null,
       detail: "read from the keeper",
     };
   } catch {

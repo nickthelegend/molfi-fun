@@ -6,7 +6,7 @@
  * off the contract. Nothing in this file computes an outcome.
  */
 
-import { NO_TARGET, type MatchView, type SeatView } from "@crewkill/protocol";
+import { MatchPhase, NO_TARGET, type MatchView, type SeatView } from "@crewkill/protocol";
 import { prisma } from "../db.js";
 import { activeDeploymentId } from "./scope.js";
 import type { CrewKillContract } from "../chain/crewkill.js";
@@ -161,4 +161,55 @@ export async function listMatches(network: string): Promise<
     potAmount: row.potAmount,
     phaseEndsAt: row.phaseEndsAt?.toISOString() ?? null,
   }));
+}
+
+/**
+ * Real totals for the whole deployment, not a page of it.
+ *
+ * `recentMatches` returns the latest 25, which is the right shape for a list and completely
+ * the wrong shape for a counter: anything summing that page reports 25 forever, no matter
+ * how many matches have actually been played. The hub was doing exactly that and printing it
+ * as "matches recorded".
+ *
+ * These are aggregates computed by the database over every row in the deployment, so the
+ * number moves when the truth moves.
+ */
+export async function deploymentTotals(network: string): Promise<{
+  matches: number;
+  settled: number;
+  aborted: number;
+  seatsFilled: number;
+  potTotal: string;
+  transactions: number;
+}> {
+  const deploymentId = await activeDeploymentId(network);
+
+  const [matches, settled, aborted, seatAgg, potRows, transactions] = await Promise.all([
+    prisma.match.count({ where: { deploymentId } }),
+    prisma.match.count({ where: { deploymentId, phase: MatchPhase.Settled } }),
+    prisma.match.count({ where: { deploymentId, phase: MatchPhase.Aborted } }),
+    prisma.match.aggregate({ where: { deploymentId }, _sum: { seatsFilled: true } }),
+    prisma.match.findMany({ where: { deploymentId }, select: { potAmount: true } }),
+    prisma.chainTx.count({ where: { network } }),
+  ]);
+
+  // Pots are decimal strings wider than a JS number stays exact at, so they are summed as
+  // bigint rather than by the database's numeric aggregate.
+  let pot = 0n;
+  for (const row of potRows) {
+    try {
+      pot += BigInt(row.potAmount);
+    } catch {
+      // A row whose pot will not parse is skipped rather than allowed to poison the sum.
+    }
+  }
+
+  return {
+    matches,
+    settled,
+    aborted,
+    seatsFilled: seatAgg._sum.seatsFilled ?? 0,
+    potTotal: pot.toString(),
+    transactions,
+  };
 }

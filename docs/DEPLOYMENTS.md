@@ -46,3 +46,36 @@ SEPOLIA_RPC=https://starknet-sepolia.g.alchemy.com/v2/<YOUR_KEY>
 ```
 
 Keys live in `.env`, which is gitignored. Nothing in this repository contains one.
+
+## Who deployed what
+
+Six contracts back the two games, and they did not all come from here. The distinction
+matters for the submission: listing somebody else's deployment without saying so reads as a
+claim to have written it.
+
+| Contract | Deployed by |
+| --- | --- |
+| CrewKill | This project |
+| CKBALLOT | This project |
+| Texas Hold'em table | [dpinones/mental-poker](https://github.com/dpinones/mental-poker) |
+| Shuffle verifier | [dpinones/mental-poker](https://github.com/dpinones/mental-poker) |
+| Decrypt verifier | [dpinones/mental-poker](https://github.com/dpinones/mental-poker) |
+| Key aggregator | [dpinones/mental-poker](https://github.com/dpinones/mental-poker) |
+
+The poker contracts were already live on Sepolia when this project's poker client was ported
+from that repository, and the client points at them rather than redeploying. They are real
+dependencies of a real integration, not work done here. The hub's contracts page labels each
+one the same way, so nobody has to read this file to find out.
+
+## Transactions
+
+The four in `strk20.json` are CrewKill's own deployment, and all four are finalised:
+
+| What | Status |
+| --- | --- |
+| Declare CrewKill | SUCCEEDED, ACCEPTED_ON_L1, block 13579652 |
+| Deploy CrewKill | SUCCEEDED, ACCEPTED_ON_L1, block 13579657 |
+| Deploy CKBALLOT | SUCCEEDED, ACCEPTED_ON_L1, block 13579627 |
+| Hand ballot minting to the game | SUCCEEDED, ACCEPTED_ON_L1, block 13579666 |
+
+No poker transaction is listed, because this project sent none.

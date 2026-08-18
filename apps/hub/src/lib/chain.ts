@@ -20,6 +20,17 @@ export interface ContractEntry {
   address: string;
   name: string;
   role: string;
+  /**
+   * Who put it on chain.
+   *
+   * "ours" was deployed by this project. "integrated" was already live and is used as a
+   * dependency. The distinction is not cosmetic: listing somebody else's deployment without
+   * saying so reads as a claim to have built it, and the poker verifiers were deployed by
+   * the mental-poker project rather than here.
+   */
+  origin: "ours" | "integrated";
+  /** Where an integrated contract came from. */
+  source?: string;
 }
 
 /** The same contract after the chain has been asked about it. */
@@ -43,31 +54,41 @@ export const CONTRACTS: ContractEntry[] = [
   {
     address: "0x55ac4a110992e9ced1f3133a9bff040adaaa6aeee4ed57e9b9cb89cb7586ca",
     name: "CrewKillGame",
+    origin: "ours",
     role: "Holds seats, rounds and the pot. Settles who was paid and why.",
   },
   {
     address: "0x38cea8475ecba6984807bf50eebc2d6174672f567d709d8b74c661904ec3bb8",
     name: "BallotBox",
+    origin: "ours",
     role: "Takes votes as commitments so a vote cannot be read while it still matters.",
   },
   {
     address: "0x028fcd7d6937f5a2c1cefd07b6b26faedd0e99383b1f632e9754c4ba0941cbd9",
     name: "PokerTable",
+    origin: "integrated",
+    source: "github.com/dpinones/mental-poker",
     role: "Runs the hand. Holds the deck commitments and the betting round state.",
   },
   {
     address: "0x01aa31ac4826ddbdc9bb2a95a6d334e81be7ff32f7bae604c88b7437252781a4",
     name: "ShuffleVerifier",
+    origin: "integrated",
+    source: "github.com/dpinones/mental-poker",
     role: "Checks the proof that a shuffle permuted the deck without reading it.",
   },
   {
     address: "0x01b5e9a1b0f6550e62e18e3e397b9aded7d7b3dadfeb4f9f3653081c96d9c6c6",
     name: "DecryptVerifier",
+    origin: "integrated",
+    source: "github.com/dpinones/mental-poker",
     role: "Checks that a revealed card matches the card that was sealed.",
   },
   {
     address: "0x06e244442031a6a7f6dca61e3440f4989f6a2ee34bbf32e57bc6ccee8129c885",
     name: "KeyAggregator",
+    origin: "integrated",
+    source: "github.com/dpinones/mental-poker",
     role: "Combines per player keys into the one key the table decrypts against.",
   },
 ];

@@ -42,7 +42,8 @@ export default async function Contracts() {
 
         {/* Summary strip. Reads as one sentence, so a judge does not have to count rows. */}
         <div className="mt-10 flex flex-wrap gap-x-10 gap-y-4 border-y border-[var(--line)] py-5">
-          <Stat label="Contracts registered" value={String(rows.length)} />
+          <Stat label="Written and deployed here" value={String(rows.filter((r) => r.origin === "ours").length)} />
+          <Stat label="Integrated dependencies" value={String(rows.filter((r) => r.origin === "integrated").length)} />
           <Stat
             label="Answering on Sepolia"
             value={`${live} of ${rows.length}`}
@@ -71,8 +72,21 @@ export default async function Contracts() {
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <h2 className="text-base font-semibold tracking-tight">{row.name}</h2>
+                    {/* Whose contract this is. Listing a dependency's deployment without
+                        labelling it reads as a claim to have written it. */}
+                    <span
+                      className="rounded border px-1.5 py-0.5 text-[10px] tracking-wide uppercase"
+                      style={
+                        row.origin === "ours"
+                          ? { borderColor: "var(--line-2)", color: "var(--text-dim)" }
+                          : { borderColor: "#4a4033", color: "#c8a26c" }
+                      }
+                      title={row.source ? `Deployed by ${row.source}` : "Deployed by this project"}
+                    >
+                      {row.origin === "ours" ? "ours" : "integrated"}
+                    </span>
                     <StatusDot
                       state={row.live === true ? "up" : row.live === false ? "down" : "unknown"}
                       label={
@@ -85,6 +99,13 @@ export default async function Contracts() {
                     />
                   </div>
                   <p className="mt-2 max-w-[520px] text-sm text-[var(--text-dim)]">{row.role}</p>
+                  {row.source && (
+                    <p className="mt-1.5 text-xs text-[var(--text-mute)]">
+                      Deployed by{" "}
+                      <span className="font-mono text-[var(--text-dim)]">{row.source}</span>, not
+                      by this project. Used as a dependency.
+                    </p>
+                  )}
                 </div>
 
                 <a

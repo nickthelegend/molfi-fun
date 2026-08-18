@@ -155,8 +155,8 @@ export default async function Hub() {
               ok={contractsLive === contracts.length}
             />
             <LiveStat
-              value={stats.reachable ? (stats.matches?.toLocaleString("en-US") ?? "—") : "offline"}
-              label={stats.reachable ? "matches recorded" : "match counter"}
+              value={stats.reachable ? (stats.settled?.toLocaleString("en-US") ?? "—") : "offline"}
+              label={stats.reachable ? "matches settled onchain" : "match counter"}
               ok={stats.reachable}
             />
             <LiveStat

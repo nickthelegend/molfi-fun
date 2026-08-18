@@ -129,11 +129,12 @@ Postgres  ◄──────── indexed from ─────────�
 | --- | --- |
 | [`apps/hub/`](apps/hub) | molfi.fun. The hub itself: what this place is, and which games are open. Shares CrewKill's tokens and typefaces so the house reads as one house. |
 | [`apps/crewkill/`](apps/crewkill) | CrewKill, at crewkill.molfi.fun. Its client and its keeper, kept together because they are one game. |
-| [`cairo/`](cairo) | The contracts. `CrewKill` is both the settlement layer and a STRK20 anonymizer; `BallotToken` is the ballot note. 23 tests, including a full match through a mock pool. |
+| [`cairo/`](cairo) | The contracts. `CrewKill` is both the settlement layer and a STRK20 anonymizer; `BallotToken` is the ballot note. 39 tests, including a full match through a mock pool. |
+| [`apps/poker/`](apps/poker) | Poker, at poker.molfi.fun. Texas Hold'em with no dealer: the players shuffle and deal between themselves and each step is proved. Ported from [dpinones/mental-poker](https://github.com/dpinones/mental-poker), whose Sepolia verifier contracts it uses rather than redeploying. |
+| [`packages/mental-poker/`](packages/mental-poker) | The poker cryptography: threshold ElGamal on Grumpkin, the shuffle and decrypt proofs, and the deck encoding both the table and the contracts agree on. |
 | [`packages/protocol/`](packages/protocol) | Commitment scheme, types, personas, network config. Shared verbatim by the keeper and the browser. |
 | [`apps/crewkill/keeper/`](apps/crewkill/keeper) | The ship (`game/world.ts`), the agent brains (`game/strategies.ts`, `game/memory.ts`), the phase clock, the chain mirror, and the read API. |
 | [`apps/crewkill/web/`](apps/crewkill/web) | The client. Holds your seat secrets; the only thing that can compute your role. |
-| [`legacy-onechain/`](legacy-onechain) | The original OneChain build, kept for reference. |
 
 **The keeper cannot cheat.** It can only advance phases and play its own agents. Roles,
 tallies, the win condition and every payout are computed by `settle`, which is permissionless
@@ -224,13 +225,16 @@ NETWORK=sepolia KEEPER_ADDRESS=0x… KEEPER_PRIVATE_KEY=0x… pnpm --filter @cre
 
 On a real pool the browser stops using a local key and talks to the user's privacy wallet
 (`strk20InvokeTransaction`), so viewing keys stay in the wallet — see
-[`apps/web/src/lib/strk20.ts`](apps/web/src/lib/strk20.ts). House agents on a real pool need
+[`apps/crewkill/web/src/lib/strk20.ts`](apps/crewkill/web/src/lib/strk20.ts). House agents on a real pool need
 the Privacy SDK's proving service and discovery indexer; without those endpoints the keeper
 disables agents at boot and says so, rather than pretending to run them.
 
-**Not yet deployed to Sepolia or mainnet.** Both need a funded Starknet account, and the
-Sepolia faucet is captcha-gated — see [`docs/DEPLOYING.md`](docs/DEPLOYING.md) for the exact
-commands once you have one. Mainnet spends real STRK, so it is a deliberate, human-run step.
+**Live on Sepolia. Not on mainnet.** CrewKill and CKBALLOT are deployed and answering, and
+every deployment transaction is finalised on L1 — the addresses and hashes are in
+[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md) and can be checked on Voyager. What has *not*
+happened on Sepolia is a played match: the keeper has only ever been pointed at devnet, where
+it has run 604 settlements through 21,000-odd signed transactions. Mainnet spends real STRK,
+so it stays a deliberate, human-run step — see [`docs/DEPLOYING.md`](docs/DEPLOYING.md).
 
 ---
 
@@ -238,7 +242,7 @@ commands once you have one. Mainnet spends real STRK, so it is a deliberate, hum
 
 The game itself is the original OneChain CrewKill: the Skeld map, the sabotage rules, the
 vent and camera systems, the personas, and both strategy families are ported from
-`legacy-onechain/server/src`. What is new is everything underneath — Cairo contracts, the
+the original OneChain build. What is new is everything underneath — Cairo contracts, the
 commitment scheme, the anonymizer, private staking and ballots, and the Detective Pool.
 
 MIT. See [`LICENSE`](LICENSE).

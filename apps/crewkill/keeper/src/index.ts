@@ -11,7 +11,7 @@ import express from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { registerActionRoutes } from "./api/actions.js";
-import { buildMatchView, listMatches } from "./api/views.js";
+import { buildMatchView, listMatches, deploymentTotals} from "./api/views.js";
 import { makeAccount, makeProvider } from "./chain/client.js";
 import { CrewKillContract, loadDeployment } from "./chain/crewkill.js";
 import { canDrivePrivatePool, loadConfig } from "./config.js";
@@ -119,6 +119,21 @@ async function main(): Promise<void> {
 
   app.get("/api/matches", async (_req, res) => {
     res.json(await listMatches(config.network.name));
+  });
+
+  /**
+   * Totals for the whole deployment.
+   *
+   * Separate from /api/matches on purpose. That endpoint pages, and anything counting its
+   * response reports the page size rather than the truth.
+   */
+  app.get("/api/stats", async (_req, res) => {
+    try {
+      res.json(await deploymentTotals(config.network.name));
+    } catch (error) {
+      log.error({ err: error }, "stats failed");
+      res.status(503).json({ error: "stats unavailable" });
+    }
   });
 
   app.get("/api/matches/:id", async (req, res) => {

@@ -68,10 +68,14 @@ export default async function CrewKillPage() {
         </p>
 
         {stats.reachable ? (
-          <div className="mt-8 grid gap-px overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--line)] sm:grid-cols-3">
-            <Cell label="Matches recorded" value={stats.matches?.toLocaleString("en-US") ?? "—"} />
+          <div className="mt-8 grid gap-px overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--line)] sm:grid-cols-2 lg:grid-cols-4">
+            <Cell label="Matches played" value={stats.matches?.toLocaleString("en-US") ?? "—"} />
+            <Cell label="Settled onchain" value={stats.settled?.toLocaleString("en-US") ?? "—"} />
             <Cell label="Seats taken" value={stats.seatsFilled?.toLocaleString("en-US") ?? "—"} />
-            <Cell label="Staked across them" value={pot ? `${pot} STRK` : "—"} />
+            <Cell
+              label="Signed transactions"
+              value={stats.transactions?.toLocaleString("en-US") ?? "—"}
+            />
           </div>
         ) : (
           /* An empty state that says what is wrong and what it is not. A stat block showing
@@ -85,6 +89,13 @@ export default async function CrewKillPage() {
               below are unaffected and still answering.
             </p>
           </div>
+        )}
+
+        {stats.reachable && pot && (
+          <p className="mt-4 text-sm text-[var(--text-dim)]">
+            {pot} STRK staked across them, and every settlement was computed by the contract
+            rather than by the server that ran the match.
+          </p>
         )}
 
         {stats.reachable && stats.network && (
