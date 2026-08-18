@@ -94,6 +94,11 @@ export function SiteFooter() {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/how-privacy-works" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
+                    How privacy works
+                  </Link>
+                </li>
+                <li>
                   <Link href="/balance" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
                     Balance
                   </Link>
