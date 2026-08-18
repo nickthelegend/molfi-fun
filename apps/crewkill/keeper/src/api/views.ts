@@ -311,6 +311,7 @@ export async function balanceStats(
 ): Promise<{
   totalSettled: number;
   crewWins: number;
+  eliminationsByRound: Array<{ round: number; kills: number; votes: number }>;
   byShip: Array<{ mapId: string; settled: number; crewWins: number }>;
   byPersona: Array<{ persona: string; played: number; survived: number; impostorRuns: number }>;
 }> {
@@ -355,9 +356,38 @@ export async function balanceStats(
     personas.set(key, entry);
   }
 
+  /**
+   * How seats leave a match, by round.
+   *
+   * The interesting shape is the crossover: early rounds are decided by kills because the
+   * crew has nothing to go on yet, and later rounds by votes once there is evidence. If that
+   * crossover disappeared it would mean the deduction half had stopped mattering, which is a
+   * balance problem no win rate would show.
+   */
+  const eliminations = await prisma.seat.groupBy({
+    by: ["eliminatedRound", "eliminatedBy"],
+    _count: true,
+    where: {
+      match: { deploymentId, phase: MatchPhase.Settled },
+      eliminatedRound: { not: null },
+    },
+  });
+
+  const byRound = new Map<number, { kills: number; votes: number }>();
+  for (const row of eliminations) {
+    if (row.eliminatedRound === null) continue;
+    const entry = byRound.get(row.eliminatedRound) ?? { kills: 0, votes: 0 };
+    if (row.eliminatedBy === "kill") entry.kills += row._count;
+    if (row.eliminatedBy === "vote") entry.votes += row._count;
+    byRound.set(row.eliminatedRound, entry);
+  }
+
   return {
     totalSettled: settled.length,
     crewWins: settled.filter((m) => m.crewWon).length,
+    eliminationsByRound: [...byRound.entries()]
+      .map(([round, v]) => ({ round, ...v }))
+      .sort((a, b) => a.round - b.round),
     byShip: [...ships.entries()]
       .map(([mapId, v]) => ({ mapId, ...v }))
       .sort((a, b) => b.settled - a.settled),

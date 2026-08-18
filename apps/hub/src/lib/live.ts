@@ -225,6 +225,7 @@ export async function activity(): Promise<ActivityRow[] | null> {
 export interface BalanceStats {
   totalSettled: number;
   crewWins: number;
+  eliminationsByRound: Array<{ round: number; kills: number; votes: number }>;
   byShip: Array<{ mapId: string; settled: number; crewWins: number }>;
   byPersona: Array<{ persona: string; played: number; survived: number; impostorRuns: number }>;
 }

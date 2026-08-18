@@ -79,6 +79,48 @@ export default async function Balance() {
               </p>
             )}
 
+            {stats.eliminationsByRound.length > 0 && (
+              <>
+                <h2 className="mt-14 text-2xl font-semibold tracking-tight">How seats leave</h2>
+                <p className="mt-3 max-w-[640px] text-[var(--text-dim)]">
+                  The shape worth watching is the crossover. Early rounds should be decided by
+                  kills, because the crew has nothing to go on yet; later rounds by votes, once
+                  there is evidence. If that crossover disappeared it would mean the deduction
+                  half had stopped mattering — a balance problem no win rate would show.
+                </p>
+                <ul className="mt-6 space-y-2">
+                  {stats.eliminationsByRound.map((row) => {
+                    const total = row.kills + row.votes;
+                    const killPct = total === 0 ? 0 : Math.round((row.kills / total) * 100);
+                    return (
+                      <li
+                        key={row.round}
+                        className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-3">
+                          <span className="font-semibold">Round {row.round}</span>
+                          <span className="font-mono text-xs text-[var(--text-mute)]">
+                            {row.kills} killed · {row.votes} voted out
+                          </span>
+                        </div>
+                        <div
+                          className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]"
+                          role="img"
+                          aria-label={`Round ${row.round}: ${row.kills} killed, ${row.votes} voted out`}
+                        >
+                          <div style={{ width: `${killPct}%`, background: "#e06c6c" }} />
+                          <div style={{ width: `${100 - killPct}%`, background: "var(--accent)" }} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="mt-3 text-xs text-[var(--text-mute)]">
+                  Red is killed by an impostor, blue is voted out by the table.
+                </p>
+              </>
+            )}
+
             <h2 className="mt-14 text-2xl font-semibold tracking-tight">By ship</h2>
             <p className="mt-3 max-w-[620px] text-[var(--text-dim)]">
               Which ship a match runs on is drawn from its final seed, so nobody picks it.
