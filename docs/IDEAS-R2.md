@@ -91,3 +91,55 @@ judge in the ninety seconds they will spend here, and several actively hurt: a g
 token or an NFT skin system on a privacy-pool game reads as unfocused, and unfocused is
 the most common way a technically strong hackathon project loses. 100 is deliberately the
 mainnet deploy, which is a decision with sixteen days on it and money attached, not a task.
+
+---
+
+## What actually got built
+
+Worked top of the ranked list down. Everything below was run and checked, not just compiled.
+
+### Built and verified
+
+| # | Idea | Evidence |
+| --- | --- | --- |
+| 1 | Hub reads live keeper counts | 25 matches, 124 seats, 124 STRK, from the keeper's own rows |
+| 2 | /crewkill and /poker pages | both 200, each showing its own live contracts |
+| 3 | Per-game health probes | real HTTP probe, "2 of 2 games responding" |
+| 4 | Contract registry with live class hashes | 6 of 6 answering, read per request |
+| 5 | OG cards for three routes | 1200x630 PNGs, no web font fetched |
+| 6 | Error boundaries | route and root on the hub, a class boundary on poker |
+| 7 | Poker keyboard play | F, C, R plus presets, with a legend |
+| 8 | CrewKill keyboard voting | digits, Enter, S, Escape |
+| 9 | Honest empty states | keeper offline says so rather than showing zero |
+| 10 | robots.txt and sitemap.xml | generated from the real route list |
+| 11 | Shared header and footer | one component, three surfaces |
+| 15 | Copy buttons on every address | full value copied, short one shown |
+| 16 | Wrong-network banner | compares wallet chain id to the table's |
+| 17 | Live hand strength | the same evaluator the showdown uses |
+| 20 | 404 handling | verified 404 on an unknown hub route |
+| 21 | Live Sepolia block height | visibly moves between page loads |
+| 24 | Pot odds on the betting panel | computed in bigint, tested |
+| 49 | Explorer links per contract | Voyager, per address |
+
+### Bugs found while building, and fixed
+
+Four defects turned up that were not on the list, because nobody had looked in these
+places before. Each is described in the commit that fixes it.
+
+1. Every card on the poker table displayed the wrong rank. Zero of thirteen matched.
+2. Two of three ships had a sabotage that could never be repaired.
+3. The poker app could not build for production at all.
+4. The poker client POSTed to about:blank every five seconds, forever.
+
+### Test coverage added
+
+Two packages had none. Poker went from no test script to 20 tests; the keeper's test
+script pointed at vitest with no test files and exited 1 on every run, and now has 34.
+The protocol gained 12 invariant tests and went from 53 to 65.
+
+### Not built
+
+Tier 2 items 22, 23, 25 to 48 and 50 are real and would improve the product, and were
+not reached. Tier 3 was deliberately left alone for the reasons given above it. Nothing
+here was skipped for want of a credential except the two poker items that need a funded
+wallet, which are recorded as untestable in the test plan rather than as passing.
