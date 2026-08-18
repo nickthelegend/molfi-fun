@@ -29,6 +29,7 @@ import { BallotBoard } from"@/components/ballots";
 import { DetectiveBreakdown, IntegrityAudit, PrivacyLedger } from"@/components/privacy";
 import { ChainLog, DeploymentCard } from"@/components/chainlog";
 import { ShipView } from"@/components/shipview";
+import { CueToggle, useCues } from"@/components/cues";
 import { Cutscenes } from"@/components/cutscenes";
 import { Primer, PrimerButton } from"@/components/primer";
 import { MainMenu, type DeploymentTotals } from"@/components/mainmenu";
@@ -240,6 +241,21 @@ export default function Home() {
     },
     [match],
   );
+
+  /**
+   * Audible phase changes.
+   *
+   * Keyed on the round as well as the phase, so entering "night" in round 3 is a different
+   * event from entering it in round 2 and each one gets its own cue.
+   */
+  const phaseKey = match
+    ? match.phase === MatchPhase.Settled
+      ? "settled"
+      : match.roundPhase
+        ? `${match.roundPhase}:${match.round}`
+        : null
+    : null;
+  const cues = useCues(phaseKey);
 
   const run = useCallback(
     async (label: string, action: () => Promise<string>) => {
@@ -456,6 +472,7 @@ export default function Home() {
         <Primer />
         <div className="mx-auto max-w-3xl px-5 pt-5">
           <Header
+            cues={cues}
             match={match}
             live={live}
             pool={pool}
@@ -584,6 +601,7 @@ export default function Home() {
         {/* Top: identity, phase, controls. */}
         <div className="pointer-events-auto bg-[var(--color-hull)]/85 px-4 py-2.5 backdrop-blur">
           <Header
+            cues={cues}
             match={match}
             live={live}
             pool={pool}
@@ -705,6 +723,7 @@ export default function Home() {
 
 
 function Header({
+  cues,
   match,
   live,
   pool,
@@ -721,6 +740,8 @@ function Header({
   compact?: boolean;
   /** The landing screen shows the logo image, so the text wordmark would repeat it. */
   wordmark?: boolean;
+  /** Passed down rather than hooked here, because the state belongs to the page. */
+  cues?: { enabled: boolean; toggle: () => void };
 }) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -754,6 +775,7 @@ function Header({
           Archive
         </a>
         <SubstrateSwitch />
+        {cues && <CueToggle enabled={cues.enabled} onToggle={cues.toggle} />}
         {pool ? (
           <span className="border border-[var(--color-line)] px-2 py-1 text-[11px] text-[var(--color-dim)]">
             {config.network} / {pool.address.slice(0, 6)}…{pool.address.slice(-4)}
