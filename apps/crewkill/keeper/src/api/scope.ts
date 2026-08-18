@@ -12,18 +12,26 @@
 
 import { prisma } from "../db.js";
 
-let cached: { network: string; id: number } | null = null;
+let cached: { network: string; gameAddress: string; id: number } | null = null;
 
-/** The active deployment's row id, resolved once per process. */
-export async function activeDeploymentId(network: string): Promise<number> {
-  if (cached?.network === network) return cached.id;
-  const row = await prisma.deployment.findUnique({ where: { network } });
+/**
+ * The active deployment's row id, resolved once per process.
+ *
+ * Resolved by contract address as well as network. A devnet that restarts gets new contract
+ * addresses, and matching on the network alone would serve the previous deployment's matches
+ * as though they belonged to the contracts now running.
+ */
+export async function activeDeploymentId(network: string, gameAddress: string): Promise<number> {
+  if (cached?.network === network && cached.gameAddress === gameAddress) return cached.id;
+  const row = await prisma.deployment.findUnique({
+    where: { network_gameAddress: { network, gameAddress } },
+  });
   if (!row) {
     // Before the first match is opened there is no row yet. -1 matches nothing, which is the
     // correct answer: this chain has no matches.
     return -1;
   }
-  cached = { network, id: row.id };
+  cached = { network, gameAddress, id: row.id };
   return row.id;
 }
 

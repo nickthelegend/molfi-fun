@@ -2,10 +2,10 @@
   "network": "devnet",
   "chainId": "0x534e5f5345504f4c4941",
   "rpcUrl": "http://127.0.0.1:5050/rpc",
-  "game": "0x5bcdc75036e5dbf5463383d2c1a546c95ebe74f74304a3509bc1a6bbf68f743",
-  "ballot": "0x6e1542dbdb5a82360dcf54976c817fdfce991f9aa21367c0ec607e57beeb7b8",
-  "pool": "0x40ac98acb422cea96d58df8d7c19f7eb71c5eaafd3a4ae5e8e7cedab6faae74",
-  "stakeToken": "0x6d160e987928a5712dcc4a12bb5fd34bdbbd7b548f23a8dce94805aafe97dc",
+  "game": "0x3599f42ae5b7a6ce98be8fff3b4342c128088fb6e072683933fa6060dd0d6ec",
+  "ballot": "0x3c2b485d4c81785cb9d81a4bb3b7d73be4b2e9592c273026d52e8f6068a3b2e",
+  "pool": "0x437056e72fd9d8c4e705b1fe6ff1db71b403caa557a419f11a3e63bdc8133fa",
+  "stakeToken": "0x371cb1e5beca34c8533a188f81bf40053f2f5bbd3b3b6d8edf84792c064a179",
   "owner": "0x34ba56f92265f0868c57d3fe72ecab144fc96f97954bbbc4252cef8e8a979ba",
   "keeper": "0x34ba56f92265f0868c57d3fe72ecab144fc96f97954bbbc4252cef8e8a979ba",
   "transactions": [
@@ -15,7 +15,7 @@
     },
     {
       "kind": "deploy:MockERC20",
-      "hash": "0x61dead44eb43301c6fbc8bc2604560e1e9f718f8ef733c2ff67499f2f5a479f"
+      "hash": "0x6376ae5dcd0dda4b80ab97fb60787246fcf61b687706733532bbd39cb41923a"
     },
     {
       "kind": "declare:MockPrivacyPool",
@@ -23,7 +23,7 @@
     },
     {
       "kind": "deploy:MockPrivacyPool",
-      "hash": "0x3e7541ca0797fed50054f82a92a3ca9cb97d9d42fdb646e3aebff2edc9dc528"
+      "hash": "0x6d2a5919e9c7292de674e4e53769a943371b47f06eb534ef51c6417099a3cdd"
     },
     {
       "kind": "declare:BallotToken",
@@ -31,7 +31,7 @@
     },
     {
       "kind": "deploy:BallotToken",
-      "hash": "0x4d40a5d9b64941b8c9604b9dae20f1bf5ae44f7b18663ee3d5d9f7936d190c6"
+      "hash": "0x346ef551f18690440f15432cd8af5b73e739fafdcf8b0c1ce17830f0ce6111b"
     },
     {
       "kind": "declare:CrewKill",
@@ -39,12 +39,12 @@
     },
     {
       "kind": "deploy:CrewKill",
-      "hash": "0x3ee376cb6257b09be604cbc0c1de4ba5564a9b69d92023a02d00a80c2aa3cb0"
+      "hash": "0x6b8d9b9ed2b104218be9e372d384d74285f676854deed2998b70467e4298307"
     },
     {
       "kind": "invoke:set_minter",
-      "hash": "0xe31cc45197da6decb06e81bfaa83fde31b830319d14518918bd9cc15dd9cd0"
+      "hash": "0x119b85e345558b5cdb31361a21a698dea3bc514177079c4edc4ba3a22fef056"
     }
   ],
-  "deployedAt": "2026-08-17T08:11:55.667Z"
+  "deployedAt": "2026-08-18T23:00:40.216Z"
 }

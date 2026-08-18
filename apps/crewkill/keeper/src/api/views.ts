@@ -134,7 +134,7 @@ function taskProgressOf(
   return Math.min(1, done / total);
 }
 
-export async function listMatches(network: string): Promise<
+export async function listMatches(network: string, gameAddress: string): Promise<
   Array<{
     dbId: number;
     matchId: number;
@@ -147,7 +147,7 @@ export async function listMatches(network: string): Promise<
   }>
 > {
   const rows = await prisma.match.findMany({
-    where: { deploymentId: await activeDeploymentId(network) },
+    where: { deploymentId: await activeDeploymentId(network, gameAddress) },
     orderBy: { id: "desc" },
     take: 25,
   });
@@ -174,7 +174,7 @@ export async function listMatches(network: string): Promise<
  * These are aggregates computed by the database over every row in the deployment, so the
  * number moves when the truth moves.
  */
-export async function deploymentTotals(network: string): Promise<{
+export async function deploymentTotals(network: string, gameAddress: string): Promise<{
   matches: number;
   settled: number;
   aborted: number;
@@ -182,7 +182,7 @@ export async function deploymentTotals(network: string): Promise<{
   potTotal: string;
   transactions: number;
 }> {
-  const deploymentId = await activeDeploymentId(network);
+  const deploymentId = await activeDeploymentId(network, gameAddress);
 
   const [matches, settled, aborted, seatAgg, potRows, transactions] = await Promise.all([
     prisma.match.count({ where: { deploymentId } }),
@@ -190,7 +190,9 @@ export async function deploymentTotals(network: string): Promise<{
     prisma.match.count({ where: { deploymentId, phase: MatchPhase.Aborted } }),
     prisma.match.aggregate({ where: { deploymentId }, _sum: { seatsFilled: true } }),
     prisma.match.findMany({ where: { deploymentId }, select: { potAmount: true } }),
-    prisma.chainTx.count({ where: { network } }),
+    // Scoped to the deployment, like every other figure here. Counting by network would
+    // fold a retired deployment's transactions into the live one's totals.
+    prisma.chainTx.count({ where: { deploymentId } }),
   ]);
 
   // Pots are decimal strings wider than a JS number stays exact at, so they are summed as

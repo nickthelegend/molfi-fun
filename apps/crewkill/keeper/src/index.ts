@@ -118,7 +118,7 @@ async function main(): Promise<void> {
   });
 
   app.get("/api/matches", async (_req, res) => {
-    res.json(await listMatches(config.network.name));
+    res.json(await listMatches(config.network.name, deployment.game));
   });
 
   /**
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
    */
   app.get("/api/stats", async (_req, res) => {
     try {
-      res.json(await deploymentTotals(config.network.name));
+      res.json(await deploymentTotals(config.network.name, deployment.game));
     } catch (error) {
       log.error({ err: error }, "stats failed");
       res.status(503).json({ error: "stats unavailable" });
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
     const row = await prisma.match.findFirst({
       // Scoped to the chain this keeper is actually talking to, so a stale run against another
       // network can never be served as if it were this one.
-      where: { onchainId, deploymentId: await activeDeploymentId(config.network.name) },
+      where: { onchainId, deploymentId: await activeDeploymentId(config.network.name, deployment.game) },
       orderBy: { id: "desc" },
     });
     if (!row) {
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
       return;
     }
     const row = await prisma.match.findFirst({
-      where: { onchainId, deploymentId: await activeDeploymentId(config.network.name) },
+      where: { onchainId, deploymentId: await activeDeploymentId(config.network.name, deployment.game) },
       orderBy: { id: "desc" },
     });
     if (!row) {
@@ -192,7 +192,7 @@ async function main(): Promise<void> {
 
   app.get("/api/lobby", async (_req, res) => {
     const row = await prisma.match.findFirst({
-      where: { phase: 0, deploymentId: await activeDeploymentId(config.network.name) },
+      where: { phase: 0, deploymentId: await activeDeploymentId(config.network.name, deployment.game) },
       orderBy: { id: "desc" },
     });
     if (!row) {
@@ -254,7 +254,7 @@ async function main(): Promise<void> {
     res.json({ dbId: row.id, matchId: Number(row.onchainId) });
   });
 
-  registerActionRoutes(app, engine, config.network.name);
+  registerActionRoutes(app, engine, config.network.name, deployment.game);
 
   // Nothing may leave this server as HTML. A client that parses every response as JSON is
   // entitled to get JSON even when something upstream threw.
@@ -283,7 +283,7 @@ async function main(): Promise<void> {
     void (async () => {
       // A new socket gets the current match immediately, scoped to this chain.
       const row = await prisma.match.findFirst({
-        where: { deploymentId: await activeDeploymentId(config.network.name) },
+        where: { deploymentId: await activeDeploymentId(config.network.name, deployment.game) },
         orderBy: { id: "desc" },
       });
       if (row) {

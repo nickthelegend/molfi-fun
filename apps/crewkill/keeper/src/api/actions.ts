@@ -30,7 +30,12 @@ const actionSchema = z.object({
 /** Trust-on-first-use bindings from seat to capability token, per match. */
 const seatTokens = new Map<string, string>();
 
-export function registerActionRoutes(app: Express, engine: Engine, network: string): void {
+export function registerActionRoutes(
+  app: Express,
+  engine: Engine,
+  network: string,
+  gameAddress: string,
+): void {
   app.post("/api/matches/:id/action", async (req, res) => {
     const parsed = actionSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -48,7 +53,7 @@ export function registerActionRoutes(app: Express, engine: Engine, network: stri
       // stale id from another network would be accepted and then fail at the contract.
       where: {
         onchainId: BigInt(req.params.id),
-        deploymentId: await activeDeploymentId(network),
+        deploymentId: await activeDeploymentId(network, gameAddress),
       },
       orderBy: { id: "desc" },
     });

@@ -1272,8 +1272,15 @@ export class Engine {
   }
 
   private async deploymentRow() {
+    // Keyed on the addresses as well as the network, so redeploying starts a fresh history
+    // rather than adopting the previous deployment's matches.
     return prisma.deployment.upsert({
-      where: { network: this.deps.deployment.network },
+      where: {
+        network_gameAddress: {
+          network: this.deps.deployment.network,
+          gameAddress: this.deps.deployment.game,
+        },
+      },
       create: {
         network: this.deps.deployment.network,
         gameAddress: this.deps.deployment.game,
@@ -1292,9 +1299,17 @@ export class Engine {
   }
 
   private async recordTx(matchId: number, kind: string, hash: string): Promise<void> {
+    const deployment = await this.deploymentRow();
     await prisma.chainTx.upsert({
-      where: { network_hash: { network: this.deps.deployment.network, hash } },
-      create: { matchId, network: this.deps.deployment.network, kind, hash, status: "accepted" },
+      where: { deploymentId_hash: { deploymentId: deployment.id, hash } },
+      create: {
+        matchId,
+        deploymentId: deployment.id,
+        network: this.deps.deployment.network,
+        kind,
+        hash,
+        status: "accepted",
+      },
       update: { status: "accepted" },
     });
   }
