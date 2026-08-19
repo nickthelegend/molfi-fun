@@ -198,6 +198,7 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
           <Working match={match} />
           <ShareResult match={match} result={result} />
           <BadgeEmbed matchId={match.matchId} />
+          <ScanToVerify matchId={match.matchId} />
 
           <p className="mt-4 text-[11px] leading-relaxed text-[var(--color-dim)]">
             The keeper was asked for this match&apos;s published inputs and nothing else. Every
@@ -540,6 +541,47 @@ function VoteGraph({ match }: { match: MatchView }) {
         the roles were only published once play ended, which is what makes this readable now
         and unreadable then.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Scan it and check for yourself.
+ *
+ * The demo problem: somebody watching over your shoulder cannot verify anything. This puts
+ * the audit on their phone, in their browser, against data they fetched — which is a far
+ * stronger demonstration than being shown a tick on somebody else's laptop.
+ */
+function ScanToVerify({ matchId }: { matchId: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-3 border border-[var(--color-line)] p-3">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-[13px] text-[var(--color-ink)]">Check this on your own phone</span>
+        <span className="tele">{open ? "hide" : "show"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 flex flex-wrap items-center gap-4">
+          <img
+            src={`/qr/${matchId}`}
+            alt={`QR code linking to the verification page for match ${matchId}`}
+            width={160}
+            height={160}
+            className="border border-[var(--color-line)]"
+          />
+          <p className="max-w-[280px] text-[11px] leading-relaxed text-[var(--color-dim)]">
+            Scanning opens this same page on your device. The recomputation runs there, in your
+            browser, against data your phone fetched — so you are not taking this screen&apos;s
+            word for anything.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
