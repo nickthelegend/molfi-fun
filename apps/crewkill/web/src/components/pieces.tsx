@@ -61,17 +61,17 @@ export function Panel({
  * because a player who chose paper meant it.
  */
 export function SubstrateSwitch() {
-  const [substrate, setSubstrate] = useState<"phosphor" |"newsprint" | null>(null);
+  const [substrate, setSubstrate] = useState<"phosphor" |"newsprint" |"contrast" | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("crewkill.substrate");
-    if (stored ==="phosphor" || stored ==="newsprint") {
+    if (stored ==="phosphor" || stored ==="newsprint" || stored ==="contrast") {
       setSubstrate(stored);
       document.documentElement.dataset.substrate = stored;
     }
   }, []);
 
-  const choose = (next:"phosphor" |"newsprint") => {
+  const choose = (next:"phosphor" |"newsprint" |"contrast") => {
     setSubstrate(next);
     document.documentElement.dataset.substrate = next;
     localStorage.setItem("crewkill.substrate", next);
@@ -86,7 +86,7 @@ export function SubstrateSwitch() {
 
   return (
     <div className="inline-flex" role="group" aria-label="Display substrate">
-      {(["phosphor","newsprint"] as const).map((mode) => (
+      {(["phosphor","newsprint","contrast"] as const).map((mode) => (
         <button
           key={mode}
           onClick={() => choose(mode)}
@@ -98,7 +98,8 @@ export function SubstrateSwitch() {
               : undefined
           }
         >
-          {mode ==="phosphor" ?"CRT" :"Print"}
+          {/* Named as materials, except the third, which is named for what it is for. */}
+          {mode ==="phosphor" ?"CRT" : mode ==="newsprint" ?"Print" :"Contrast"}
         </button>
       ))}
     </div>

@@ -407,3 +407,40 @@ body {
   /* The information still has to arrive; only the turning goes away. */
   .role-flip-inner { transition: none; }
 }
+
+/* ── HIGH CONTRAST ────────────────────────────────────────────────────────────────
+   A third substrate, for anyone the other two do not serve.
+
+   Phosphor and newsprint are both atmospheric: dim greens on near-black, warm greys on
+   cream. Atmosphere is exactly what costs legibility, and a player who needs contrast should
+   not have to choose between reading the game and the game looking like itself.
+
+   Pure black and white at the extremes, with the two role colours pushed to the brightest
+   values that still read as themselves. Panel fills go flat, because a translucent panel over
+   a busy map is the single worst thing here for contrast. */
+:root[data-substrate="contrast"] {
+  --color-hull: #000000;
+  --color-panel: #000000;
+  --color-line: #ffffff;
+  --color-line-2: #ffffff;
+  --color-ink: #ffffff;
+  --color-dim: #d8d8d8;
+  --color-cyan: #4fe3ff;
+  --color-alarm: #ff6b6b;
+  --color-signal: #5cff8f;
+  --color-amber: #ffd24a;
+  color-scheme: dark;
+}
+
+/* Borders carry structure once fills are flat, so they have to be visible rather than hinted. */
+:root[data-substrate="contrast"] .frame,
+:root[data-substrate="contrast"] .switch,
+:root[data-substrate="contrast"] .role-face {
+  border-color: #ffffff;
+  background: #000000;
+}
+
+/* The map's rooms are filled from data, so they keep their colours; their outlines do not. */
+:root[data-substrate="contrast"] svg [stroke] {
+  stroke-opacity: 1;
+}
