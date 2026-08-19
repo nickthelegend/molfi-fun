@@ -30,6 +30,7 @@ import { DetectiveBreakdown, IntegrityAudit, PrivacyLedger } from"@/components/p
 import { ChainLog, DeploymentCard } from"@/components/chainlog";
 import { ShipView } from"@/components/shipview";
 import { CueToggle, useCues } from"@/components/cues";
+import { RoleFlip } from"@/components/roleflip";
 import { Cutscenes } from"@/components/cutscenes";
 import { Primer, PrimerButton } from"@/components/primer";
 import { MainMenu, type DeploymentTotals } from"@/components/mainmenu";
@@ -814,17 +815,7 @@ function SeatSummary({
     <div className="space-y-3 text-[13px]">
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Seat" value={yourSeat === null ?"pending" : `#${yourSeat}`} />
-        <Stat
-          label="Role"
-          value={yourRole ??"sealed"}
-          tone={
-            yourRole ==="impostor"
-              ?"text-[var(--color-alarm)]"
-              : yourRole ==="crew"
-                ?"text-[var(--color-cyan)]"
-                :"text-[var(--color-dim)]"
-          }
-        />
+        <RoleFlip role={yourRole} />
       </div>
       <p className="text-[12px] text-[var(--color-dim)]">
         Your role is computed in this browser from a secret the keeper has never seen. Keep the

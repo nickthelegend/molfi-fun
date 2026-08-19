@@ -366,3 +366,44 @@ body {
   font-size: 10px;
   color: var(--color-dim);
 }
+
+/* ── ROLE REVEAL ──────────────────────────────────────────────────────────────────
+   The one card in the game that turns over.
+
+   Your role is decided once and shapes the whole match, and it used to appear the way a seat
+   count appears. This is the only real animation on the page on purpose: motion spent
+   everywhere means nothing anywhere. */
+.role-flip {
+  perspective: 700px;
+  height: 100%;
+}
+.role-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  /* Weighted so it reads as a card with mass rather than a value swapping. */
+  transition: transform 720ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.role-flip[data-flipped="true"] .role-flip-inner {
+  transform: rotateX(180deg);
+}
+.role-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-line);
+  background: var(--color-panel);
+  backface-visibility: hidden;
+}
+.role-face-back {
+  transform: rotateX(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The information still has to arrive; only the turning goes away. */
+  .role-flip-inner { transition: none; }
+}
