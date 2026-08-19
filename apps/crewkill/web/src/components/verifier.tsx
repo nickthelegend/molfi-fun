@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { auditMatch, roleDraw, drawIsImpostor, type MatchView } from "@crewkill/protocol";
+import {
+  auditMatch,
+  roleDraw,
+  drawIsImpostor,
+  type MatchView,
+  type SeatView,
+} from "@crewkill/protocol";
 import { API_URL } from "@/lib/api";
 
 /**
@@ -196,6 +202,7 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
           <SeedTimeline match={match} />
           <VoteGraph match={match} />
           <SaidVersusWas match={match} />
+          <BallotRecovery matchId={match.matchId} seats={match.seats} />
           <Working match={match} />
           <ShareResult match={match} result={result} />
           <BadgeEmbed matchId={match.matchId} />
@@ -661,6 +668,143 @@ function SaidVersusWas({ match }: { match: MatchView }) {
               );
             })}
           </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+interface DisclosedSeat {
+  index: number;
+  persona: string;
+  revealedRole: string | null;
+  ballots: Array<{ round: number; target: number | null }> | null;
+  note?: string;
+}
+
+/**
+ * Who actually voted for whom, recovered rather than stored.
+ *
+ * During the match a ballot is a hash: the chain holds a receipt and nobody can invert it.
+ * Afterwards, with the role secrets published, the same receipt can be recomputed for every
+ * candidate target until one matches — so a vote that was unreadable becomes arithmetic.
+ *
+ * That is the single clearest demonstration of "private while it matters, checkable once it
+ * does not", and it is worth the cost: the keeper performs a real contract read per candidate
+ * and reports how many it made, so the number is a receipt for the work rather than a claim.
+ *
+ * Loaded on demand. Eighty-odd on-chain reads is not something to do to somebody who only
+ * wanted the verdict.
+ */
+function BallotRecovery({ matchId, seats }: { matchId: number; seats: SeatView[] }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [data, setData] = useState<{
+    chainReads: number;
+    roundsPlayed: number;
+    seats: DisclosedSeat[];
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setState("loading");
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/matches/${matchId}/disclosure`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`keeper returned ${res.status}`);
+      const body = await res.json();
+      if (!body.applicable) {
+        setState("error");
+        setError(body.reason ?? "This match cannot be disclosed.");
+        return;
+      }
+      setData(body);
+      setState("done");
+    } catch (err) {
+      setState("error");
+      setError(err instanceof Error ? err.message : "Could not reach the keeper.");
+    }
+  };
+
+  const nameOf = (index: number) => seats[index]?.persona ?? `#${index}`;
+
+  return (
+    <div className="mt-4 border border-[var(--color-line)] p-3">
+      <p className="tele">Who voted for whom</p>
+      <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-dim)]">
+        During the match a ballot is a hash and nobody can read it. With the role secrets
+        published, the receipt can be recomputed against each candidate until one matches — so
+        a vote that was unreadable becomes arithmetic.
+      </p>
+
+      {state === "idle" && (
+        <button onClick={() => void load()} className="switch mt-3 w-full text-[11px]">
+          Recover the ballots
+        </button>
+      )}
+
+      {state === "loading" && (
+        <p className="mt-3 text-[11px] text-[var(--color-dim)]">
+          Recomputing receipts against the contract. This makes real on-chain reads, so it
+          takes a moment.
+        </p>
+      )}
+
+      {state === "error" && error && (
+        <p className="mt-3 text-[11px]" style={{ color: "var(--color-alarm)" }}>
+          {error}
+        </p>
+      )}
+
+      {state === "done" && data && (
+        <>
+          <p className="mt-3 text-[11px] text-[var(--color-dim)]">
+            Recovered with{" "}
+            <span className="numeric text-[var(--color-cyan)]">{data.chainReads}</span> contract
+            reads across {data.roundsPlayed} rounds.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {data.seats.map((seat) => (
+              <li key={seat.index} className="text-[11px]">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="uppercase"
+                    style={{
+                      color:
+                        seat.revealedRole === "impostor"
+                          ? "var(--color-alarm)"
+                          : seat.revealedRole === "crew"
+                            ? "var(--color-cyan)"
+                            : "var(--color-dim)",
+                      minWidth: "4.5rem",
+                    }}
+                  >
+                    {seat.revealedRole ?? "sealed"}
+                  </span>
+                  <span className="text-[var(--color-ink)]">{seat.persona}</span>
+                </div>
+                {seat.ballots === null ? (
+                  <p className="mt-0.5 pl-[5rem] text-[var(--color-dim)]">
+                    {seat.note ?? "no ballots recovered"}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 pl-[5rem] text-[var(--color-dim)]">
+                    {seat.ballots
+                      .map((b) =>
+                        b.target === null
+                          ? `r${b.round} skipped`
+                          : `r${b.round} → ${nameOf(b.target)}`,
+                      )
+                      .join(" · ")}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-[11px] leading-relaxed text-[var(--color-dim)]">
+            A seat that never published its role secret keeps its ballots sealed permanently.
+            That is not a gap in the disclosure — it is the design working: without the secret
+            there is nothing to recompute against, by anyone, ever.
+          </p>
         </>
       )}
     </div>
