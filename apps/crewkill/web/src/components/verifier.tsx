@@ -195,6 +195,7 @@ export function Verifier({ initialMatchId }: { initialMatchId?: string }) {
 
           <SeedTimeline match={match} />
           <VoteGraph match={match} />
+          <SaidVersusWas match={match} />
           <Working match={match} />
           <ShareResult match={match} result={result} />
           <BadgeEmbed matchId={match.matchId} />
@@ -581,6 +582,86 @@ function ScanToVerify({ matchId }: { matchId: number }) {
             word for anything.
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What each seat said, next to what they turned out to be.
+ *
+ * This is the read that is impossible during the match and trivial after it, which is the
+ * property the whole design exists to produce. Every line was said before anyone could know
+ * who was lying; the roles were published once play ended. Putting the two together lets you
+ * go back through the match and watch an impostor build a case against a crewmate.
+ *
+ * Nothing here is inferred. The lines are the events the keeper recorded as they happened,
+ * and the roles are the ones the seats published afterwards.
+ */
+function SaidVersusWas({ match }: { match: MatchView }) {
+  const [open, setOpen] = useState(false);
+
+  const roleOf = new Map(
+    match.seats.filter((s) => s.revealedRole).map((s) => [s.index, s.revealedRole as string]),
+  );
+  if (roleOf.size === 0) return null;
+
+  const lines = (match.events ?? []).filter(
+    (e) => e.kind === "chat" && typeof e.seat === "number",
+  );
+  if (lines.length === 0) return null;
+
+  const impostorLines = lines.filter((e) => roleOf.get(e.seat as number) === "impostor").length;
+
+  return (
+    <div className="mt-4 border border-[var(--color-line)] p-3">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <span className="text-[13px] text-[var(--color-ink)]">
+          What each seat said, and what they were
+        </span>
+        <span className="tele">{open ? "hide" : "show"}</span>
+      </button>
+
+      {!open && (
+        <p className="mt-2 text-[11px] text-[var(--color-dim)]">
+          {lines.length} lines, {impostorLines} of them from a seat that turned out to be an
+          impostor.
+        </p>
+      )}
+
+      {open && (
+        <>
+          <p className="mt-2 mb-3 text-[11px] leading-relaxed text-[var(--color-dim)]">
+            Every line was said before anyone could know who was lying. The roles were
+            published only once play ended, which is what makes this readable now and made it
+            unreadable then.
+          </p>
+          <ul className="max-h-72 space-y-1 overflow-y-auto">
+            {lines.map((line) => {
+              const role = roleOf.get(line.seat as number);
+              const impostor = role === "impostor";
+              return (
+                <li key={line.id} className="flex gap-2 text-[11px]">
+                  <span className="numeric shrink-0 text-[var(--color-dim)]">r{line.round}</span>
+                  <span
+                    className="shrink-0 uppercase"
+                    style={{
+                      color: impostor ? "var(--color-alarm)" : "var(--color-cyan)",
+                      minWidth: "4.5rem",
+                    }}
+                  >
+                    {role ?? "unknown"}
+                  </span>
+                  <span className="min-w-0 flex-1 text-[var(--color-dim)]">{line.text}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </div>
   );
