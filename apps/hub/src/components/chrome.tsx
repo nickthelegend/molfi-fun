@@ -19,12 +19,17 @@ const NAV: Array<{ href: string; label: string }> = [
 export function SiteHeader({ current }: { current?: string }) {
   return (
     <nav aria-label="Primary" className="sticky top-0 z-50 bg-black/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
+      {/* Wraps rather than pushing the page wide.
+
+          Four nav items and the wordmark do not fit on one 380px line, and adding the fourth
+          made every hub page scroll sideways by 38px. A second line on a phone is ordinary;
+          a horizontally scrolling page is not. */}
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-6 py-3">
         <Link href="/" className="text-base font-semibold tracking-tight no-underline">
           molfi<span className="text-[var(--accent)]">.fun</span>
         </Link>
 
-        <div className="flex items-center gap-1 sm:gap-4">
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 sm:gap-x-4">
           {NAV.map((item) => (
             <Link
               key={item.href}
