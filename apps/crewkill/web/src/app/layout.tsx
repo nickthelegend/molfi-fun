@@ -24,7 +24,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title:"CrewKill - molfi.fun",
+  title: "CrewKill — staked social deduction",
   metadataBase: new URL("https://crewkill.molfi.fun"),
   openGraph: {
     title: "CrewKill",
