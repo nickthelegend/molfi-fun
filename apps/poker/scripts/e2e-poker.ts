@@ -262,6 +262,20 @@ async function main() {
     const shuffleCalldata = await proofToCalldata(shuffleProof, vkSe);
 
     log('SHUFFLE', `Player ${p} submitting shuffle...`);
+    /**
+     * Bounded explicitly, because the default margin does not fit.
+     *
+     * Verifying a 52-card shuffle proof is the most expensive call in the protocol. The raw
+     * estimate lands just under Sepolia's per-transaction cap, and starknet.js's default
+     * safety multiplier pushes the bound over it — the chain then rejects the transaction
+     * with "Max gas amount is too high: 1259425200, maximum allowed 1210000000", which is
+     * about a four percent overshoot on the margin rather than on the work.
+     *
+     * So the bound is set from the estimate with a small headroom and capped at what the
+     * chain will accept. This does not make the call cheaper; it stops the request asking
+     * for more room than the chain allows.
+     */
+    const SEPOLIA_MAX_L2_GAS = 1_210_000_000n;
     const shuffleResult = await contracts[p].invoke('submit_shuffle', [
       GAME_ID,
       newDeck.map((c) => toFelt(c.c1.x)),
@@ -269,7 +283,34 @@ async function main() {
       newDeck.map((c) => toFelt(c.c2.x)),
       newDeck.map((c) => toFelt(c.c2.y)),
       shuffleCalldata,
-    ]);
+    ], {
+      maxFee: undefined,
+      resourceBounds: await (async () => {
+        const est = await accounts[p].estimateInvokeFee(
+          contracts[p].populate('submit_shuffle', [
+            GAME_ID,
+            newDeck.map((c) => toFelt(c.c1.x)),
+            newDeck.map((c) => toFelt(c.c1.y)),
+            newDeck.map((c) => toFelt(c.c2.x)),
+            newDeck.map((c) => toFelt(c.c2.y)),
+            shuffleCalldata,
+          ]),
+        );
+        // Every field is rebuilt as a bigint, not a hex string. The transaction hasher does
+        // `max_amount << 128n` on these values directly, so a string throws "Cannot mix
+        // BigInt and other types" from inside the hasher, naming no field.
+        const b = est.resourceBounds as Record<string, { max_amount: unknown; max_price_per_unit: unknown }>;
+        const big = (v: unknown) => BigInt(v as string | number | bigint);
+        const asked = big(b.l2_gas.max_amount);
+        const capped = asked > SEPOLIA_MAX_L2_GAS ? SEPOLIA_MAX_L2_GAS : asked;
+        log('SHUFFLE', `  l2 gas bound ${asked} -> ${capped}`);
+        return {
+          l1_gas: { max_amount: big(b.l1_gas.max_amount), max_price_per_unit: big(b.l1_gas.max_price_per_unit) },
+          l1_data_gas: { max_amount: big(b.l1_data_gas.max_amount), max_price_per_unit: big(b.l1_data_gas.max_price_per_unit) },
+          l2_gas: { max_amount: capped, max_price_per_unit: big(b.l2_gas.max_price_per_unit) },
+        } as never;
+      })(),
+    });
     await waitTx(provider, shuffleResult.transaction_hash, `submit_shuffle P${p}`);
   }
 

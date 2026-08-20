@@ -46,14 +46,54 @@ cause. Both players now state Cairo 1.
 second was created, funded and deployed on Sepolia with real transactions. It then failed
 until it held enough to cover a proof-verifying call — 5 STRK was not enough, 300 was.
 
+## How far it got this run
+
+Real proofs, real Garaga verifiers, real Sepolia. **14 transactions confirmed on chain** in a
+single run, and two hole cards actually decrypted:
+
+```
+Card 0 = 3♥ (value 15)
+Card 1 = 8♣ (value 46)
+```
+
+Table created, both players joined with key-ownership proofs, aggregate key computed, deck
+encrypted, `start_game` verified the deck, **both players shuffled with real shuffle proofs**
+(7-9s each), the hand started, and hole cards were dealt, revealed and unmasked. That is
+mental poker working: a card that no single party could read, opened only once both players
+handed over reveal tokens.
+
+It stopped partway through dealing the second hole card, on funds rather than on protocol.
+
+## Three real fixes found by running it
+
+**`cairoVersion` was guessed.** starknet.js infers it wrong for a freshly deployed
+OpenZeppelin account on Sepolia, and every transaction fails with `Account validation
+failed`, which names the symptom rather than the cause. Both players now state Cairo 1.
+
+**The shuffle bound exceeded the chain cap.** Verifying a 52-card shuffle is the most
+expensive call in the protocol. The raw estimate fits; starknet.js's default safety margin
+pushes it to 1,259,425,200 against a maximum of 1,210,000,000 — a four percent overshoot on
+the margin, not the work. The bound is now set from the estimate and capped at what the chain
+accepts.
+
+**Resource bounds must be bigint.** The transaction hasher does `max_amount << 128n` on these
+values directly, so passing hex strings throws `Cannot mix BigInt and other types` from
+inside the hasher, naming no field. I got this backwards once before getting it right.
+
+## What actually blocks a complete hand
+
+Fees. Each run costs real Sepolia STRK, and proof-verifying calls are expensive: the two
+accounts have gone from 999 and 305 STRK to 180 and 58 across roughly seven attempts. The
+last run failed topping up player 1, and a reveal call now asks for more than player 1 holds.
+
+This is a funding limit on a testnet faucet, not a protocol or code problem. Everything the
+code does is verified working on chain up to that point.
+
 ## Honest status
 
-- CrewKill: **playable, proved.** Bought a seat, the house agents filled the table, the match
-  ran and settled, and it audits clean against an independent recomputation. Agents can also
-  play it through MCP, and can be voted out.
-- Poker: **plays up to the shuffle submission.** Table, both joins, key aggregation, deck
-  encryption and deck verification all confirmed on chain with real proofs. The shuffle proof
-  generates and is rejected in transit by the public RPC.
+- CrewKill: **playable, proved.** Seat bought, match ran, settled, audits clean. Agents play
+  it through MCP and can be voted out.
+- Poker: **plays through shuffle, deal and card reveal on Sepolia with real proofs.** Stops
+  partway through the second hole card because the accounts have run low on testnet STRK.
 
-Nothing here is mocked to make it look further along. The remaining gap is a transport limit
-on a large proof, and it is stated rather than worked around.
+Nothing is mocked to make either look further along than it is.

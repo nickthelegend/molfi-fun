@@ -1,6 +1,6 @@
 {
   "network": "sepolia",
-  "url": "https://api.cartridge.gg/x/starknet/sepolia",
+  "url": "https://starknet-sepolia.g.alchemy.com/v2/3qRB0TMQQv3hyKgav_6lF",
   "accounts": {
     "devnet0": {
       "address": "0x81dfcc1dcdc46e93179760c185f1ff2a175d3801e4dfe34161b800ee89bc70",
