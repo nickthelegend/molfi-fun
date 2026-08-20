@@ -1,0 +1,33 @@
+{
+  "network": "devnet",
+  "url": "http://localhost:5050/rpc",
+  "accounts": {
+    "devnet0": {
+      "address": "0x34ba56f92265f0868c57d3fe72ecab144fc96f97954bbbc4252cef8e8a979ba",
+      "private_key": "0xb137668388dbe9acdfa3bc734cc2c469"
+    },
+    "devnet1": {
+      "address": "0x2939f2dc3f80cc7d620e8a86f2e69c1e187b7ff44b74056647368b5c49dc370",
+      "private_key": "0xe8c2801d899646311100a661d32587aa"
+    },
+    "devnet2": {
+      "address": "0x25a6c9f0c15ef30c139065096b4b8e563e6b86191fd600a4f0616df8f22fb77",
+      "private_key": "0x7b2e5d0e627be6ce12ddc6fd0f5ff2fb"
+    },
+    "devnet3": {
+      "address": "0x5e627ad77c89f728f67916e9362f0723aa9d5ecf9243b87da5551345eb0d11d",
+      "private_key": "0x3bce0683ea650ed0271c9dd24c923142"
+    }
+  },
+  "contracts": {
+    "verifier_key_ownership": "0x06f96fa84243e63633935d4fdb79de3ff9dcab855a1f7897164f14c7897a5f94",
+    "verifier_decrypt_card": "0x02987ce9297bc9afd8c78153b5a27cd14e50d2331691dda1d777e76216e4f8f3",
+    "verifier_shuffle_encrypt": "0x0706c84b7b5a9725744f252c1b0a4e72dbd3a126521458fd466b18a5d19c74a4",
+    "texas_holdem": "0x01cd8a51a397c40401ba8b21f8966629fb279c59e79d61ce321231d3a47e02d4"
+  },
+  "config": {
+    "small_blind": 5,
+    "big_blind": 10,
+    "initial_stack": 1000
+  }
+}
