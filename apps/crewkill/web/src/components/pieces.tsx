@@ -306,3 +306,34 @@ export function Tallies({ match }: { match: MatchView }) {
     </div>
   );
 }
+
+/**
+ * Substrate state as a hook, so the settings menu owns the presentation.
+ *
+ * Exists because the three-button switch was one of twelve controls competing for the top of
+ * the game screen. The state was always fine; only where it was shown was wrong.
+ */
+export function useSubstrate() {
+  const [substrate, setSubstrate] = useState<string>("default");
+
+  useEffect(() => {
+    const stored = localStorage.getItem("crewkill.substrate");
+    if (stored === "phosphor" || stored === "newsprint" || stored === "contrast") {
+      setSubstrate(stored);
+      document.documentElement.dataset.substrate = stored;
+    }
+  }, []);
+
+  const choose = (next: "phosphor" | "newsprint" | "contrast" | "default") => {
+    setSubstrate(next);
+    if (next === "default") {
+      delete document.documentElement.dataset.substrate;
+      localStorage.removeItem("crewkill.substrate");
+    } else {
+      document.documentElement.dataset.substrate = next;
+      localStorage.setItem("crewkill.substrate", next);
+    }
+  };
+
+  return { substrate, choose };
+}

@@ -22,12 +22,13 @@ import {
   PhaseBadge,
   SeatCard,
   Stat,
-  SubstrateSwitch,
+  useSubstrate,
 } from"@/components/pieces";
 import { ActionPanel, SabotageBanner, TaskProgress, type ActionRequest } from"@/components/ship";
 import { BallotBoard } from"@/components/ballots";
 import { DetectiveBreakdown, IntegrityAudit, PrivacyLedger } from"@/components/privacy";
 import { ChainLog, DeploymentCard } from"@/components/chainlog";
+import { SettingsMenu } from"@/components/settings";
 import { ShipView } from"@/components/shipview";
 import { CueToggle, useCues } from"@/components/cues";
 import { RoleFlip } from"@/components/roleflip";
@@ -744,6 +745,9 @@ function Header({
   /** Passed down rather than hooked here, because the state belongs to the page. */
   cues?: { enabled: boolean; toggle: () => void };
 }) {
+  // Preferences live behind one button now; the header keeps only the live facts.
+  const { substrate, choose } = useSubstrate();
+
   return (
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div>
@@ -763,6 +767,8 @@ function Header({
           </>
         )}
       </div>
+      {/* Only what decides something during play: the phase, the clock, and whether you can
+          act. Everything else moved behind Settings. */}
       <div className="flex flex-wrap items-center gap-2">
         <PhaseBadge match={match} />
         <Countdown until={match.phaseEndsAt} />
@@ -771,24 +777,25 @@ function Header({
             reconnecting
           </span>
         )}
-        <PrimerButton />
-        <a href="/history" className="switch no-underline">
-          Archive
-        </a>
-        <SubstrateSwitch />
-        {cues && <CueToggle enabled={cues.enabled} onToggle={cues.toggle} />}
         {pool ? (
           <span className="border border-[var(--color-line)] px-2 py-1 text-[11px] text-[var(--color-dim)]">
             {config.network} / {pool.address.slice(0, 6)}…{pool.address.slice(-4)}
           </span>
         ) : (
-          <button
-            onClick={onConnect}
-            className="switch switch-primary"
-          >
+          <button onClick={onConnect} className="switch switch-primary">
             {config.realPool ?"Connect privacy wallet" :"Use devnet key"}
           </button>
         )}
+        <SettingsMenu
+          substrate={substrate}
+          onSubstrate={choose}
+          cuesEnabled={cues?.enabled ?? false}
+          onCues={() => cues?.toggle()}
+          onPrimer={() => {
+            localStorage.removeItem("crewkill.primer.seen");
+            window.location.reload();
+          }}
+        />
       </div>
     </header>
   );

@@ -1,7 +1,6 @@
 import type { Metadata } from"next";
 import { Archivo_Black, JetBrains_Mono } from"next/font/google";
 import"./globals.css";
-import { HubBar } from"@/components/hubbar";
 
 /**
  * Two typefaces, two extremes, nothing in between.
@@ -66,8 +65,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
+      {/* No hub bar. This is CrewKill, not a directory entry — the link to the rest of the
+          house lives in the settings menu, stated once, where it does not compete with the
+          game for the top of the screen. */}
       <body className="min-h-screen antialiased">
-        <HubBar />
         {children}
       </body>
     </html>
