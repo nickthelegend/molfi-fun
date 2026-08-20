@@ -166,3 +166,55 @@ Zero console errors and zero failed network requests on every page tested. Zero 
 stubs in any shipped path: every remaining hit is a devnet-only pool driving real signed
 transactions, a Cairo test double, a browser shim for a Node logger, or a read-only account
 that never signs — each named rather than filtered out.
+
+---
+
+# Re-run results
+
+64 items. **63 PASS, 1 untested.** One genuine failure found and fixed; two apparent failures
+were faults in how I measured.
+
+## The genuine failure
+
+**F6 — `crewkill_look` crashed on a seat the keeper had not mirrored yet.** Every MCP tool
+reached its seat by array position, `match.seats[seatIndex]`, which quietly assumes the
+mirror already holds a row. It does not, for about a second: the seat exists on chain the
+moment the join lands, and the indexer catches up a beat later. An agent that looked around
+immediately after sitting down got `Cannot read properties of undefined (reading 'alive')`
+and no way to tell whether it had a seat at all.
+
+Two things were wrong. Position is not identity — a seat's index is a property of the seat,
+not where it sits in a list — so every lookup now finds by index. And a race deserves a
+different answer from a missing seat, so the tools now say the mirror is catching up and to
+retry. Verified: the message appears immediately after joining, and the same call returns the
+seat, room, exits and a sealed role a few seconds later.
+
+## Two measurement faults
+
+**"Poker lost its attribution."** I grepped the served HTML of a Vite SPA, whose shell
+contains no content. In the browser the credit to dpinones/mental-poker is present.
+
+**"280px of horizontal overflow."** The browser pane was collapsed, so `clientWidth` was 0
+and every element appeared to overflow. At a real 380px viewport the overflow is 0 — the wide
+address spans scroll inside their own container, which is the intended pattern.
+
+## Two environment faults
+
+The hub died mid-run and, on restart, served 404 for every route except `/` and `/status`.
+The cause was starting the server from a partially written `.next`: the build itself was
+clean, listing all 20 routes. Rebuilt to completion first, then started — all 16 routes 200.
+
+The Garaga verifier release builds were killed after 876 minutes of CPU across three
+contracts with no artifact produced. A dev-profile build was started instead and has since
+consumed 114 minutes, also without finishing.
+
+## The untested item
+
+**G7 — play a poker hand.** Still blocked on those verifiers. Everything up to the proof is
+verified. Deploying against `MockVerifier` would let a hand pass without checking a single
+proof, so it stays untested rather than being made to look finished.
+
+## Confirmation
+
+Zero console errors and zero failed network requests on every page tested. Zero horizontal
+overflow at 380px. Zero mocks or stubs in any shipped path — each remaining hit named above.
