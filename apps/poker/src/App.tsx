@@ -93,11 +93,41 @@ export default function App() {
   // --- Load deployed config ---
   useEffect(() => {
     if (isLocal) {
-      // Devnet: load from static JSON (includes test accounts)
+      /**
+       * Devnet config, and it has to say it is devnet.
+       *
+       * The reference's Sepolia deploy copies its own address file over this one, so the
+       * devnet config shipped holding Sepolia addresses. Devnet mode then loaded contracts
+       * from a completely different chain while signing with local prefunded accounts, and
+       * failed with provider errors that named neither problem. A config that does not
+       * declare the network it belongs to cannot be checked, so this now requires it and
+       * refuses anything else rather than pointing the table at the wrong chain.
+       */
       fetch('/deployed-poker.json')
-        .then(res => res.json())
-        .then(setDeployed)
-        .catch(err => console.error('Failed to load deployed-poker.json:', err));
+        .then(res => {
+          if (!res.ok) throw new Error(`config returned ${res.status}`);
+          return res.json();
+        })
+        .then((cfg: DeployedConfig & { network?: string }) => {
+          if (cfg.network && cfg.network !== 'devnet') {
+            throw new Error(
+              `deployed-poker.json declares network "${cfg.network}", but the app is running ` +
+                `on devnet. Deploy the contracts locally before using devnet mode.`,
+            );
+          }
+          if (!cfg.contracts?.texas_holdem) {
+            throw new Error('deployed-poker.json has no texas_holdem address.');
+          }
+          setDeployed(cfg);
+        })
+        .catch(err => {
+          // Surfaced, not swallowed. A silent failure here leaves the lobby looking ready
+          // and every action failing later for reasons that point somewhere else.
+          console.error('Failed to load deployed-poker.json:', err);
+          setLobbyError(
+            err instanceof Error ? err.message : 'Could not load the devnet deployment config.',
+          );
+        });
     } else {
       // Sepolia: build config from env vars
       const contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS ?? '';

@@ -1,21 +1,12 @@
 {
-  "network": "sepolia",
-  "url": "https://api.cartridge.gg/x/starknet/sepolia",
-  "contracts": {
-    "verifier_key_ownership": "0x06e244442031a6a7f6dca61e3440f4989f6a2ee34bbf32e57bc6ccee8129c885",
-    "verifier_decrypt_card": "0x01b5e9a1b0f6550e62e18e3e397b9aded7d7b3dadfeb4f9f3653081c96d9c6c6",
-    "verifier_shuffle_encrypt": "0x01aa31ac4826ddbdc9bb2a95a6d334e81be7ff32f7bae604c88b7437252781a4",
-    "texas_holdem": "0x028fcd7d6937f5a2c1cefd07b6b26faedd0e99383b1f632e9754c4ba0941cbd9"
-  },
-  "class_hashes": {
-    "verifier_key_ownership": "0x0575fe4f403f0213ddb0408f0a46c1175b177d26f9abd8f2923b1b12871297ee",
-    "verifier_decrypt_card": "0x04952c3ed1deac78cbe8b4df31fad42bb5459aafa0be91933675b4917be00d05",
-    "verifier_shuffle_encrypt": "0x00b4eeced272cbfd98aef982d4404eea35f7ff5903606819ea03df00cf559bfe",
-    "texas_holdem": "0x06f9fa6d172c7104ce53c91969b88642bccc24192f12a8adda75d903a7ee761a"
-  },
+  "network": "devnet",
+  "url": "http://localhost:5050/rpc",
+  "contracts": {},
+  "class_hashes": {},
   "config": {
     "small_blind": 5,
     "big_blind": 10,
     "initial_stack": 1000
-  }
+  },
+  "note": "Populated by scripts/deploy-devnet.sh. Empty means the poker contracts have not been deployed to the local devnet yet."
 }
