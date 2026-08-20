@@ -18,7 +18,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { adjacencyOf, roomNameOf, shipMapById, MatchPhase, NO_TARGET } from "@crewkill/protocol";
+import {
+  adjacencyOf,
+  roomNameOf,
+  shipMapById,
+  MatchPhase,
+  NO_TARGET,
+  type MatchView,
+  type SeatView,
+} from "@crewkill/protocol";
 import { Action, KeeperClient, buySeatOnDevnet, roleOf, type Seat } from "./client.ts";
 
 const KEEPER = process.env.KEEPER_URL ?? "http://localhost:8080";
@@ -28,6 +36,24 @@ const keeper = new KeeperClient(KEEPER);
 let held: Seat | null = null;
 
 const ok = (text: string) => ({ content: [{ type: "text" as const, text }] });
+
+/**
+ * Your seat as the keeper currently sees it.
+ *
+ * The seat exists on chain the moment the join transaction lands, but the keeper mirrors it
+ * a beat later, so a tool called immediately after joining can find no row and used to throw
+ * "Cannot read properties of undefined". That is a race, not a missing seat, and the two
+ * deserve different answers: this says the mirror is catching up, and the caller retries.
+ */
+function mySeat(match: MatchView, seat: Seat): SeatView | null {
+  return match.seats.find((s) => s.index === seat.seatIndex) ?? null;
+}
+
+const catchingUp = () =>
+  fail(
+    "Your seat is on chain but the keeper has not mirrored it yet. Try again in a second — " +
+      "this is the indexer catching up, not a missing seat.",
+  );
 const fail = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true });
 
 const server = new McpServer({ name: "crewkill", version: "1.0.0" });
@@ -56,7 +82,8 @@ server.tool(
   async () => {
     if (!held) return fail("You have no seat yet. Call crewkill_join first.");
     const match = await keeper.match(held.matchId);
-    const me = match.seats[held.seatIndex];
+    const me = mySeat(match, held);
+    if (!me) return catchingUp();
     const map = shipMapById(match.mapId);
     const phase = MatchPhase[match.phase];
 
@@ -136,7 +163,9 @@ server.tool(
     if (!held) return fail("You have no seat yet.");
     const match = await keeper.match(held.matchId);
     const map = shipMapById(match.mapId);
-    const from = match.seats[held.seatIndex].location;
+    const mine = mySeat(match, held);
+    if (!mine) return catchingUp();
+    const from = mine.location;
     if (!(adjacencyOf(map)[from] ?? []).includes(room)) {
       return fail(`No corridor from ${roomNameOf(map, from)} to ${roomNameOf(map, room)}.`);
     }
@@ -166,8 +195,9 @@ server.tool(
     if (!held) return fail("You have no seat yet.");
     const match = await keeper.match(held.matchId);
     if (roleOf(match, held) !== "impostor") return fail("You are crew. You cannot kill.");
-    const me = match.seats[held.seatIndex];
-    const victim = match.seats[seat];
+    const me = mySeat(match, held);
+    if (!me) return catchingUp();
+    const victim = match.seats.find((s) => s.index === seat);
     if (!victim?.alive) return fail("That seat is already out.");
     if (victim.location !== me.location) return fail("They are not in your room.");
     await keeper.act(held.matchId, held, Action.Kill, { target: seat });
@@ -202,7 +232,9 @@ server.tool(
     if (!held) return fail("You have no seat yet.");
     const match = await keeper.match(held.matchId);
     if (match.roundPhase !== "voting") return fail("It is not a voting phase right now.");
-    if (seat !== undefined && !match.seats[seat]?.alive) return fail("That seat is already out.");
+    if (seat !== undefined && !match.seats.find((s) => s.index === seat)?.alive) {
+      return fail("That seat is already out.");
+    }
     await keeper.act(held.matchId, held, seat === undefined ? Action.Skip : Action.Report, {
       target: seat ?? NO_TARGET,
     });
