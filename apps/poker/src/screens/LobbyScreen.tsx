@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { isLocal } from '../config';
 import { useCartridgeUsernames } from '../hooks/useCartridgeUsernames';
 import type { RoomConfig } from '../types';
+import { Wordmark, ProtocolCredit } from '../components/Wordmark';
 
 const STACK_PRESETS = [1000n, 5000n, 20000n] as const;
 const PLAYER_OPTIONS = [2, 3, 4] as const;
@@ -184,12 +185,10 @@ export function LobbyScreen({
         {/* Center content */}
         <div className="flex-1 flex flex-col items-center justify-center px-6 pb-4 w-full max-w-5xl min-h-0">
 
-          {/* Logo */}
-          <img
-            src="/logo-mental-poker.png"
-            alt="Mental Poker"
-            className="w-96 object-contain drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] -mt-8 mb-6"
-          />
+          {/* The table's own mark. Drawn, not a raster, so it stays sharp at any size. */}
+          <div className="-mt-6 mb-8">
+            <Wordmark />
+          </div>
 
           {/* Waiting state */}
           {hasJoined && (
@@ -426,14 +425,19 @@ export function LobbyScreen({
 
         </div>
 
-        {/* Footer */}
-        <div className="flex-shrink-0 pb-4">
-          <p className="text-sm text-white/35 tracking-wide text-center">
-            Submission for RE&#123;DEFINE&#125; HACKATHON | Starknet by{' '}
-            <a href="https://x.com/dub_zn" target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white/80 underline underline-offset-2 transition-colors">@dub_zn</a>
-            {' '}and{' '}
-            <a href="https://x.com/dpinoness" target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-white/80 underline underline-offset-2 transition-colors">@dpinoness</a>
-          </p>
+        {/* Footer.
+
+            The reference client shipped its own hackathon submission line here, naming its
+            authors and the event it was entered in. Left in place it read as a claim that
+            this table is that submission, which is false in both directions: wrong event,
+            wrong authors. What is true is who wrote the protocol, and that is what stays. */}
+        <div className="flex-shrink-0 pb-5">
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-white/25">
+              Starknet Sepolia · settled onchain
+            </p>
+            <ProtocolCredit />
+          </div>
         </div>
       </div>
     </div>
