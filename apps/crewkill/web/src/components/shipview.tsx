@@ -62,14 +62,21 @@ export function ShipView({
   const shell = useRef<HTMLDivElement>(null);
 
   /*
-   * The whole ship, framed once, and then left alone.
+   * The whole ship by default, with a camera you can reach for.
    *
-   * There were zoom buttons and drag-to-pan here. Both are gone: a player in a meeting
-   * should not be managing a camera, and a view that moves is a view you have to re-read.
-   * The frame comes from what the rooms actually occupy rather than the declared canvas,
-   * which is looser, so the ship fills the space it is given without anyone touching it.
+   * This was a fixed frame with no controls at all, on the reasoning that a player in a
+   * meeting should not be managing a camera. That holds for the default - which is still
+   * the entire ship, framed from what the rooms actually occupy - but it left no way to
+   * lean in on a corner during a night phase, and on a narrow window the whole hull at once
+   * is too small to read who is where.
+   *
+   * So: the fit-everything frame is where you start and where one key returns you, and zoom
+   * is available when you want it. The camera never moves on its own.
    */
-  const frame = useMemo(() => {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+
+  const fit = useMemo(() => {
     const xs = map.rooms.map((r) => r.x);
     const ys = map.rooms.map((r) => r.y);
     const x2 = map.rooms.map((r) => r.x + r.width);
@@ -84,6 +91,62 @@ export function ShipView({
       h: Math.max(...y2) + pad - minY,
     };
   }, [map]);
+
+  /**
+   * The frame actually drawn: the fit box, scaled about its centre and shifted by the pan.
+   *
+   * Zooming about the centre rather than the top left is what makes the buttons feel like a
+   * camera instead of a scrollbar - the thing you were looking at stays where it was.
+   */
+  const frame = useMemo(() => {
+    const w = fit.w / zoom;
+    const h = fit.h / zoom;
+    return {
+      x: fit.x + (fit.w - w) / 2 + pan.x,
+      y: fit.y + (fit.h - h) / 2 + pan.y,
+      w,
+      h,
+    };
+  }, [fit, zoom, pan]);
+
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 4;
+  const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  // Keyboard camera. Plus and minus zoom, 0 returns to the whole ship, arrows pan when
+  // zoomed in. Dropped while a text field has focus so typing never moves the view.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+
+      const step = fit.w / (zoom * 8);
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        setZoom((z) => clampZoom(z * 1.35));
+      } else if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        setZoom((z) => clampZoom(z / 1.35));
+      } else if (event.key === "0") {
+        event.preventDefault();
+        resetView();
+      } else if (zoom > 1 && event.key.startsWith("Arrow")) {
+        event.preventDefault();
+        setPan((p) => ({
+          x: p.x + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0),
+          y: p.y + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0),
+        }));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fit.w, zoom]);
 
   const adjacency = useMemo(() => adjacencyOf(map), [map]);
   const vents = useMemo(() => ventsOf(map), [map]);
@@ -133,9 +196,54 @@ export function ShipView({
         background:"radial-gradient(ellipse at center, var(--hull-map-near), var(--hull-map-far))",
       }}
     >
+      {/* Camera controls.
+
+          Bottom-left, small, and out of the way of the ship. Fit is always reachable in one
+          click and one key, so zooming in is never a state you can get stuck in. */}
+      <div className="pointer-events-auto absolute bottom-3 left-3 z-20 flex items-center gap-1">
+        <button
+          onClick={() => setZoom((z) => clampZoom(z / 1.35))}
+          disabled={zoom <= MIN_ZOOM}
+          aria-label="Zoom out"
+          title="Zoom out  (−)"
+          className="cam-btn"
+        >
+          −
+        </button>
+        <button
+          onClick={() => setZoom((z) => clampZoom(z * 1.35))}
+          disabled={zoom >= MAX_ZOOM}
+          aria-label="Zoom in"
+          title="Zoom in  (+)"
+          className="cam-btn"
+        >
+          +
+        </button>
+        <button
+          onClick={resetView}
+          disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+          aria-label="Fit the whole ship"
+          title="Fit the whole ship  (0)"
+          className="cam-btn w-auto px-2 text-[10px] tracking-wider"
+        >
+          FIT
+        </button>
+        {zoom !== 1 && (
+          <span className="numeric ml-1 text-[10px] text-[var(--color-dim)]">
+            {zoom.toFixed(1)}x
+          </span>
+        )}
+      </div>
+
       <svg
         viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`}
         preserveAspectRatio="xMidYMid meet"
+        onWheel={(event) => {
+          // Wheel zooms rather than scrolling the page, which is what a map is expected to
+          // do. Trackpad pinch arrives here as a ctrl-wheel and is handled the same way.
+          if (event.deltaY === 0) return;
+          setZoom((z) => clampZoom(z * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+        }}
         className="block h-full w-full "
         role="img"
         aria-label={`${map.name}: ${match.seatsFilled} seats, showing where each is`}

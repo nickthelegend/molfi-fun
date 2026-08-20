@@ -444,3 +444,27 @@ body {
 :root[data-substrate="contrast"] svg [stroke] {
   stroke-opacity: 1;
 }
+
+/* Camera buttons on the ship. Small, quiet, and legible against any room colour. */
+.cam-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-hull) 82%, transparent);
+  color: var(--color-dim);
+  font-size: 14px;
+  line-height: 1;
+  backdrop-filter: blur(6px);
+  transition: color 140ms, border-color 140ms;
+}
+.cam-btn:hover:not(:disabled) {
+  color: var(--color-ink);
+  border-color: var(--color-line-bright, var(--color-cyan));
+}
+.cam-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
