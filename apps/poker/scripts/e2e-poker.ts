@@ -123,15 +123,21 @@ async function main() {
 
   const provider = new RpcProvider({ nodeUrl: deployed.url });
 
+  // cairoVersion is stated rather than guessed. Left off, starknet.js infers it, and for a
+  // freshly deployed OpenZeppelin account on Sepolia it infers wrong — every transaction
+  // then fails with "Account validation failed", which describes the symptom and not the
+  // cause. Both accounts are Cairo 1.
   const account0 = new Account({
     provider,
     address: deployed.accounts.devnet0.address,
     signer: new Signer(deployed.accounts.devnet0.private_key),
+    cairoVersion: "1",
   });
   const account1 = new Account({
     provider,
     address: deployed.accounts.devnet1.address,
     signer: new Signer(deployed.accounts.devnet1.private_key),
+    cairoVersion: "1",
   });
 
   log('SETUP', `Player 0 (devnet0): ${account0.address}`);
