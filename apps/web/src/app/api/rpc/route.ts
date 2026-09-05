@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { RPC_URL } from "@/lib/rpc";
+import { FALLBACK_RPC_URL, RPC_URL } from "@/lib/rpc";
 
 /**
  * JSON-RPC proxy.
@@ -69,17 +69,36 @@ export async function POST(req: Request) {
     );
   }
 
+  // The same fallback the read helpers use, and for the same reason: a key pointed at a
+  // network its app has not enabled answers every request with a 403, and a proxy that
+  // passes that straight through takes the browser down with it while the server-rendered
+  // routes carry on working. Two paths to the same chain behaving differently is worse than
+  // either behaviour on its own.
+  const endpoints = RPC_URL === FALLBACK_RPC_URL ? [RPC_URL] : [RPC_URL, FALLBACK_RPC_URL];
+
   try {
-    const upstream = await fetch(RPC_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
-      cache: "no-store",
-    });
-    const text = await upstream.text();
-    return new NextResponse(text, {
-      status: upstream.status,
+    let last: { status: number; text: string } | null = null;
+    for (const endpoint of endpoints) {
+      const upstream = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20_000),
+        cache: "no-store",
+      });
+      const text = await upstream.text();
+      // A 4xx or 5xx from the endpoint is the endpoint refusing us, not the chain refusing
+      // the call — a reverted call comes back as a JSON-RPC error inside a 200.
+      if (upstream.ok) {
+        return new NextResponse(text, {
+          status: upstream.status,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+        });
+      }
+      last = { status: upstream.status, text };
+    }
+    return new NextResponse(last!.text, {
+      status: last!.status,
       headers: { "content-type": "application/json", "cache-control": "no-store" },
     });
   } catch (e) {
