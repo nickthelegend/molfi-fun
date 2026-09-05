@@ -1,0 +1,22 @@
+{
+  "name": "@molfi/keeper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "dev": "node --experimental-strip-types --watch src/index.ts",
+    "once": "node --experimental-strip-types src/index.ts --once",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@molfi/sdk": "workspace:*",
+    "pg": "^8.13.1",
+    "starknet": "10.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.9.3"
+  }
+}

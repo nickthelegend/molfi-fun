@@ -676,3 +676,44 @@ fn the_ledger_tracks_what_the_contract_owes() {
     let market = m.get_market(id);
     assert(m.accounted_for(token) == 1_001_000 - market.paid, 'payout released');
 }
+
+#[test]
+fn the_oracle_can_be_repointed_by_the_owner() {
+    // Pragma stopped publishing to Sepolia, so a testnet deployment has to be repointed at
+    // a relay to settle at all. Without this the only option is a fresh deployment, which
+    // throws away the history that makes a deployment worth looking at.
+    let (m, _, _, _) = setup();
+    let before = m.oracle();
+    start_cheat_caller_address(m.contract_address, owner());
+    m.set_oracle(addr('RELAY'));
+    stop_cheat_caller_address(m.contract_address);
+    assert(m.oracle() == addr('RELAY'), 'oracle repointed');
+    assert(before != addr('RELAY'), 'and it actually changed');
+}
+
+#[test]
+#[should_panic(expected: 'CALLER_NOT_OWNER')]
+fn a_stranger_cannot_repoint_the_oracle() {
+    let (m, _, _, _) = setup();
+    start_cheat_caller_address(m.contract_address, addr('STRANGER'));
+    m.set_oracle(addr('EVIL'));
+}
+
+#[test]
+fn repointing_the_oracle_cannot_rewrite_a_settled_market() {
+    // The bound that makes the power safe: `settle` writes the price into storage and never
+    // reads the oracle again, so a later repoint can change how future markets resolve and
+    // can never change one that already has.
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+    let settled = m.get_market(id).settled_price;
+
+    start_cheat_caller_address(m.contract_address, owner());
+    m.set_oracle(addr('SOMEWHERE_ELSE'));
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(m.get_market(id).settled_price == settled, 'settled price is immutable');
+}

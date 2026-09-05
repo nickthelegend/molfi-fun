@@ -15,3 +15,7 @@ pub mod market;
 
 /// Stand-ins for the pool's oracle and token, for local runs only. Never deployed publicly.
 pub mod devnet;
+
+/// Republishes mainnet Pragma onto a testnet whose own feed has stopped. Testnets only —
+/// on mainnet molfi reads Pragma directly and this is not deployed.
+pub mod relay;

@@ -18,6 +18,7 @@
     "e2e:devnet": "node --experimental-strip-types scripts/e2e.mjs",
     "pool:probe": "node --experimental-strip-types scripts/pool-probe.mjs",
     "preflight": "node --experimental-strip-types scripts/preflight.mjs",
+    "relay": "node --experimental-strip-types scripts/relay.mjs",
     "start": "pnpm --filter @molfi/web exec next start -p ${PORT:-3400}",
     "submission": "node --experimental-strip-types scripts/fill-submission.mjs",
     "test": "pnpm --filter @molfi/sdk test",

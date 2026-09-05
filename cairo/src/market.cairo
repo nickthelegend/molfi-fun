@@ -108,6 +108,8 @@ pub trait IMolfiMarket<T> {
     fn quote_band(self: @T, market_id: u64, spot: u256, low: u256, high: u256) -> u256;
     fn pool(self: @T) -> ContractAddress;
     fn oracle(self: @T) -> ContractAddress;
+    fn set_oracle(ref self: T, who: ContractAddress);
+    fn owner(self: @T) -> ContractAddress;
 }
 
 #[starknet::contract]
@@ -213,11 +215,20 @@ pub mod MolfiMarket {
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
+        OracleChanged: OracleChanged,
         MarketCreated: MarketCreated,
         MarketFunded: MarketFunded,
         PositionOpened: PositionOpened,
         MarketSettled: MarketSettled,
         PositionClaimed: PositionClaimed,
+    }
+
+    /// Repointing the oracle is logged with both addresses, so the full history of what a
+    /// market could have settled against is reconstructable from logs.
+    #[derive(Drop, starknet::Event)]
+    struct OracleChanged {
+        from: ContractAddress,
+        to: ContractAddress,
     }
 
     /// Events carry the commitment, never anything that identifies who is behind it.
@@ -499,6 +510,29 @@ pub mod MolfiMarket {
 
         fn oracle(self: @ContractState) -> ContractAddress {
             self.oracle.read()
+        }
+
+        /// Repoint the oracle. Owner only, and it cannot touch a market already settled.
+        ///
+        /// This exists for one reason and it is worth naming rather than leaving as a
+        /// generic admin hook: **Pragma stopped publishing to Sepolia**, so a testnet
+        /// deployment needs to be repointed at a relay to demonstrate settlement at all.
+        /// Without it the choice is a fresh deployment every time, which throws away the
+        /// history that makes a deployment worth looking at.
+        ///
+        /// It is also a real power, so it is bounded. Settled markets keep the price they
+        /// settled on — `settle` writes it into storage and never reads the oracle again —
+        /// so repointing can change how future markets resolve and can never rewrite one
+        /// that already has. The change is logged with both addresses.
+        fn set_oracle(ref self: ContractState, who: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), errors::NOT_OWNER);
+            let from = self.oracle.read();
+            self.oracle.write(who);
+            self.emit(OracleChanged { from, to: who });
+        }
+
+        fn owner(self: @ContractState) -> ContractAddress {
+            self.owner.read()
         }
     }
 

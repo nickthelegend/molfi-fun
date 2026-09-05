@@ -279,6 +279,36 @@ say(`  rpc ${RPC.replace(/\/v2\/.*$/, "/v2/…")}\n`);
 // and the pool integration are worth proving even where settlement is impossible — but it is
 // not a defensible thing to do by accident, so it has to be asked for and it gets written
 // into the deployment record.
+/**
+ * Which oracle this deployment settles against.
+ *
+ * Pragma by default and on mainnet always. `--oracle <address>` points a testnet deployment
+ * at the relay instead, which is the only way a Sepolia market can settle at all — Pragma
+ * stopped publishing there months ago. The address is written into the deployment record, so
+ * a deployment can never be quietly reading something other than what it claims.
+ */
+const chosenOracle = String(args.oracle ?? "") || PRAGMA[network] || null;
+
+/**
+ * Reuse an already-declared class instead of declaring again.
+ *
+ * A declare pays for the whole Sierra program and is by far the most expensive step — on
+ * Sepolia today the estimator wants more than the deployer holds. A class hash is content
+ * addressed, so if the code has not changed the class is already on chain and deploying
+ * against it is a fraction of the cost. `--class-hash` says so explicitly rather than
+ * letting a re-declare quietly drain an account.
+ */
+const chosenClass = args["class-hash"] ? String(args["class-hash"]) : null;
+
+/** Which round tiers to list. All of them unless a deployment needs to be cheaper. */
+const chosenTiers = args.tiers
+  ? String(args.tiers).split(",").map((t) => Number(t.trim()))
+  : null;
+if (args.oracle && network === "mainnet") {
+  console.error("Refusing --oracle on mainnet. Pragma is alive there; a relay would be a downgrade.");
+  process.exit(1);
+}
+
 let settleable = true;
 let oracleNote = null;
 if (!isLocal) {
@@ -286,7 +316,7 @@ if (!isLocal) {
     "../packages/sdk/src/index.ts"
   );
   const { hash } = await import("starknet");
-  const oracleAddr = PRAGMA[network];
+  const oracleAddr = chosenOracle;
   const dead = [];
   for (const m of PAIRS) {
     try {
@@ -341,9 +371,10 @@ if (isLocal) {
   const now = Math.floor(Date.now() / 1000);
   await invoke(oracle, "set", [hex(7_970_000_000_000n), hex(now), hex(11)], "seeded the stub oracle");
 } else {
-  oracle = PRAGMA[network];
+  oracle = chosenOracle;
   token = STRK_TOKEN;
-  say(`  oracle  ${oracle}  (Pragma)`);
+  const isPragma = oracle?.toLowerCase() === PRAGMA[network]?.toLowerCase();
+  say(`  oracle  ${oracle}  ${isPragma ? "(Pragma)" : "(RELAY — republishes mainnet Pragma)"}`);
   say(`  token   ${token}  (STRK)`);
 }
 
@@ -388,7 +419,18 @@ say(`  pool    ${pool}\n`);
 // Resume state comes from the chain rather than from the file. The file records what this
 // script believes; the chain records what actually happened, and only one of those is
 // authoritative after a crash.
-const owner = process.env.DEPLOYER_ADDRESS ?? pool;
+/**
+ * Who may list markets on this deployment.
+ *
+ * The deploying account, because it is the only one that can sign the `create_market` calls
+ * that come next. It used to default to the pool address, which deploys fine and then
+ * refuses every listing with CALLER_NOT_OWNER — a contract stranded one step after birth,
+ * for a default nobody would think to check.
+ */
+const owner = process.env.DEPLOYER_ADDRESS ?? accountAddress();
+if (!owner) {
+  throw new Error("could not determine the deployer's address; set DEPLOYER_ADDRESS");
+}
 
 let previous = null;
 try {
@@ -398,7 +440,7 @@ try {
 }
 
 const resuming = Boolean(args.resume) && previous?.market;
-const marketClass = resuming ? previous.classHash : await declare("MolfiMarket");
+const marketClass = chosenClass ? (say(`  reusing declared class ${chosenClass}`), chosenClass) : resuming ? previous.classHash : await declare("MolfiMarket");
 const market = resuming
   ? previous.market
   : await deploy(marketClass, [pool, oracle, owner], "MolfiMarket");
@@ -441,6 +483,7 @@ writeFileSync(
   `deployments/${network}.json`,
   JSON.stringify(
     { network, deployedAt: new Date().toISOString(), classHash: marketClass, market, oracle,
+      oracleIsRelay: oracle?.toLowerCase() !== (PRAGMA[network] ?? "").toLowerCase(),
       token, pool, owner, settleable, oracleNote, markets: [], transactions:
       transactions.map((t) => t.hash), transactionLog: transactions, complete: false },
     null, 2,
@@ -479,6 +522,10 @@ if (listedAlready > 0) say(`  ${listedAlready} market(s) already listed, skippin
 let index = 0;
 for (const m of CALIBRATED_MARKETS) {
   for (const [tier, round] of m.rounds.entries()) {
+    // A deployment may list a subset of the rounds. Every listing is two transactions —
+    // create then fund — and on a testnet where the deployer is not refillable, listing all
+    // nine when the demo needs three is a way to run out halfway.
+    if (chosenTiers && !chosenTiers.includes(tier)) continue;
     index += 1;
     const cutoffAt = now + round.seconds;
     if (index <= listedAlready) {

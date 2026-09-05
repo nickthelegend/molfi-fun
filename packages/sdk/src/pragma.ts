@@ -24,6 +24,20 @@ export const PRICE_DECIMALS = 8;
 /** How old a print may be before molfi refuses to quote on it. */
 export const MAX_PRICE_AGE_SECONDS = 600;
 
+/**
+ * The contract's own limit, which is looser than the desk's.
+ *
+ * Two different questions with two different answers. **Quoting** on a ten-minute-old price
+ * means selling a band around a number that has moved, so the desk refuses at 600s.
+ * **Settling** against one is the contract's rule and it is 900s, because Pragma publishes
+ * every seven to ten minutes and a stricter settlement rule would leave markets that can
+ * never resolve.
+ *
+ * Anything that decides whether a price is good enough to *act on chain* must use this one.
+ * Using the desk's number there stalls the relay for a third of every publish cycle.
+ */
+export const SETTLEMENT_MAX_PRICE_AGE_SECONDS = 900;
+
 export interface Print {
   /** Price in `decimals` fixed point, exactly as the oracle returned it. */
   raw: bigint;
@@ -48,9 +62,13 @@ export interface Freshness {
  * publishers stopped; a single-source print means the median is one opinion wearing a median's
  * clothes. Either one alone is disqualifying.
  */
-export function freshness(print: Print, now = Math.floor(Date.now() / 1000)): Freshness {
+export function freshness(
+  print: Print,
+  now = Math.floor(Date.now() / 1000),
+  maxAgeSeconds = MAX_PRICE_AGE_SECONDS,
+): Freshness {
   const ageSeconds = now - print.updatedAt;
-  if (ageSeconds > MAX_PRICE_AGE_SECONDS) {
+  if (ageSeconds > maxAgeSeconds) {
     return {
       ageSeconds,
       fresh: false,
