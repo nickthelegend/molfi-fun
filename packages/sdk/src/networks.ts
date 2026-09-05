@@ -62,9 +62,26 @@ export const CHAIN_IDS = {
  */
 export const MOLFI_MARKET: Record<NetworkName, string | null> = {
   devnet: null,
-  sepolia: null,
+  /**
+   * Deployed and funded, nine markets, one STRK of bankroll behind each.
+   *
+   * Sepolia markets can never settle: Pragma stopped publishing there months ago, and the
+   * contract refuses a print that old. The deployment exists to prove the deploy path and
+   * the pool integration on a real public chain, not to be traded.
+   */
+  sepolia: "0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953",
   mainnet: null,
 };
+
+/**
+ * An address may be overridden from the environment on any network, not just devnet.
+ *
+ * A redeploy changes the address, and a build that can only be pointed at whatever was
+ * hardcoded has to be edited and re-released to follow it — which is how a console ends up
+ * reading a contract that was replaced last week and reporting confidently on nothing.
+ */
+const marketFor = (network: NetworkName): string | null =>
+  process.env.NEXT_PUBLIC_MARKET ?? process.env.MOLFI_MARKET ?? MOLFI_MARKET[network];
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
   devnet: {
@@ -80,7 +97,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     privacyPool: process.env.NEXT_PUBLIC_POOL ?? null,
     stakeToken: process.env.NEXT_PUBLIC_TOKEN ?? null,
     oracle: process.env.NEXT_PUBLIC_ORACLE ?? null,
-    market: process.env.NEXT_PUBLIC_MARKET ?? MOLFI_MARKET.devnet,
+    market: marketFor("devnet"),
     explorer: "",
     realPool: false,
   },
@@ -91,7 +108,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     privacyPool: SEPOLIA_PRIVACY_POOL,
     stakeToken: STRK_TOKEN,
     oracle: PRAGMA.sepolia,
-    market: MOLFI_MARKET.sepolia,
+    market: marketFor("sepolia"),
     explorer: "https://sepolia.starkscan.co",
     realPool: true,
   },
@@ -102,7 +119,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     privacyPool: MAINNET_PRIVACY_POOL,
     stakeToken: STRK_TOKEN,
     oracle: PRAGMA.mainnet,
-    market: MOLFI_MARKET.mainnet,
+    market: marketFor("mainnet"),
     explorer: "https://starkscan.co",
     realPool: true,
   },

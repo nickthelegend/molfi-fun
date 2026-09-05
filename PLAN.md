@@ -173,10 +173,10 @@ Both are now stored.
 | # | Task | State |
 | --- | --- | --- |
 | 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
-| 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | BLOCKED on a funded deployer. Everything around it is ready: `pnpm preflight` is clear, `pnpm deploy:devnet` runs the identical path locally, and the same script targets mainnet behind an explicit `--yes-spend-real-money`. |
+| 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | **DONE ON SEPOLIA**, blocked on mainnet. `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953` — nine markets listed and funded with 1 STRK each, on a real public chain, through the same script mainnet would use. Mainnet needs a funded account; both configured accounts hold 0 there. |
 | 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | BLOCKED on 6.2. The transaction shape is confirmed accepted by the deployed pool — see `pnpm pool:probe` — and the deploy script records every hash it sends for `pnpm submission` to verify. |
 | 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi-production.up.railway.app, verified with `pnpm api:check` against the live URL. Repo Website field set. |
-| 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, blocked on 6.2** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
+| 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, and fillable from Sepolia today** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
 | 6.6 | Record the 3-minute demo. | BLOCKED — a person has to narrate it. The console is live and the verifier renders a real settled market, so there is something to record. |
 | 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment. The UI is being rebuilt separately. |
 

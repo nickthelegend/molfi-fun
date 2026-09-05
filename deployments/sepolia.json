@@ -1,27 +1,104 @@
 {
   "network": "sepolia",
-  "deployedAt": "2026-09-05T16:20:57.965Z",
+  "deployedAt": "2026-09-05T16:26:08.324Z",
   "classHash": "0x070c273cafaa5a09eaf21d1dea59f7f09eeecce443a2319b3ed59d12eaf6c092",
   "market": "0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953",
   "oracle": "0x36031daa264c24520b11d93af622c848b2499b66b41d611bac95e13cfca131a",
   "token": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
   "pool": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
   "owner": "0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f",
+  "bankrollPerMarket": "1000000000000000000",
   "settleable": false,
   "oracleNote": [
-    "BTC/USD: last print is 474004 minutes old",
-    "ETH/USD: last print is 356893 minutes old",
-    "STRK/USD: last print is 295320 minutes old"
+    "BTC/USD: last print is 474009 minutes old",
+    "ETH/USD: last print is 356897 minutes old",
+    "STRK/USD: last print is 295324 minutes old"
   ],
-  "markets": [],
+  "markets": [
+    {
+      "pair": "BTC/USD",
+      "seconds": 900,
+      "cutoffAt": null
+    },
+    {
+      "pair": "BTC/USD",
+      "seconds": 3600,
+      "cutoffAt": null
+    },
+    {
+      "pair": "BTC/USD",
+      "seconds": 14400,
+      "cutoffAt": null
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 900,
+      "cutoffAt": null
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 3600,
+      "cutoffAt": null
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 14400,
+      "cutoffAt": null
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 900,
+      "cutoffAt": null
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 3600,
+      "cutoffAt": null
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 14400,
+      "cutoffAt": null
+    }
+  ],
   "transactions": [
-    "0x04c60de7ae5e5a33414331b870c4424e01b8cc9b777b9a21a90dc18381ffa6de"
+    "0x04c60de7ae5e5a33414331b870c4424e01b8cc9b777b9a21a90dc18381ffa6de",
+    "0x05e459fb689b19e6fe689fc403038b9e1add726005fdccebd3c89c053749c199",
+    "0x07cee74cc6e3622f66b494b474b4a0e1ef46f05c9b1ea03f97f63d6a8d9446e4",
+    "0x048e79237ee2c003f07decc3e0bd0d7e27931f9236bd5b4dbf801a46be3aa370",
+    "0x0104341723fb04f43c6c363c33252c51c71751c15e7b6aae5aa88af5c0ac7623",
+    "0x035c35c59004b4e9e77d106ba26a7290bab30ed86ecf1bc1f9c98b5b63056603",
+    "0x04604251456604b6263dde8e26fa1e68cb5929314428c7b42bb384b8ddbb03f2"
   ],
   "transactionLog": [
     {
       "hash": "0x04c60de7ae5e5a33414331b870c4424e01b8cc9b777b9a21a90dc18381ffa6de",
       "what": "deploy MolfiMarket"
+    },
+    {
+      "hash": "0x05e459fb689b19e6fe689fc403038b9e1add726005fdccebd3c89c053749c199",
+      "what": "sent bankroll for market 7"
+    },
+    {
+      "hash": "0x07cee74cc6e3622f66b494b474b4a0e1ef46f05c9b1ea03f97f63d6a8d9446e4",
+      "what": "funded market 7"
+    },
+    {
+      "hash": "0x048e79237ee2c003f07decc3e0bd0d7e27931f9236bd5b4dbf801a46be3aa370",
+      "what": "sent bankroll for market 8"
+    },
+    {
+      "hash": "0x0104341723fb04f43c6c363c33252c51c71751c15e7b6aae5aa88af5c0ac7623",
+      "what": "funded market 8"
+    },
+    {
+      "hash": "0x035c35c59004b4e9e77d106ba26a7290bab30ed86ecf1bc1f9c98b5b63056603",
+      "what": "sent bankroll for market 9"
+    },
+    {
+      "hash": "0x04604251456604b6263dde8e26fa1e68cb5929314428c7b42bb384b8ddbb03f2",
+      "what": "funded market 9"
     }
   ],
-  "complete": false
+  "complete": true
 }

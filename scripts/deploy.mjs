@@ -80,7 +80,7 @@ if (network === "mainnet" && args["yes-spend-real-money"] !== true) {
  * listed and unfunded.
  */
 function transient(text) {
-  return /error sending request|Failed to fetch|timed out|connection|502|503|504|reset by peer/i.test(
+  return /error sending request|Failed to fetch|timed out|connection|502|503|504|reset by peer|decoding response|Unknown RPC error|EOF|Gateway|rate.?limit|too many requests/i.test(
     text,
   );
 }

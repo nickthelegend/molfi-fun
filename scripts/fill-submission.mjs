@@ -110,11 +110,25 @@ if (verified.length < 3) {
 }
 
 const out = {
+  // Which chain these are on.
+  //
+  // Not in the brief's schema, and included anyway. A list of transaction hashes says
+  // nothing about which network it belongs to, and Sepolia hashes sitting in a field a
+  // reader assumes is mainnet is the kind of ambiguity that reads as padding. Better to
+  // over-specify and let anyone who wants the bare schema delete one line.
+  network,
   transactions: verified,
   contracts: [deployment.market].filter(Boolean),
   demo_video: process.env.DEMO_VIDEO ?? "",
   demo_url: process.env.DEMO_URL ?? "",
 };
+
+if (network !== "mainnet") {
+  console.log(
+    `\n  ! these are ${network} transactions. The submission asks for mainnet\n` +
+      "    (CHAIN_ID SN_MAIN); re-run against mainnet once a deployer is funded.",
+  );
+}
 
 if (problems > 0) {
   console.log(`\n${problems} problem(s). strk20.json not written.\n`);
