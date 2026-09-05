@@ -34,12 +34,12 @@ pub trait IAnonymizer<T> {
         ref self: T,
         operation: u8,
         market_id: u64,
-        secret: felt252,
         band_low: u256,
         band_high: u256,
-        note_id: felt252,
         token: ContractAddress,
         amount: u128,
+        secret: felt252,
+        note_id: felt252,
     ) -> Span<OpenNoteDeposit>;
 }
 

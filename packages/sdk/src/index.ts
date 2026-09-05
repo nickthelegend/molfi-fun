@@ -10,8 +10,23 @@
 
 export * from "./pricing.ts";
 export * from "./pragma.ts";
-export * from "./calibrate.ts";
+// Calibration inputs. HOUSE_EDGE_BPS and SIGMA_SHADE stay behind the generated module's
+// names: two live constants with the same name would shadow each other, and the one that
+// lost would be the one everyone actually quoted with.
+export {
+  HORIZONS,
+  fetchMinuteCloses,
+  returnsOver,
+  stdev,
+  buildTable,
+  fitHorizon,
+  type Candle,
+  type HorizonFit,
+} from "./calibrate.ts";
 export * from "./markets.ts";
 export * from "./quote.ts";
+export * from "./engine.ts";
+export * from "./format.ts";
 export * from "./console-geometry.ts";
 export * from "./networks.ts";
+export * from "./positions.ts";

@@ -23,9 +23,22 @@
 
 import { PROB_ONE, TABLE_LEN, Z_MAX, Z_STEP } from "./pricing.ts";
 
-/** Horizons molfi can honestly settle. All are longer than Pragma's publish cadence. */
+/**
+ * Round lengths molfi can honestly settle.
+ *
+ * Every one is longer than a Pragma publish cycle. The five minute round that used to head
+ * this list was removed: Pragma republishes every few minutes and the contract accepts a
+ * print up to fifteen minutes old, so a five minute round could settle against a number that
+ * was already public before the round opened — the one outcome a prediction market must not
+ * have. The floor is a publish interval, not a block.
+ *
+ * The ceiling is set by the tape rather than by taste. A twenty-four hour round was fitted
+ * and then cut: ninety days of minutes contains about ninety independent daily moves, and
+ * the held-out fifth of that is roughly eighteen. Out of sample the fit claimed 65% and
+ * delivered 33% on STRK — that is not a spread, it is a model that cannot price the
+ * instrument, and selling against it would be selling a number nobody measured.
+ */
 export const HORIZONS = [
-  { key: "5m", seconds: 300, label: "5 minutes" },
   { key: "15m", seconds: 900, label: "15 minutes" },
   { key: "1h", seconds: 3_600, label: "1 hour" },
   { key: "4h", seconds: 14_400, label: "4 hours" },

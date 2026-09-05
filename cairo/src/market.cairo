@@ -372,16 +372,21 @@ pub mod MolfiMarket {
 
     #[abi(embed_v0)]
     impl AnonymizerImpl of IAnonymizer<ContractState> {
+        /// Parameter order follows the escrow helper in the STRK20 docs: the operation
+        /// first, then this app's own fields, then `token` and `amount` adjacent, then
+        /// `secret` and `note_id` last. The pool deserializes calldata straight into these
+        /// parameters, so the order is part of the interface and matching the documented
+        /// idiom is the difference between a dry run that passes and one that does not.
         fn privacy_invoke(
             ref self: ContractState,
             operation: u8,
             market_id: u64,
-            secret: felt252,
             band_low: u256,
             band_high: u256,
-            note_id: felt252,
             token: ContractAddress,
             amount: u128,
+            secret: felt252,
+            note_id: felt252,
         ) -> Span<OpenNoteDeposit> {
             self.assert_pool();
 

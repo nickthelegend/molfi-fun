@@ -106,6 +106,3 @@ export const networkByChainId = (chainId: string): NetworkConfig | undefined => 
   const want = chainId.toLowerCase();
   return Object.values(NETWORKS).find((n) => n.chainId.toLowerCase() === want);
 };
-
-/** STRK is an 18 decimal token; every stake and payout in the app is in these units. */
-export const STAKE_DECIMALS = 18;

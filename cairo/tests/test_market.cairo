@@ -62,15 +62,15 @@ fn owner() -> ContractAddress {
 /// price with the same shape production does.
 fn btc_15m() -> Span<u256> {
     array![
-        0, 369_779, 580_923, 714_633, 799_682, 855_174, 893_299, 921_146, 940_715, 955_015,
-        963_815, 970_676, 976_060, 980_721, 984_310, 986_887, 989_202,
+        0, 300_323, 515_844, 666_532, 767_462, 836_637, 881_841, 912_690, 935_108, 950_822,
+        962_639, 971_041, 977_620, 982_135, 985_386, 988_415, 990_440,
     ]
         .span()
 }
 
 fn a_market(m: IMolfiMarketDispatcher, token: ContractAddress) -> u64 {
     start_cheat_caller_address(m.contract_address, owner());
-    let id = m.create_market('BTC/USD', CUTOFF, token, 178_325, 400, btc_15m());
+    let id = m.create_market('BTC/USD', CUTOFF, token, 171_077, 400, btc_15m());
     stop_cheat_caller_address(m.contract_address);
     id
 }
@@ -99,7 +99,7 @@ fn opening_a_position_credits_nothing_back() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    let deposits = anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    let deposits = anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     assert(deposits.len() == 0, 'empty span');
@@ -112,7 +112,7 @@ fn nobody_but_the_pool_can_drive_the_helper() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, addr('ATTACKER'));
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn an_unknown_operation_is_refused() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(9, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(9, id, 90_000, 110_000, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -130,8 +130,8 @@ fn the_same_commitment_cannot_be_opened_twice() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn a_position_cannot_open_after_the_cutoff() {
     let id = a_market(m, token);
     after_cutoff();
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'late', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'late', 0);
 }
 
 #[test]
@@ -208,8 +208,8 @@ fn a_position_cannot_be_claimed_before_settlement() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
-    anon.privacy_invoke(OP_CLAIM, id, 'secret', 90_000, 110_000, 'note', token, 0);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn a_winning_band_is_paid_into_an_open_note() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -226,7 +226,7 @@ fn a_winning_band_is_paid_into_an_open_note() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    let deposits = anon.privacy_invoke(OP_CLAIM, id, 'secret', 90_000, 110_000, 'note', token, 0);
+    let deposits = anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
     stop_cheat_caller_address(m.contract_address);
 
     assert(deposits.len() == 1, 'one note credited');
@@ -243,7 +243,7 @@ fn a_losing_band_pays_nothing() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -251,7 +251,7 @@ fn a_losing_band_pays_nothing() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_CLAIM, id, 'secret', 90_000, 110_000, 'note', token, 0);
+    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
 }
 
 #[test]
@@ -261,7 +261,7 @@ fn a_position_pays_exactly_once() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -269,8 +269,8 @@ fn a_position_pays_exactly_once() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_CLAIM, id, 'secret', 90_000, 110_000, 'note', token, 0);
-    anon.privacy_invoke(OP_CLAIM, id, 'secret', 90_000, 110_000, 'note', token, 0);
+    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
+    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn a_wrong_secret_claims_nothing() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -290,7 +290,7 @@ fn a_wrong_secret_claims_nothing() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_CLAIM, id, 'guess', 90_000, 110_000, 'note', token, 0);
+    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'guess', 'note');
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn an_inverted_band_is_refused() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 'secret', 110_000, 90_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 110_000, 90_000, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn an_inverted_band_is_refused() {
 fn an_unknown_market_is_refused() {
     let (m, anon, _, token) = setup();
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, 999, 'secret', 90_000, 110_000, 0, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, 999, 90_000, 110_000, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn a_stranger_cannot_list_a_market() {
     // can still be checked against nothing.
     let (m, _, _, token) = setup();
     start_cheat_caller_address(m.contract_address, addr('STRANGER'));
-    m.create_market('BTC/USD', CUTOFF, token, 178_325, 400, btc_15m());
+    m.create_market('BTC/USD', CUTOFF, token, 171_077, 400, btc_15m());
 }
 
 #[test]
@@ -328,11 +328,11 @@ fn a_table_that_is_not_a_cdf_is_refused_at_listing() {
     // every band in the market rather than one of them.
     let (m, _, _, token) = setup();
     let mut broken = array![
-        0_u256, 369_779, 580_923, 714_633, 799_682, 855_174, 893_299, 921_146, 940_715,
-        955_015, 963_815, 970_676, 976_060, 980_721, 984_310, 986_887, 100,
+        0_u256, 300_323, 515_844, 666_532, 767_462, 836_637, 881_841, 912_690, 935_108,
+        950_822, 962_639, 971_041, 977_620, 982_135, 985_386, 988_415, 100,
     ];
     start_cheat_caller_address(m.contract_address, owner());
-    m.create_market('BTC/USD', CUTOFF, token, 178_325, 400, broken.span());
+    m.create_market('BTC/USD', CUTOFF, token, 171_077, 400, broken.span());
 }
 
 #[test]
@@ -340,7 +340,7 @@ fn a_table_that_is_not_a_cdf_is_refused_at_listing() {
 fn a_market_cannot_be_listed_already_expired() {
     let (m, _, _, token) = setup();
     start_cheat_caller_address(m.contract_address, owner());
-    m.create_market('BTC/USD', NOW - 1, token, 178_325, 400, btc_15m());
+    m.create_market('BTC/USD', NOW - 1, token, 171_077, 400, btc_15m());
 }
 
 #[test]
@@ -355,13 +355,13 @@ fn a_market_with_no_volatility_is_refused() {
 fn a_market_prices_with_its_own_table_not_a_normal() {
     // The bug this exists to catch: the contract quoting from a textbook normal while the
     // desk quotes from measured tape. Over fifteen minutes BTC finishes within a quarter
-    // sigma of where it started 37% of the time and a normal says 20%, so the two disagree by
-    // nearly a factor of two at the first knot — a gap large enough to be the whole edge.
+    // sigma of where it started 30% of the time and a normal says 20%, so the two disagree by
+    // half again at the first knot — a gap large enough to be several times the whole fee.
     let (m, _, _, token) = setup();
     let id = a_market(m, token);
 
     let stored = m.get_table(id);
-    assert(*stored.at(1) == 369_779, 'measured knot kept');
+    assert(*stored.at(1) == 300_323, 'measured knot kept');
 
     let spot: u256 = 11_000_000_000_000;
     let half: u256 = 11_000_000_000;
@@ -370,8 +370,32 @@ fn a_market_prices_with_its_own_table_not_a_normal() {
     // The same band under a normal, for contrast. If these ever coincide the table is not
     // being read.
     let normal = molfi::pricing::quote(
-        molfi::pricing::normal_table(), spot, spot - half, spot + half, 178_325, 400,
+        molfi::pricing::normal_table(), spot, spot - half, spot + half, 171_077, 400,
     );
-    assert(mine == 15_649, 'quotes from measured tape');
+    assert(mine == 16_937, 'quotes from measured tape');
     assert(mine != normal.multiplier_bps, 'not the normal table');
+}
+
+#[test]
+fn the_commitment_matches_the_one_the_browser_computes() {
+    // The single point where the desk and the chain must agree about identity. The browser
+    // derives this hash to look a position up; the contract derives it to decide who gets
+    // paid. If starknet.js's Poseidon and Cairo's disagreed by one field element, every
+    // position would open fine and no position could ever be found again — and nothing
+    // short of a real payout would reveal it.
+    //
+    // Generated by `hash.computePoseidonHashOnElements` in starknet.js over the same span
+    // `commitment_of` builds: tag, secret, market id, band low (lo, hi), band high (lo, hi).
+    let (m, anon, _, token) = setup();
+    let id = a_market(m, token);
+    assert(id == 1, 'first market is 1');
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    let expected: felt252 = 0x4d41e3ad2552475273859e87b4fe034503ce567ad72fead91991ef5fc5b20bf;
+    let position = m.get_position(expected);
+    assert(position.exists, 'browser commitment agrees');
+    assert(position.stake == 1_000, 'and points at the position');
 }

@@ -1,11 +1,13 @@
 /**
- * The XORR console, as geometry.
+ * The molfi console, as geometry.
  *
- * One definition, two consumers: tools/model/build-model.mjs serialises it to a .glb
- * for anyone who wants the asset, and the web app builds BufferGeometry from it
- * directly. Shipping the shape as data rather than a binary the browser has to fetch
- * and parse means the hero cannot be defeated by a loader, a decoder CDN, or a
- * suspended fetch — it is just arrays.
+ * A handheld: portrait shell, screen, keys. Shipped as arrays rather than a .glb the browser
+ * has to fetch and parse, so the hero cannot be defeated by a loader, a decoder CDN, or a
+ * fetch that never settles. There is nothing to wait for.
+ *
+ * The palette is graphite with one lit accent. It began as a cream and primary-coloured toy,
+ * which read as somebody else's product sitting in the middle of this one — a device with
+ * eight bright plastics on it competes with the only numbers on the page that matter.
  */
 
 export interface MaterialDef {
@@ -19,20 +21,20 @@ export interface MaterialDef {
 }
 
 export const CONSOLE_MATERIALS: MaterialDef[] = [
-  { name: "shell", color: "#f7efc2", metallic: 0.03, roughness: 0.52 },
-  { name: "shellDark", color: "#e0d5a2", metallic: 0.03, roughness: 0.6 },
-  { name: "screen", color: "#050505", metallic: 0.15, roughness: 0.16 },
-  { name: "amber", color: "#ff9f0a", metallic: 0, roughness: 0.4, emissive: [0.7, 0.42, 0.03] },
-  { name: "orange", color: "#f26522", metallic: 0.05, roughness: 0.45 },
-  { name: "lilac", color: "#9b8cf0", metallic: 0.05, roughness: 0.42 },
-  { name: "gold", color: "#f5c518", metallic: 0.75, roughness: 0.28 },
-  { name: "ink", color: "#141414", metallic: 0.1, roughness: 0.55 },
-  { name: "blue", color: "#4a90e2", metallic: 0.05, roughness: 0.45 },
-  { name: "green", color: "#35c77e", metallic: 0.05, roughness: 0.45 },
-  { name: "yellow", color: "#f5d547", metallic: 0.05, roughness: 0.45 },
-  { name: "pink", color: "#e8b4d8", metallic: 0.05, roughness: 0.45 },
-  { name: "red", color: "#e8453c", metallic: 0.05, roughness: 0.45 },
-  { name: "paper", color: "#f5f5f0", metallic: 0.02, roughness: 0.7 },
+  { name: "shell", color: "#1c2228", metallic: 0.06, roughness: 0.58 },
+  { name: "shellDark", color: "#12171b", metallic: 0.06, roughness: 0.66 },
+  { name: "screen", color: "#04070a", metallic: 0.2, roughness: 0.12 },
+  { name: "amber", color: "#4ec9e8", metallic: 0, roughness: 0.3, emissive: [0.10, 0.42, 0.52] },
+  { name: "orange", color: "#2a3239", metallic: 0.08, roughness: 0.5 },
+  { name: "lilac", color: "#242b32", metallic: 0.08, roughness: 0.5 },
+  { name: "gold", color: "#5b6670", metallic: 0.8, roughness: 0.3 },
+  { name: "ink", color: "#0a0e11", metallic: 0.12, roughness: 0.6 },
+  { name: "blue", color: "#2f4a55", metallic: 0.08, roughness: 0.48 },
+  { name: "green", color: "#2c4a3c", metallic: 0.08, roughness: 0.48 },
+  { name: "yellow", color: "#4a4433", metallic: 0.08, roughness: 0.48 },
+  { name: "pink", color: "#3a3140", metallic: 0.08, roughness: 0.48 },
+  { name: "red", color: "#4a2f2d", metallic: 0.08, roughness: 0.48 },
+  { name: "paper", color: "#2e363d", metallic: 0.03, roughness: 0.72 },
 ];
 
 const M: Record<string, number> = Object.fromEntries(

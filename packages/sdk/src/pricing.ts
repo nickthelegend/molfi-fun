@@ -1,10 +1,11 @@
 /**
- * Exact TypeScript mirror of packages/contracts/src/lib/Pricing.sol.
+ * Exact TypeScript mirror of cairo/src/pricing.cairo.
  *
- * Every operation is BigInt so the truncating integer division matches Solidity step
- * for step. The desk quotes from this file; the chain quotes from the Solidity one;
- * test/parity.ts diffs the two over thousands of inputs so the number a player sees
- * before firing is provably the number they get charged.
+ * Every operation is BigInt so the truncating integer division matches Cairo's u256
+ * arithmetic step for step. The desk quotes from this file; the chain quotes from the Cairo
+ * one; `test/parity.ts` generates vectors from here that `cairo/tests/test_parity.cairo`
+ * asserts to the unit, so the number a trader sees before committing is provably the number
+ * they get charged.
  */
 
 export const BPS = 10_000n;
@@ -49,7 +50,7 @@ export function halfProb(t: ProbTable, z1e4: bigint): bigint {
   return lo + ((hi - lo) * rem) / Z_STEP;
 }
 
-/** Babylonian integer square root, matching the Solidity implementation exactly. */
+/** Babylonian integer square root, matching `sqrt_u256` in the Cairo library exactly. */
 export function sqrt(x: bigint): bigint {
   if (x === 0n) return 0n;
   let z = x;
@@ -92,7 +93,7 @@ export interface Quote {
   prob1e6: bigint;
 }
 
-/** The multiplier XORR offers: 1/p less the house edge. No clamping happens here. */
+/** The multiplier molfi offers: 1/p less the house edge. No clamping happens here. */
 export function quote(
   t: ProbTable,
   spot: bigint,
@@ -107,7 +108,7 @@ export function quote(
   return { multiplierBps: (gross * (BPS - houseEdgeBps)) / BPS, prob1e6 };
 }
 
-/** Invert T(z) the same way RangeMarket does: bisect the same table. z is 1e4 fp. */
+/** Invert T(z) by bisecting the same table the forward direction reads. z is 1e4 fp. */
 export function zForProb(t: ProbTable, p1e6: bigint): bigint {
   if (p1e6 >= PROB_ONE) return Z_MAX;
   let lo = 0n;
@@ -129,50 +130,60 @@ export interface BandLimits {
 }
 
 /**
- * Widest band whose win probability is still <= target, or tightest band whose
- * probability is already >= target. Probability rises with width, so both are plain
- * bisections. Mirrors RangeMarket._solveHalfWidth.
+ * The widest, or tightest, half-width whose quoted multiplier is still on the right side of
+ * a bound.
+ *
+ * Bisected against `quote` itself rather than against a probability derived from the bound.
+ * The two are not inverses: `quote` floors twice — once turning a probability into a gross
+ * multiplier, once applying the edge — so the width whose probability equals the analytic
+ * target quotes a basis point or two below it. That gap is what made the painter offer a band
+ * the desk then refused, which is the single most confusing thing a market can do.
+ *
+ * The multiplier falls as the band widens, so both directions are plain bisections.
  */
 function solveHalfWidth(
   t: ProbTable,
   spot: bigint,
   sig1e4: bigint,
-  targetProb: bigint,
-  lowest: boolean,
+  boundBps: bigint,
+  houseEdgeBps: bigint,
+  /** true: the tightest width quoting at or below the bound. false: the widest at or above. */
+  tightest: boolean,
 ): bigint {
   let lo = 1n;
-  let hi = 100_000_000n; // 1e4-scaled bps; 1e8 is a 100% wide band
+  let hi = 100_000_000n; // 1e8 is a band 100% of spot wide on each side
 
-  for (let i = 0; i < 40 && lo < hi; i++) {
-    const mid = lowest ? (lo + hi) / 2n : (lo + hi + 1n) / 2n;
-    const half = (spot * mid) / 100_000_000n;
+  const multiplierAt = (width: bigint): bigint => {
+    const half = (spot * width) / 100_000_000n;
+    if (half === 0n) return MAX_SAFE_MULTIPLIER;
+    if (half >= spot) return 0n;
+    return quote(t, spot, spot - half, spot + half, sig1e4, houseEdgeBps).multiplierBps;
+  };
 
-    let p: bigint;
-    if (half === 0n || half >= spot) {
-      p = half === 0n ? 0n : PROB_ONE;
-    } else {
-      p = probInside(t, spot, spot - half, spot + half, sig1e4);
-    }
-
-    if (lowest) {
-      if (p >= targetProb) hi = mid;
+  for (let i = 0; i < 40 && lo < hi; i += 1) {
+    const mid = tightest ? (lo + hi) / 2n : (lo + hi + 1n) / 2n;
+    const m = multiplierAt(mid);
+    if (tightest) {
+      // Narrower pays more, so a multiplier still above the cap means widen.
+      if (m <= boundBps) hi = mid;
       else lo = mid + 1n;
     } else {
-      if (p <= targetProb) lo = mid;
+      if (m >= boundBps) lo = mid;
       else hi = mid - 1n;
     }
   }
   return lo > hi ? hi : lo;
 }
 
+/** Stand-in for "infinitely rich", used only where the band has collapsed to nothing. */
+const MAX_SAFE_MULTIPLIER = 1n << 64n;
+
 /**
- * The window the band painter may move inside. Mirrors RangeMarket.bandLimits.
+ * The window the band painter may move inside.
  *
- * The endpoints are solved against the same arithmetic `fire` uses rather than derived
- * from a z analytically. The analytic route looks right and is not: the trip from z to
- * a 1e4-scaled width to an 8-decimal price and back loses a unit at each truncating
- * division, so the tightest band the painter offered came back one unit under the
- * probability floor — the market refusing a band it had just offered.
+ * Both endpoints are solved against the same `quote` the desk charges with, so every width
+ * the painter offers is a width the desk will actually sell. Deriving them from a target
+ * probability instead looks equivalent and is not — see `solveHalfWidth`.
  */
 export function bandLimits(
   t: ProbTable,
@@ -180,16 +191,15 @@ export function bandLimits(
   sig1e4: bigint,
   houseEdgeBps: bigint,
   minMultiplierBps: bigint,
-  minProb1e6: bigint,
+  maxMultiplierBps: bigint,
 ): BandLimits {
-  const pAtFloor = (PROB_ONE * (BPS - houseEdgeBps)) / minMultiplierBps;
-  let min = solveHalfWidth(t, spot, sig1e4, minProb1e6, true);
-  let max = solveHalfWidth(t, spot, sig1e4, pAtFloor, false);
+  let min = solveHalfWidth(t, spot, sig1e4, maxMultiplierBps, houseEdgeBps, true);
+  let max = solveHalfWidth(t, spot, sig1e4, minMultiplierBps, houseEdgeBps, false);
 
-  // Never sell inside the first measured knot. The table is sampled every 0.25 sigma,
-  // so below that this is interpolating between "the price did not move at all" and the
-  // first real observation — a straight line that is not a measurement, and is wrong in
-  // the player's favour. Mirrors RangeMarket.bandLimits.
+  // Never sell inside the first measured knot. The table is sampled every 0.25 sigma, so
+  // below that this is interpolating between "the price did not move at all" and the first
+  // real observation — a straight line that is not a measurement, and is wrong in the
+  // trader's favour.
   const firstKnot = sig1e4 / 4n; // z = 0.25
   if (min < firstKnot) min = firstKnot;
   if (max < min) max = min;
@@ -197,8 +207,41 @@ export function bandLimits(
   return { sig1e4, minHalfWidth1e4: min, maxHalfWidth1e4: max };
 }
 
-/** Payout for a stake at a multiplier, in asset units. Mirrors RangeMarket._open. */
+/** Payout for a stake at a multiplier, in token units. Mirrors `payout_for` in Cairo. */
 export function payoutFor(stake: bigint, multiplierBps: bigint): bigint {
   return (stake * multiplierBps) / BPS;
 }
 
+/**
+ * Sigma for a round with `remaining` seconds left, interpolated between calibrated tiers.
+ *
+ * Interpolating between measured points rather than sqrt-scaling one of them, and taking the
+ * table shape from the lower bracketing tier. Square-root scaling is the textbook move and it
+ * does not hold on real tape at these horizons — measured sigma over four hours is not four
+ * times the fifteen minute figure, it is closer to three and a half. Scaling would misprice
+ * every band that is not exactly on a calibrated tier.
+ *
+ * Used when topping up an open position: the top-up is quoted against the time actually left,
+ * not against the round it was originally sold for.
+ */
+export function sigmaForSeconds(
+  roundSeconds: readonly number[],
+  sigmas: readonly bigint[],
+  remaining: number,
+): { sigma1e4: bigint; tableTier: number } {
+  const n = roundSeconds.length;
+  if (n === 0) throw new Error("RoundsNotSet");
+  if (remaining <= roundSeconds[0]) return { sigma1e4: sigmas[0], tableTier: 0 };
+  if (remaining >= roundSeconds[n - 1]) return { sigma1e4: sigmas[n - 1], tableTier: n - 1 };
+
+  for (let i = 0; i + 1 < n; i += 1) {
+    const lo = roundSeconds[i];
+    const hi = roundSeconds[i + 1];
+    if (remaining >= lo && remaining <= hi) {
+      const sigma1e4 =
+        sigmas[i] + ((sigmas[i + 1] - sigmas[i]) * BigInt(remaining - lo)) / BigInt(hi - lo);
+      return { sigma1e4, tableTier: i };
+    }
+  }
+  return { sigma1e4: sigmas[0], tableTier: 0 };
+}

@@ -1,37 +1,23 @@
 /**
  * What a band costs, for the desk.
  *
- * A thin layer over `pricing.ts`: pick the calibrated table for a market and horizon, scale
- * sigma, and quote. The arithmetic lives in `pricing.ts` because that file is mirrored by the
- * contract; this one only decides which inputs to hand it.
+ * A thin layer over `pricing.ts`: pick the calibrated table for a market and round length,
+ * and quote. The arithmetic lives in `pricing.ts` because that file is mirrored by the
+ * contract; this one only decides which inputs to hand it, and names every refusal.
  *
- * The engine this replaces was Monad-shaped — rounds indexed by 300ms blocks, tiers, a
- * stacking rule tied to block numbers. None of those concepts survive the move to a chain
- * where the constraint is how often the oracle publishes rather than how fast blocks close.
+ * The engine this replaces was Monad-shaped — rounds indexed by 300ms blocks, a stacking rule
+ * tied to block numbers. None of those concepts survive the move to a chain where the
+ * constraint is how often the oracle publishes rather than how fast blocks close.
  */
 
-import {
-  BPS,
-  PROB_ONE,
-  bandLimits,
-  payoutFor,
-  quote as priceQuote,
-  zForProb,
-  type ProbTable,
-} from "./pricing.ts";
+import { bandLimits, payoutFor, quote as priceQuote, zForProb } from "./pricing.ts";
 import {
   MAX_MULTIPLIER_BPS,
   MIN_MULTIPLIER_BPS,
+  type CalibratedRound,
   type MarketDef,
 } from "./markets.ts";
-
-/** A calibrated table plus the sigma it was fitted with, for one market and horizon. */
-export interface Calibration {
-  marketKey: string;
-  horizonKey: string;
-  sigma1e4: bigint;
-  table: ProbTable;
-}
+import { HOUSE_EDGE_BPS } from "./generated/markets.ts";
 
 export type QuoteFailure =
   | { kind: "no-calibration"; detail: string }
@@ -55,32 +41,34 @@ export interface QuoteErr {
 
 export type QuoteResult = QuoteOk | QuoteErr;
 
+/** The calibrated round a market runs at a tier, or nothing if it does not run one. */
+export function roundOf(market: MarketDef, tier: number): CalibratedRound | undefined {
+  return market.rounds[tier];
+}
+
 /**
  * Price a band.
  *
  * Every refusal is named rather than collapsed into a null. A desk that cannot say why it
- * will not quote is a desk nobody can debug, and the four reasons here need four different
- * responses from the caller: recalibrate, move the band, widen it, narrow it.
+ * will not quote is a desk nobody can debug, and these reasons need different responses from
+ * the caller: recalibrate, move the band, widen it, narrow it.
  */
 export function quoteBand(
-  calibrations: readonly Calibration[],
   market: MarketDef,
-  horizonKey: string,
+  tier: number,
   spot: bigint,
   low: bigint,
   high: bigint,
   stake: bigint,
-  houseEdgeBps: bigint,
+  houseEdgeBps: bigint = HOUSE_EDGE_BPS,
 ): QuoteResult {
-  const cal = calibrations.find(
-    (c) => c.marketKey === market.key && c.horizonKey === horizonKey,
-  );
-  if (!cal) {
+  const round = roundOf(market, tier);
+  if (!round) {
     return {
       ok: false,
       error: {
         kind: "no-calibration",
-        detail: `${market.pair} has no fitted table for ${horizonKey}`,
+        detail: `${market.label} has no fitted table for tier ${tier}`,
       },
     };
   }
@@ -98,7 +86,7 @@ export function quoteBand(
     };
   }
 
-  const q = priceQuote(cal.table, spot, low, high, cal.sigma1e4, houseEdgeBps);
+  const q = priceQuote(round.probTable, spot, low, high, round.sigma1e4, houseEdgeBps);
 
   if (q.multiplierBps < MIN_MULTIPLIER_BPS) {
     return {
@@ -128,33 +116,29 @@ export function quoteBand(
 }
 
 /**
- * The half-widths worth offering at a given spot, as basis points of it.
+ * The half-widths worth offering at a given spot, as a fraction of it times 1e8.
  *
  * Used by the console to bound the drag handles, so a trader cannot paint a band the desk
- * would only refuse. Returned in the same units the pricing library speaks, because
- * converting to prices here would round twice and put the boundary a unit inside the range
- * the desk actually accepts.
+ * would only refuse. Returned in the units the pricing library speaks, because converting to
+ * prices here would round twice and put the boundary a unit inside the range the desk
+ * actually accepts.
  */
 export function sellableHalfWidths(
-  calibrations: readonly Calibration[],
   market: MarketDef,
-  horizonKey: string,
+  tier: number,
   spot: bigint,
-  houseEdgeBps: bigint,
+  houseEdgeBps: bigint = HOUSE_EDGE_BPS,
 ): { minHalfWidth1e4: bigint; maxHalfWidth1e4: bigint } | null {
-  const cal = calibrations.find(
-    (c) => c.marketKey === market.key && c.horizonKey === horizonKey,
-  );
-  if (!cal) return null;
+  const round = roundOf(market, tier);
+  if (!round) return null;
 
   const limits = bandLimits(
-    cal.table,
+    round.probTable,
     spot,
-    cal.sigma1e4,
+    round.sigma1e4,
     houseEdgeBps,
     MIN_MULTIPLIER_BPS,
-    // The probability the tightest sellable band corresponds to.
-    (PROB_ONE * (BPS - houseEdgeBps)) / MAX_MULTIPLIER_BPS,
+    round.maxMultiplierBps < MAX_MULTIPLIER_BPS ? round.maxMultiplierBps : MAX_MULTIPLIER_BPS,
   );
   return {
     minHalfWidth1e4: limits.minHalfWidth1e4,

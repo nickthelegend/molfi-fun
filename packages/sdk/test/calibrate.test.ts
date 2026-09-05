@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PROB_ONE, TABLE_LEN } from "../src/pricing.ts";
 import { buildTable, fitHorizon, returnsOver, stdev } from "../src/calibrate.ts";
-import { CALIBRATIONS, HOUSE_EDGE_BPS } from "../src/generated/tables.ts";
+import { CALIBRATED_MARKETS, HOUSE_EDGE_BPS } from "../src/generated/markets.ts";
+import { roundLabel } from "../src/markets.ts";
 
 /** A deterministic walk, so the fit is checked against something with a known shape. */
 function walk(n: number, step: number, seed = 1): number[] {
@@ -69,14 +70,32 @@ test("a fit holds out the tail and reports both rates", () => {
 });
 
 test("every shipped calibration is a usable CDF with a positive sigma", () => {
-  assert.ok(CALIBRATIONS.length > 0, "tables were generated");
-  for (const c of CALIBRATIONS) {
-    assert.ok(c.sigma1e4 > 0n, `${c.marketKey}/${c.horizonKey} sigma`);
-    assert.equal(c.table.length, TABLE_LEN, `${c.marketKey}/${c.horizonKey} length`);
-    assert.equal(c.table[0], 0n);
-    for (let i = 1; i < TABLE_LEN; i += 1) {
-      assert.ok(c.table[i] >= c.table[i - 1], `${c.marketKey}/${c.horizonKey} dips at ${i}`);
-      assert.ok(c.table[i] <= PROB_ONE);
+  assert.ok(CALIBRATED_MARKETS.length > 0, "tables were generated");
+  for (const m of CALIBRATED_MARKETS) {
+    assert.ok(m.rounds.length > 0, `${m.key} has no rounds`);
+    m.rounds.forEach((r, tier) => {
+      const where = `${m.key}/${roundLabel(tier)}`;
+      assert.ok(r.sigma1e4 > 0n, `${where} sigma`);
+      assert.equal(r.probTable.length, TABLE_LEN, `${where} length`);
+      assert.equal(r.probTable[0], 0n);
+      for (let i = 1; i < TABLE_LEN; i += 1) {
+        assert.ok(r.probTable[i] >= r.probTable[i - 1], `${where} dips at ${i}`);
+        // No knot may read as certainty: the tail past four sigma is thin, not empty.
+        assert.ok(r.probTable[i] < PROB_ONE, `${where} claims certainty at ${i}`);
+      }
+    });
+  }
+});
+
+test("sigma grows with the round length on every market", () => {
+  // Not by any particular law — measured sigma over four hours is not four times the
+  // fifteen minute figure — but it cannot shrink, and a fit that says it does is broken.
+  for (const m of CALIBRATED_MARKETS) {
+    for (let i = 1; i < m.rounds.length; i += 1) {
+      assert.ok(
+        m.rounds[i].sigma1e4 > m.rounds[i - 1].sigma1e4,
+        `${m.key} sigma does not grow from ${roundLabel(i - 1)} to ${roundLabel(i)}`,
+      );
     }
   }
 });
