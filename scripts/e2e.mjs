@@ -14,6 +14,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { commitmentOf, u256Parts } from "../packages/sdk/src/positions.ts";
+import { offsetsOf } from "../packages/sdk/src/pricing.ts";
 import { CALIBRATED_MARKETS } from "../packages/sdk/src/generated/markets.ts";
 
 const RPC = process.env.RPC ?? "http://127.0.0.1:5050";
@@ -57,6 +58,16 @@ function sncast(...a) {
 
 const invoke = (to, fn, calldata) =>
   sncast("invoke", "--contract-address", to, "--function", fn, "--calldata", ...calldata);
+
+/** The address this script transacts from, read from sncast rather than assumed. */
+function accountAddress() {
+  const r = spawnSync("sncast", ["--json", "account", "list"], { cwd: "cairo", encoding: "utf8" });
+  const m = String(r.stdout ?? "").match(
+    new RegExp(`"${account}"\\s*:\\s*\\{[^}]*"address"\\s*:\\s*"(0x[0-9a-fA-F]+)"`),
+  );
+  if (!m) throw new Error(`could not read ${account}'s address from sncast`);
+  return m[1];
+}
 
 async function rpc(method, params) {
   const res = await fetch(RPC, {
@@ -320,6 +331,121 @@ try {
   check(false, "a wrong secret claims nothing", "it was accepted");
 } catch (e) {
   check(/NO_SUCH_POSITION/.test(e.message), "a wrong secret claims nothing", e.message);
+}
+
+// ---------------------------------------------------------------- the public route
+//
+// The other way in, and the one that made molfi tradeable at all. No pool, no shielded
+// balance, no wallet that speaks STRK20: an ordinary account approves the stake and calls
+// `open_position` with a commitment and two ratios. The band never appears on chain until
+// the claim, and this section is what proves that end to end rather than in a harness.
+say("\nthe public route");
+{
+  const trader = accountAddress();
+  const [lowOff, highOff] = offsetsOf((bandLow + bandHigh) / 2n, bandLow, bandHigh);
+  const pubSecret = {
+    secret: "0x0dec1a55ed0dec1a55ed0dec1a55ed0dec1a55ed0dec1a55ed0dec1a55ed",
+    marketId: OPEN_MARKET,
+    bandLow,
+    bandHigh,
+  };
+  const pubCommitment = commitmentOf(pubSecret);
+
+  // The reach is what the chain is told, and it is the whole of what it is told about the
+  // band. Printed here so a reader can see for themselves that the band is not in the call.
+  say(`  reach ${lowOff} / ${highOff} (1e8 of the band's midpoint) — the band itself is not sent`);
+
+  const quoted = await call(d.market, sel("quote_offsets"), [
+    hex(OPEN_MARKET), ...u256Parts(lowOff), ...u256Parts(highOff),
+  ]).then((r) => (BigInt(r[1]) << 128n) | BigInt(r[0]));
+  check(quoted > 10_000n, "the contract quotes the reach before anything is committed", `${Number(quoted) / 10_000}x`);
+
+  invoke(d.token, "mint", [trader, ...u256Parts(stake)]);
+  invoke(d.token, "approve", [d.market, ...u256Parts(stake)]);
+  invoke(d.market, "open_position", [
+    hex(OPEN_MARKET), pubCommitment, ...u256Parts(lowOff), ...u256Parts(highOff),
+    ...u256Parts(stake),
+  ]);
+
+  const p = await call(d.market, sel("get_position"), [pubCommitment]);
+  check(BigInt(p[9]) === 1n, "an ordinary account opened a position");
+  check(BigInt(p[5]) === stake, "for the stake it actually paid", p[5]);
+  const charged = (BigInt(p[7]) << 128n) | BigInt(p[6]);
+  check(charged === quoted, "at exactly the multiplier it was quoted", `${Number(charged) / 10_000}x`);
+  check(BigInt(p[10]) === BigInt(trader), "bound to the address that opened it");
+  check(
+    ((BigInt(p[2]) << 128n) | BigInt(p[1])) === lowOff && BigInt(p[3]) !== bandLow,
+    "and the chain holds the reach, not the band",
+  );
+
+  // Settle the market the public position sits in.
+  const m0 = await call(d.market, sel("get_market"), [hex(OPEN_MARKET)]);
+  const cutoff2 = Number(BigInt(m0[1]));
+  const now2 = await chainNow();
+  if (now2 < cutoff2) await rpc("devnet_increaseTime", { time: cutoff2 - now2 + 30 });
+  const at2 = await chainNow();
+  invoke(d.oracle, "set", [hex(spot), hex(at2 - 60), "0xb"]);
+  invoke(d.market, "settle", [hex(OPEN_MARKET)]);
+
+  const before = await call(d.token, sel("balance_of"), [trader]).then(
+    (r) => (BigInt(r[1]) << 128n) | BigInt(r[0]),
+  );
+
+  // A stranger holding the secret must not be able to take it. Run before the real claim,
+  // because afterwards ALREADY_CLAIMED would mask whether the owner check works at all.
+  //
+  // A different account entirely, so this tests the owner check and not the secret. sncast
+  // takes --account before the subcommand, which the shared helper hard-codes, so this one
+  // call is spelled out rather than routed through it.
+  {
+    const r = spawnSync(
+      "sncast",
+      [
+        "--json", "--account", "e2e-stranger", "invoke",
+        "--contract-address", d.market, "--function", "claim_position",
+        "--calldata", hex(OPEN_MARKET), pubSecret.secret,
+        ...u256Parts(bandLow), ...u256Parts(bandHigh),
+        "--url", RPC,
+      ],
+      { cwd: "cairo", encoding: "utf8" },
+    );
+    const text = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    check(
+      /NOT_YOUR_POSITION/.test(text),
+      "a stranger with the secret cannot claim it",
+      /NOT_YOUR_POSITION/.test(text) ? "NOT_YOUR_POSITION (contract refused)" : text.slice(-120),
+    );
+  }
+
+  // Claiming with a band that is not the one that was paid for must be refused. Same reach
+  // would be a different attack; this is the cheap-wide-band-claimed-as-narrow one.
+  try {
+    invoke(d.market, "claim_position", [
+      hex(OPEN_MARKET), pubSecret.secret,
+      ...u256Parts(spot - half / 8n), ...u256Parts(spot + half / 8n),
+    ]);
+    check(false, "a band that was not paid for is refused", "it was accepted");
+  } catch (e) {
+    check(
+      /NO_SUCH_POSITION|BAND_DOES_NOT_MATCH/.test(e.message),
+      "a band that was not paid for is refused",
+      e.message.slice(0, 60),
+    );
+  }
+
+  invoke(d.market, "claim_position", [
+    hex(OPEN_MARKET), pubSecret.secret, ...u256Parts(bandLow), ...u256Parts(bandHigh),
+  ]);
+
+  const after = await call(d.token, sel("balance_of"), [trader]).then(
+    (r) => (BigInt(r[1]) << 128n) | BigInt(r[0]),
+  );
+  const won = after - before;
+  check(won === (stake * charged) / 10_000n, "the trader was paid the multiplier they bought", won);
+  check(won > stake, "which is more than they staked", `${won} > ${stake}`);
+
+  const p2 = await call(d.market, sel("get_position"), [pubCommitment]);
+  check(BigInt(p2[8]) === 1n, "and the position is marked claimed");
 }
 
 say(failures === 0 ? "\nall checks passed\n" : `\n${failures} check(s) failed\n`);

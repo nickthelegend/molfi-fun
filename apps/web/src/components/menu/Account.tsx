@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CallData } from "starknet";
-import { fmtStrk } from "@molfi/sdk";
+import { PRAGMA, fmtStrk } from "@molfi/sdk";
 import {
   ADDRESSES,
   LIVE_CONFIGURED,
@@ -91,6 +91,20 @@ export function Account({
       setBusy(false);
     }
   };
+
+  /**
+   * What to call the settlement oracle, decided by which contract it actually is.
+   *
+   * On Sepolia this address is molfi's price relay, not Pragma. Printing "Pragma oracle"
+   * above it sent anyone who followed the link to a contract that settles nothing here —
+   * on the sheet whose entire purpose is "printed so they can be checked".
+   */
+  const oracleLabel =
+    ADDRESSES.oracle &&
+    ADDRESSES.oracle.toLowerCase() !==
+      PRAGMA[activeNetwork.name === "mainnet" ? "mainnet" : "sepolia"]?.toLowerCase()
+      ? "Price relay (mainnet Pragma, republished)"
+      : "Pragma oracle";
 
   return (
     <div className="space-y-3 pb-6">
@@ -183,7 +197,10 @@ export function Account({
         <Copyable label="Privacy pool" value={ADDRESSES.pool} onCopy={copy} />
         <Copyable label="molfi market" value={ADDRESSES.market} onCopy={copy} />
         <Copyable label="STRK" value={ADDRESSES.token} onCopy={copy} />
-        <Copyable label="Pragma oracle" value={ADDRESSES.oracle} onCopy={copy} />
+        {/* Labelled by what it is, not by what it wraps. On Sepolia this address is the
+            price relay, and calling it "Pragma oracle" sent anyone who checked it to a
+            contract that settles nothing here. */}
+        <Copyable label={oracleLabel} value={ADDRESSES.oracle} onCopy={copy} />
         {LIVE_CONFIGURED ? (
           <p className="mt-3 text-[11px] leading-relaxed text-white/40">
             Printed so they can be checked. Every quote, position and settlement the desk

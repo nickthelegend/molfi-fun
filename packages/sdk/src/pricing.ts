@@ -80,9 +80,39 @@ export function probInside(
   sig1e4: bigint,
 ): bigint {
   if (sig1e4 === 0n) throw new Error("ZeroSigma");
+  const [lowOff, highOff] = offsetsOf(spot, low, high);
+  return probInsideOff(t, lowOff, highOff, sig1e4);
+}
+
+/**
+ * How far each edge of a band reaches from spot, as a fraction of spot times 1e8.
+ *
+ * The absolute price cancels out of `probInside` — every use of it is a ratio to spot — so
+ * this pair is the whole of what pricing needs from a band. molfi's public trading route
+ * sends only these two numbers on chain, which is what lets a position be priced and paid
+ * for without anybody being told where the band sits until it is claimed.
+ */
+export function offsetsOf(spot: bigint, low: bigint, high: bigint): [bigint, bigint] {
   if (low >= spot || high <= spot) throw new Error("SpotOutsideBand");
-  const zLow = (((spot - low) * 100_000_000n) / spot) * BPS / sig1e4;
-  const zHigh = (((high - spot) * 100_000_000n) / spot) * BPS / sig1e4;
+  return [((spot - low) * 100_000_000n) / spot, ((high - spot) * 100_000_000n) / spot];
+}
+
+/**
+ * Probability from the band's reach rather than its place, 1e6 fp.
+ *
+ * No zero check on the offsets: `offsetsOf` truncates, so a band one unit wide around a big
+ * spot legitimately reaches zero on a side, and the spot-based form priced that at zero
+ * rather than refusing it. The multiplier bounds turn a degenerate band away instead.
+ */
+export function probInsideOff(
+  t: ProbTable,
+  lowOff1e8: bigint,
+  highOff1e8: bigint,
+  sig1e4: bigint,
+): bigint {
+  if (sig1e4 === 0n) throw new Error("ZeroSigma");
+  const zLow = (lowOff1e8 * BPS) / sig1e4;
+  const zHigh = (highOff1e8 * BPS) / sig1e4;
   return (halfProb(t, zLow) + halfProb(t, zHigh)) / 2n;
 }
 
@@ -102,7 +132,19 @@ export function quote(
   sig1e4: bigint,
   houseEdgeBps: bigint,
 ): Quote {
-  const prob1e6 = probInside(t, spot, low, high, sig1e4);
+  const [lowOff, highOff] = offsetsOf(spot, low, high);
+  return quoteOff(t, lowOff, highOff, sig1e4, houseEdgeBps);
+}
+
+/** The same multiplier, from the band's reach. What the public trading route is charged. */
+export function quoteOff(
+  t: ProbTable,
+  lowOff1e8: bigint,
+  highOff1e8: bigint,
+  sig1e4: bigint,
+  houseEdgeBps: bigint,
+): Quote {
+  const prob1e6 = probInsideOff(t, lowOff1e8, highOff1e8, sig1e4);
   if (prob1e6 === 0n) return { multiplierBps: 0n, prob1e6: 0n };
   const gross = (PROB_ONE * BPS) / prob1e6;
   return { multiplierBps: (gross * (BPS - houseEdgeBps)) / BPS, prob1e6 };

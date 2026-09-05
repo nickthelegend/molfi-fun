@@ -75,15 +75,27 @@ pub struct Market {
     pub reserved: u256,
 }
 
+/// A position, stored as what it costs rather than what it says.
+///
+/// The band itself is deliberately absent. What a position needs on chain is its *price*,
+/// and the price depends only on how far the band reaches from its own midpoint — a pair of
+/// ratios. Storing the reach instead of the edges means the chain can charge for a position
+/// correctly while having no idea what it predicts, and the trader reveals the band only
+/// when they claim, against the commitment that has bound it since they opened.
 #[derive(Drop, Copy, Serde, PartialEq, Debug, starknet::Store)]
 pub struct Position {
     pub market_id: u64,
-    pub band_low: u256,
-    pub band_high: u256,
+    /// `(mid - band_low) * 1e8 / mid`, where `mid` is the band's own midpoint.
+    pub low_off_1e8: u256,
+    /// `(band_high - mid) * 1e8 / mid`.
+    pub high_off_1e8: u256,
     pub stake: u128,
     pub multiplier_bps: u256,
     pub claimed: bool,
     pub exists: bool,
+    /// Who may claim it, on the public route. Zero for a position opened through the pool,
+    /// where the secret is the only credential and no address is ever recorded.
+    pub owner: ContractAddress,
 }
 
 #[starknet::interface]
@@ -106,6 +118,16 @@ pub trait IMolfiMarket<T> {
     fn market_count(self: @T) -> u64;
     fn get_position(self: @T, commitment: felt252) -> Position;
     fn quote_band(self: @T, market_id: u64, spot: u256, low: u256, high: u256) -> u256;
+    fn quote_offsets(self: @T, market_id: u64, low_off_1e8: u256, high_off_1e8: u256) -> u256;
+    fn open_position(
+        ref self: T,
+        market_id: u64,
+        commitment: felt252,
+        low_off_1e8: u256,
+        high_off_1e8: u256,
+        amount: u256,
+    );
+    fn claim_position(ref self: T, market_id: u64, secret: felt252, band_low: u256, band_high: u256);
     fn pool(self: @T) -> ContractAddress;
     fn oracle(self: @T) -> ContractAddress;
     fn set_oracle(ref self: T, who: ContractAddress);
@@ -114,6 +136,7 @@ pub trait IMolfiMarket<T> {
 
 #[starknet::contract]
 pub mod MolfiMarket {
+    use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use starknet::{
         ContractAddress, get_caller_address, get_block_timestamp, get_contract_address,
@@ -187,6 +210,10 @@ pub mod MolfiMarket {
         pub const STAKE_NOT_RECEIVED: felt252 = 'STAKE_NOT_RECEIVED';
         pub const WRONG_TOKEN: felt252 = 'WRONG_TOKEN_FOR_MARKET';
         pub const ZERO_AMOUNT: felt252 = 'ZERO_AMOUNT';
+        pub const NOT_OWNER_OF_POSITION: felt252 = 'NOT_YOUR_POSITION';
+        pub const BAND_MISMATCH: felt252 = 'BAND_DOES_NOT_MATCH_PRICE';
+        pub const WRONG_ROUTE: felt252 = 'WRONG_CLAIM_ROUTE';
+        pub const STAKE_TOO_LARGE: felt252 = 'STAKE_TOO_LARGE';
     }
 
     #[storage]
@@ -342,6 +369,112 @@ pub mod MolfiMarket {
         /// without paying for it, or claim one they do not hold.
         fn assert_pool(self: @ContractState) {
             assert(get_caller_address() == self.pool.read(), errors::NOT_POOL);
+        }
+
+        /// The band being revealed at claim has to be the band that was paid for.
+        ///
+        /// Only the reach was stored, so this is the check that binds it: recompute the two
+        /// ratios from the band and require them to be the ones the position was priced with.
+        /// The commitment already binds the band to the trader; this binds it to the price.
+        /// Without it a trader could buy a wide, cheap, high-probability band and claim it as
+        /// a narrow one paying eight times as much.
+        fn assert_band_matches(
+            self: @ContractState, position: Position, band_low: u256, band_high: u256,
+        ) {
+            assert(band_low < band_high, errors::BAD_BAND);
+            let (low_off, high_off) = pricing::offsets_of(
+                (band_low + band_high) / 2, band_low, band_high,
+            );
+            assert(
+                low_off == position.low_off_1e8 && high_off == position.high_off_1e8,
+                errors::BAND_MISMATCH,
+            );
+        }
+
+        /// Everything both trading routes do once the stake has arrived.
+        ///
+        /// The two routes differ only in how the tokens get here and who is allowed to claim.
+        /// Pricing, reservation, conservation and the duplicate check are the same code for
+        /// both, on purpose: a second implementation of any of them is a second place for the
+        /// house to be wrong about what it owes.
+        fn open_inner(
+            ref self: ContractState,
+            market_id: u64,
+            commitment: felt252,
+            low_off_1e8: u256,
+            high_off_1e8: u256,
+            amount: u128,
+            owner: ContractAddress,
+        ) {
+            let mut m = self.markets.read(market_id);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
+            assert(!m.is_settled, errors::CLOSED);
+            assert(get_block_timestamp() < m.cutoff_at, errors::CLOSED);
+
+            // The stake is MEASURED, never believed.
+            //
+            // The pool's `InvokeExternalInput` carries a contract address and calldata and
+            // nothing else — no token, no amount — so the tokens arrive by a separate
+            // withdraw action in the same transaction, and this contract has no way to know
+            // from the call itself that they did. Taking `amount` on trust would let anyone
+            // able to reach `privacy_invoke` record a position backed by nothing and later
+            // claim a payout funded by the bankroll and by other people's stakes.
+            //
+            // The docs state the rule plainly for the output side — "measure output by
+            // balance delta" — and it applies at least as hard to the input side, where
+            // getting it wrong is not a wrong number but a free position. The public route
+            // pulls the tokens itself a line earlier and is measured all the same, so a
+            // token that quietly transfers less than it was asked for is caught there too.
+            self.take(m.token, amount.into(), errors::STAKE_NOT_RECEIVED);
+
+            let existing = self.positions.read(commitment);
+            assert(!existing.exists, errors::DUPLICATE);
+
+            // The multiplier is fixed at open, from the reach the trader actually bought.
+            // Pricing it again at claim time would let a later move change what they were
+            // sold. Priced about the band's own midpoint rather than a spot the contract
+            // would have to read from the oracle, so the price a position is sold at cannot
+            // be moved by an oracle update landing in the same block.
+            let q = pricing::quote_off(
+                self.table_of(market_id), low_off_1e8, high_off_1e8, m.sigma_1e4,
+                m.house_edge_bps,
+            );
+
+            assert(q.multiplier_bps >= MIN_MULTIPLIER_BPS, errors::BAND_TOO_WIDE);
+            assert(q.multiplier_bps <= MAX_MULTIPLIER_BPS, errors::BAND_TOO_TIGHT);
+
+            // Reserve the whole payout now.
+            //
+            // A market may only sell a position it can already cover: the stake that just
+            // arrived, plus the house's bankroll, minus everything committed to positions
+            // still open. Checking this at claim time instead would mean discovering at
+            // settlement that a winning band cannot be paid — after the trader has held it
+            // for the whole round believing otherwise.
+            let payout = pricing::payout_for(amount.into(), q.multiplier_bps);
+            let backing = m.staked + amount.into() + m.bankroll;
+            assert(m.reserved + payout <= backing, errors::OVER_RESERVED);
+
+            self
+                .positions
+                .write(
+                    commitment,
+                    Position {
+                        market_id,
+                        low_off_1e8,
+                        high_off_1e8,
+                        stake: amount,
+                        multiplier_bps: q.multiplier_bps,
+                        claimed: false,
+                        exists: true,
+                        owner,
+                    },
+                );
+
+            m.staked = m.staked + amount.into();
+            m.reserved = m.reserved + payout;
+            self.markets.write(market_id, m);
+
+            self.emit(PositionOpened { market_id, commitment, stake: amount });
         }
     }
 
@@ -504,6 +637,121 @@ pub mod MolfiMarket {
             q.multiplier_bps
         }
 
+        /// What a band of this reach sells for. The quote the public route is charged.
+        ///
+        /// Takes the same two ratios `open_position` takes, so a trader can read the price
+        /// of the exact thing they are about to buy rather than of a band that has to be
+        /// described out loud first.
+        fn quote_offsets(
+            self: @ContractState, market_id: u64, low_off_1e8: u256, high_off_1e8: u256,
+        ) -> u256 {
+            let m = self.markets.read(market_id);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
+            let q = pricing::quote_off(
+                self.table_of(market_id), low_off_1e8, high_off_1e8, m.sigma_1e4,
+                m.house_edge_bps,
+            );
+            q.multiplier_bps
+        }
+
+        /// Open a position directly, from an ordinary Starknet account.
+        ///
+        /// The other route into this contract is the STRK20 pool, which hides the trader and
+        /// the size along with the band. This one hides only the band — and it is the route
+        /// anyone can use today, with a wallet they already have and no shielded balance.
+        /// A market only one kind of wallet can reach is a market nobody trades.
+        ///
+        /// The band never appears. The caller sends a commitment they computed themselves
+        /// and the two reach ratios the price depends on, so what lands in a block is "someone
+        /// bought a band 0.4% wide on BTC for 2 STRK" and not which 0.4%. The band is revealed
+        /// to `claim_position` after the market has settled, against the commitment that has
+        /// bound it since this call — which is the whole of molfi's claim, working without a
+        /// privacy wallet.
+        ///
+        /// Hiding the band cannot cost the house anything, which is why it is safe to price
+        /// one sight unseen. The quote assumes the band straddles spot; any band that does
+        /// not is strictly *less* likely to contain the settling print than the one that was
+        /// paid for. A trader who lies about where their band sits can only overpay.
+        fn open_position(
+            ref self: ContractState,
+            market_id: u64,
+            commitment: felt252,
+            low_off_1e8: u256,
+            high_off_1e8: u256,
+            amount: u256,
+        ) {
+            let m = self.markets.read(market_id);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
+            let stake: u128 = amount.try_into().expect(errors::STAKE_TOO_LARGE);
+            let trader = get_caller_address();
+
+            // Pull the stake before booking it. `open_inner` then measures the balance delta
+            // exactly as the pool route does — the transfer is what makes the tokens arrive,
+            // the measurement is what makes the contract believe it.
+            let erc20 = IERC20Dispatcher { contract_address: m.token };
+            erc20.transfer_from(trader, get_contract_address(), amount);
+
+            self.open_inner(market_id, commitment, low_off_1e8, high_off_1e8, stake, trader);
+        }
+
+        /// Claim a settled winning position opened on the public route, paid to the caller.
+        ///
+        /// This is where the band finally becomes public. The commitment is recomputed from
+        /// the preimage, so a trader cannot name a band they did not buy, and the reach
+        /// ratios are recomputed from that band and checked against the ones the position was
+        /// priced with — otherwise a cheap wide band could be claimed as an expensive narrow
+        /// one after the fact.
+        ///
+        /// Bound to the address that opened it. The secret is public the moment this
+        /// transaction is in a block, so without the owner check the first person to see it
+        /// could resubmit the same claim and take the payout.
+        fn claim_position(
+            ref self: ContractState,
+            market_id: u64,
+            secret: felt252,
+            band_low: u256,
+            band_high: u256,
+        ) {
+            let mut m = self.markets.read(market_id);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
+            assert(m.is_settled, errors::NOT_SETTLED);
+
+            let commitment = self.commitment_of(secret, market_id, band_low, band_high);
+            let mut position = self.positions.read(commitment);
+            assert(position.exists, errors::NO_POSITION);
+            assert(!position.claimed, errors::ALREADY_CLAIMED);
+
+            let claimant = get_caller_address();
+            assert(!position.owner.is_zero(), errors::WRONG_ROUTE);
+            assert(position.owner == claimant, errors::NOT_OWNER_OF_POSITION);
+
+            self.assert_band_matches(position, band_low, band_high);
+            assert(
+                m.settled_price > band_low && m.settled_price < band_high, errors::OUT_OF_BAND,
+            );
+
+            let payout = pricing::payout_for(position.stake.into(), position.multiplier_bps);
+            assert(m.paid + payout <= m.staked + m.bankroll, errors::INSOLVENT);
+
+            position.claimed = true;
+            self.positions.write(commitment, position);
+
+            m.paid = m.paid + payout;
+            m.reserved = if m.reserved > payout {
+                m.reserved - payout
+            } else {
+                0
+            };
+            self.markets.write(market_id, m);
+
+            self.release(m.token, payout);
+            let erc20 = IERC20Dispatcher { contract_address: m.token };
+            erc20.transfer(claimant, payout);
+
+            let payout_u128: u128 = payout.try_into().unwrap();
+            self.emit(PositionClaimed { market_id, commitment, payout: payout_u128 });
+        }
+
         fn pool(self: @ContractState) -> ContractAddress {
             self.pool.read()
         }
@@ -570,6 +818,10 @@ pub mod MolfiMarket {
     impl Operations of OperationsTrait {
         /// Open a position. Returns an empty span: the stake stays parked here, so there is
         /// nothing for the pool to credit back yet.
+        ///
+        /// The pool route knows the band, because the whole call is inside a proof and
+        /// nothing in it is public. So it derives the commitment and the reach ratios itself
+        /// rather than being handed them, and from there the two routes are the same code.
         fn open(
             ref self: ContractState,
             market_id: u64,
@@ -579,78 +831,17 @@ pub mod MolfiMarket {
             token: ContractAddress,
             amount: u128,
         ) -> Span<OpenNoteDeposit> {
-            let mut m = self.markets.read(market_id);
+            let m = self.markets.read(market_id);
             assert(m.cutoff_at != 0, errors::NO_MARKET);
-            assert(!m.is_settled, errors::CLOSED);
-            assert(get_block_timestamp() < m.cutoff_at, errors::CLOSED);
             assert(band_low < band_high, errors::BAD_BAND);
             assert(token == m.token, errors::WRONG_TOKEN);
 
-            // The stake is MEASURED, never believed.
-            //
-            // The pool's `InvokeExternalInput` carries a contract address and calldata and
-            // nothing else — no token, no amount — so the tokens arrive by a separate
-            // withdraw action in the same transaction, and this contract has no way to know
-            // from the call itself that they did. Taking `amount` on trust would let anyone
-            // able to reach `privacy_invoke` record a position backed by nothing and later
-            // claim a payout funded by the bankroll and by other people's stakes.
-            //
-            // The docs state the rule plainly for the output side — "measure output by
-            // balance delta" — and it applies at least as hard to the input side, where
-            // getting it wrong is not a wrong number but a free position.
-            self.take(m.token, amount.into(), errors::STAKE_NOT_RECEIVED);
-
             let commitment = self.commitment_of(secret, market_id, band_low, band_high);
-            let existing = self.positions.read(commitment);
-            assert(!existing.exists, errors::DUPLICATE);
-
-            // The multiplier is fixed at open, from the band the trader actually bought.
-            // Pricing it again at claim time would let a later move change what they were sold.
-            // Priced about the band's own midpoint rather than a spot the contract would
-            // have to read from the oracle. For the symmetric bands the desk sells these are
-            // the same number exactly, and this way the price a position is sold at cannot be
-            // moved by an oracle update landing in the same block.
-            let mid = (band_low + band_high) / 2;
-            let q = pricing::quote(
-                self.table_of(market_id), mid, band_low, band_high, m.sigma_1e4,
-                m.house_edge_bps,
+            let (low_off, high_off) = pricing::offsets_of(
+                (band_low + band_high) / 2, band_low, band_high,
             );
 
-            assert(q.multiplier_bps >= MIN_MULTIPLIER_BPS, errors::BAND_TOO_WIDE);
-            assert(q.multiplier_bps <= MAX_MULTIPLIER_BPS, errors::BAND_TOO_TIGHT);
-
-            // Reserve the whole payout now.
-            //
-            // A market may only sell a position it can already cover: the stake that just
-            // arrived, plus the house's bankroll, minus everything committed to positions
-            // still open. Checking this at claim time instead would mean discovering at
-            // settlement that a winning band cannot be paid — after the trader has held it
-            // for the whole round believing otherwise.
-            let payout = pricing::payout_for(amount.into(), q.multiplier_bps);
-            let backing = m.staked + amount.into() + m.bankroll;
-            assert(m.reserved + payout <= backing, errors::OVER_RESERVED);
-
-            self
-                .positions
-                .write(
-                    commitment,
-                    Position {
-                        market_id,
-                        band_low,
-                        band_high,
-                        stake: amount,
-                        multiplier_bps: q.multiplier_bps,
-                        claimed: false,
-                        exists: true,
-                    },
-                );
-
-            m.staked = m.staked + amount.into();
-            m.reserved = m.reserved + payout;
-            self.markets.write(market_id, m);
-
-            self.emit(PositionOpened { market_id, commitment, stake: amount });
-
+            self.open_inner(market_id, commitment, low_off, high_off, amount, Zero::zero());
             array![].span()
         }
 
@@ -677,11 +868,20 @@ pub mod MolfiMarket {
             assert(position.exists, errors::NO_POSITION);
             assert(!position.claimed, errors::ALREADY_CLAIMED);
 
+            // A position opened from a public address is claimed back to that address, not
+            // laundered into a note. Sending it through here instead would let anyone holding
+            // the secret take a payout the owner check on the public route exists to protect.
+            assert(position.owner.is_zero(), errors::WRONG_ROUTE);
+
+            // The band was never stored, only what it cost. Recomputing the reach from the
+            // band being revealed now is what stops a wide band bought cheap from being
+            // claimed as the narrow one it was not.
+            self.assert_band_matches(position, band_low, band_high);
+
             // The band has to contain the settled price. Inclusive at neither edge: a price
             // exactly on the boundary did not print inside the range.
             assert(
-                m.settled_price > position.band_low && m.settled_price < position.band_high,
-                errors::OUT_OF_BAND,
+                m.settled_price > band_low && m.settled_price < band_high, errors::OUT_OF_BAND,
             );
 
             let payout = pricing::payout_for(position.stake.into(), position.multiplier_bps);

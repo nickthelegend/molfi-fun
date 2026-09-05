@@ -22,8 +22,36 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+/**
+ * Every parameter this route understands.
+ *
+ * Anything else is refused rather than ignored. A quote is a number someone is about to
+ * commit money against, and the failure mode of ignoring an unknown key is the worst kind:
+ * `?round=2` looks like it selected the four hour round, the route silently prices the
+ * fifteen minute one, and the caller is handed a confident, wrong, perfectly well-formed
+ * answer. Refusing costs a caller one error message; ignoring costs them the trade.
+ */
+const KNOWN_PARAMS = new Set([
+  "market",
+  "tier",
+  "spot",
+  "stake",
+  "stakeUnits",
+  "low",
+  "high",
+  "halfWidth",
+  "halfWidthPct",
+]);
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const unknown = [...url.searchParams.keys()].filter((k) => !KNOWN_PARAMS.has(k));
+  if (unknown.length > 0) {
+    return bad(
+      `unknown parameter${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}. This route takes ${[...KNOWN_PARAMS].join(", ")}.`,
+      400,
+    );
+  }
   const key = (url.searchParams.get("market") ?? "BTC").toUpperCase();
   const tier = Number(url.searchParams.get("tier") ?? 0);
   const spotRaw = url.searchParams.get("spot");

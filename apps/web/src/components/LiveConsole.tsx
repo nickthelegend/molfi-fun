@@ -14,6 +14,7 @@ import {
   roundLabel,
 } from "@molfi/sdk";
 import { useLiveDesk, type LiveMarket } from "@/lib/useLiveDesk";
+import type { Route } from "@/lib/wallet";
 import { useBand } from "@/lib/useBand";
 import { ADDRESSES, activeNetwork, explorerTx, shortAddress } from "@/lib/chain";
 import { DeviceFrame } from "./device/DeviceFrame";
@@ -47,6 +48,14 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
   const [stakeStep, setStakeStep] = useState(3);
   const [sound, setSound] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  /**
+   * The route the next position takes, or null to take the most private one available.
+   *
+   * Null rather than a default of "pool", because which routes exist is not known until a
+   * wallet is connected and a stored preference for one the wallet cannot take would silently
+   * refuse every trade.
+   */
+  const [routePref, setRoutePref] = useState<Route | null>(null);
 
   const market = useMemo(
     () => MARKETS.find((m) => m.key === marketKey) ?? MARKETS[0],
@@ -84,11 +93,15 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
 
   const claimable = state.positions.filter((p) => p.won === true && !p.claimedTxHash);
 
+  const routes = live.routes;
+  const route: Route | null =
+    routes.length === 0 ? null : routePref && routes.includes(routePref) ? routePref : routes[0];
+
   const doFire = useCallback(async () => {
     if (!state.connection) {
       const wallet = state.wallets[0];
       if (!wallet) {
-        say("NO PRIVACY WALLET FOUND");
+        say("NO STARKNET WALLET FOUND");
         return;
       }
       await live.connect(wallet).catch((e) => say(String((e as Error).message).slice(0, 60)));
@@ -100,12 +113,12 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
     }
     if (!band.band || !target) return;
     try {
-      const hash = await live.fire(target.id, band.low, band.high, stake);
+      const hash = await live.fire(target.id, band.low, band.high, stake, route ?? undefined);
       say(`OPENED ${hash.slice(0, 10)}…`);
     } catch (e) {
       say(String((e as Error).message).split("\n")[0].slice(0, 60));
     }
-  }, [state.connection, state.wallets, state.blocked, live, band.band, band.low, band.high, target, stake, say]);
+  }, [state.connection, state.wallets, state.blocked, live, band.band, band.low, band.high, target, stake, route, say]);
 
   /**
    * The same keys as the demo desk.
@@ -257,11 +270,45 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
               {band.ready ? fmtMultiplier(band.multiplierBps) : "—"}
             </div>
             <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
-              YOUR BAND AND SIZE STAY HIDDEN.
+              {/* What is actually hidden depends on the route, and saying "your band and
+                  size stay hidden" on a direct trade would be a lie printed on the screen
+                  the trade is made from. */}
+              {route === "direct" ? "YOUR BAND STAYS HIDDEN." : "YOUR BAND AND SIZE STAY HIDDEN."}
               <br />
               {roundLabel(tier).toUpperCase()} ROUND ·{" "}
               {state.connection ? shortAddress(state.connection.address, 6, 4) : "NOT CONNECTED"}
             </p>
+
+            {/* The route picker.
+                *
+                * Shown as two keys rather than a toggle because they are not more and less
+                * of one thing: one hides three facts and the other hides one, and a trader
+                * should be choosing between them knowingly. Only offered when the wallet can
+                * actually take both — a disabled button explaining a capability nobody asked
+                * about is noise on a screen this small. */}
+            {routes.length > 1 ? (
+              <div className="mt-2 flex gap-1">
+                {(["pool", "direct"] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRoutePref(r)}
+                    title={live.routeNote(r, state.connection)}
+                    className={`mono flex-1 rounded px-1.5 py-1 text-[9px] tracking-[0.08em] ${
+                      route === r ? "bg-amber text-black" : "bg-white/8 text-dim hover:text-white"
+                    }`}
+                  >
+                    {r === "pool" ? "VIA POOL" : "DIRECT"}
+                  </button>
+                ))}
+              </div>
+            ) : route === "direct" ? (
+              <p
+                className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-white/30"
+                title={live.routeNote("direct", state.connection)}
+              >
+                DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND
+              </p>
+            ) : null}
 
             {/* Settlement is permissionless: the contract lets anyone poke an expired
                 market, and a desk that only ever settles its own quietly implies otherwise. */}

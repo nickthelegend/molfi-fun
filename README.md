@@ -14,9 +14,28 @@ On a public chain your order is a signal before it is a trade. Anyone watching t
 the contract can price against it, crowd into it, or simply get there first. That is not a
 side effect of trading onchain — it is the reason informed flow stays off it.
 
-So the position is a commitment, never an address. You stake through the STRK20 privacy pool,
-the market contract records the commitment, and the link between you and your position stops
-there.
+So the position is a commitment, never an address, and the band is never sent to the chain
+at all. What the contract is told is how far the band reaches from its own midpoint — a pair
+of ratios, with the price divided out — which is exactly enough to charge the right price and
+nothing at all about what the position predicts.
+
+## Two ways in
+
+molfi has two routes into a market, and they hide different amounts. Both keep the band
+sealed until settlement; that is the part molfi will not trade away for reach.
+
+| | Via the STRK20 pool | Direct from your address |
+| --- | --- | --- |
+| Your band | hidden | hidden |
+| How much you staked | hidden | **public** |
+| That it was you | hidden | **public** |
+| Wallet needed | one that speaks STRK20 | any Starknet account |
+
+The pool route is the better one and it is the default wherever the wallet supports it. The
+direct route exists because for most of a year most wallets have not, and a market only one
+kind of wallet can reach is a market nobody trades. molfi learned that the expensive way:
+seventeen rounds settled on Sepolia against real oracle prices, every one of them with a
+stake of zero.
 
 ## What stays private, and what does not
 
@@ -25,11 +44,13 @@ Every project claims privacy. This is the part most of them leave out.
 | Sealed until settlement | Public, always |
 | --- | --- |
 | The band you picked | That a position was opened |
-| How much you staked | The total staked in a market |
-| Which side of the range you took | The price the market settled at |
-| Which positions are yours | Every payout the contract made |
+| How wide it is — no, that one is public | The total staked in a market |
+| How much you staked *(pool route)* | The price the market settled at |
+| Which positions are yours *(pool route)* | Every payout the contract made |
 
 Your deposit into the pool names you. What it buys is that the market never sees that name.
+[molfi.fun/privacy](https://molfi.fun/privacy) states every claim per route, with the
+mechanism behind each.
 
 ## Settlement
 

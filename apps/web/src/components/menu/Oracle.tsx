@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MARKETS, PRAGMA, fmtPrice } from "@molfi/sdk";
-import { activeNetwork, explorerContract, shortAddress } from "@/lib/chain";
+import { ADDRESSES, activeNetwork, explorerContract, shortAddress } from "@/lib/chain";
 import type { OracleState } from "@/components/device/OracleStrip";
 
 /**
@@ -78,13 +78,28 @@ export function Oracle() {
     };
   }, []);
 
-  const oracleAddress = PRAGMA[activeNetwork.name === "sepolia" ? "sepolia" : "mainnet"];
+  /**
+   * The contract this deployment actually settles against — not the one it would like to.
+   *
+   * This sheet used to print Pragma's address unconditionally. On Sepolia that is a contract
+   * which settles nothing here: Pragma stopped publishing to it months ago, and molfi settles
+   * against a relay that republishes mainnet Pragma's median instead. Naming the wrong
+   * contract on the one screen whose job is to say what decides your payout is the exact
+   * failure this sheet exists to prevent, so the address now comes from the same config the
+   * market contract was deployed with.
+   */
+  const oracleAddress = ADDRESSES.oracle ?? PRAGMA[activeNetwork.name === "sepolia" ? "sepolia" : "mainnet"];
+  const isRelay =
+    oracleAddress?.toLowerCase() !==
+    PRAGMA[activeNetwork.name === "sepolia" ? "sepolia" : "mainnet"]?.toLowerCase();
 
   return (
     <div>
       <div className="rounded-2xl bg-[#161616] p-4">
         <span className="label">Settlement oracle</span>
-        <p className="mt-2 text-[14px] font-semibold">Pragma · aggregated median</p>
+        <p className="mt-2 text-[14px] font-semibold">
+          {isRelay ? "Price relay · mainnet Pragma's median, republished" : "Pragma · aggregated median"}
+        </p>
         <p className="mono mt-1 text-[10px] tracking-wide text-white/35">
           {explorerContract(oracleAddress) ? (
             <a
@@ -106,6 +121,17 @@ export function Oracle() {
           minutes or backed by fewer than three publishers — either one alone would settle
           every position in that market against a number nobody should trust.
         </p>
+        {isRelay ? (
+          <p className="mt-2 text-[12px] leading-relaxed text-amber/80">
+            This is not Pragma itself. Pragma stopped publishing to Starknet{" "}
+            {activeNetwork.name} months ago, so a market listed against it could open and
+            never resolve. What answers here is a relay that carries mainnet Pragma&apos;s own
+            median across, publisher count and publish time intact — every value below is a
+            real multi-publisher mainnet print, and the relay serves Pragma&apos;s timestamp
+            rather than its own so a stale carry cannot pass as a fresh one. On mainnet molfi
+            reads Pragma directly.
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-3 space-y-2">

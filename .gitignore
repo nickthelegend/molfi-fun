@@ -23,3 +23,6 @@ apps/poker/dist/
 
 apps/poker/.env
 .vercel
+positions/
+scratch/
+apps/web/tsconfig.tsbuildinfo

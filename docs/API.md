@@ -87,7 +87,7 @@ Prices a band with the same integer kernel the contract mirrors.
 | parameter | meaning |
 | --- | --- |
 | `market` | `BTC`, `ETH`, `STRK` |
-| `tier` | round index, `0`-based, from `/api/config` |
+| `tier` | round index, `0`-based, from `/api/config`. An unknown parameter is refused, not ignored — a quote for the wrong round is worse than an error. |
 | `spot` | current price in 8-decimal fixed point |
 | `low`, `high` | band edges, same units — or: |
 | `halfWidth` | symmetric half-width, fraction of spot × 1e8 — or: |
@@ -160,12 +160,29 @@ The commitment is public and knowing it proves nothing — deriving it needs the
 holding the secret is what claims the payout. Compute it client-side with `commitmentOf()`
 from `@molfi/sdk`.
 
+**This route cannot tell you whether a position won**, and that absence is load bearing. The
+chain stores how far the band reached from its own midpoint, never where it sat, so nothing
+here — and nothing anywhere until the holder claims — can compare it to the settled price.
+
+Pass `?low=<felt>&high=<felt>` and it will answer for *that* band. No verification is done
+and none is possible: it is arithmetic on two numbers you supplied, and it reveals nothing
+you did not already know.
+
 ```jsonc
 {
   "exists": true,
-  "position": { "marketId": 1, "bandLow": "…", "bandHigh": "…", "stake": "…", "multiplierBps": "12507", "claimed": true },
+  "position": {
+    "marketId": 1,
+    "lowOff1e8": "171077",   // (mid - low) * 1e8 / mid — the reach, not the band
+    "highOff1e8": "171077",
+    "stake": "…",
+    "multiplierBps": "12507",
+    "claimed": true,
+    "owner": "0x0"           // zero for a pool position; the trader's address for a direct one
+  },
   "market": { … },
-  "won": true,             // null while the market is open — unresolved is not lost
+  "band": null,              // echoes ?low/?high when supplied
+  "won": null,               // null without a band, and null while the market is open
   "claimable": false,
   "payoutUnits": "1250700000"
 }

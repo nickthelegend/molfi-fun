@@ -57,27 +57,36 @@ export function decodeMarket(id: number, r: string[]): OnChainMarket & { token: 
 
 export interface OnChainPosition {
   marketId: number;
-  bandLow: bigint;
-  bandHigh: bigint;
+  /** `(mid - bandLow) * 1e8 / mid`. The band's reach, which is all the chain is told. */
+  lowOff1e8: bigint;
+  highOff1e8: bigint;
   stake: bigint;
   multiplierBps: bigint;
   claimed: boolean;
   exists: boolean;
+  /** The address that may claim it, or zero for a position opened through the pool. */
+  owner: string;
 }
 
 /**
- * `Position`: market_id (u64), band_low (u256), band_high (u256), stake (u128),
- * multiplier_bps (u256), claimed, exists.
+ * `Position`: market_id (u64), low_off_1e8 (u256), high_off_1e8 (u256), stake (u128),
+ * multiplier_bps (u256), claimed, exists, owner (ContractAddress).
+ *
+ * The band is deliberately not in here. What the contract stores is how far the band reaches
+ * from its own midpoint, which is everything the price depends on and nothing about where the
+ * band sits — so a reader of the chain can see that someone bought a 0.2%-wide band and not
+ * which 0.2%. The band appears only when its holder claims.
  */
 export function decodePosition(r: string[]): OnChainPosition {
   return {
     marketId: Number(BigInt(r[0])),
-    bandLow: u256(r[1], r[2]),
-    bandHigh: u256(r[3], r[4]),
+    lowOff1e8: u256(r[1], r[2]),
+    highOff1e8: u256(r[3], r[4]),
     stake: BigInt(r[5]),
     multiplierBps: u256(r[6], r[7]),
     claimed: BigInt(r[8]) === 1n,
     exists: BigInt(r[9]) === 1n,
+    owner: r[10],
   };
 }
 

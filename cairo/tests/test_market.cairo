@@ -3,6 +3,7 @@
 //! The refusals matter more than the happy path here. A prediction market that pays the wrong
 //! person, pays twice, or settles against a bad price is worse than one that does nothing.
 
+use core::num::traits::Zero;
 use snforge_std::{
     ContractClassTrait, DeclareResultTrait, declare, start_cheat_block_timestamp_global,
     start_cheat_caller_address, stop_cheat_caller_address,
@@ -716,4 +717,319 @@ fn repointing_the_oracle_cannot_rewrite_a_settled_market() {
     stop_cheat_caller_address(m.contract_address);
 
     assert(m.get_market(id).settled_price == settled, 'settled price is immutable');
+}
+
+// ── The public trading route ──────────────────────────────────────────────────────────
+//
+// The pool route hides who, how much, and what. This one hides only what — and it is the
+// route a trader with an ordinary wallet can use, which until it existed meant nobody could
+// take a position at all. The tests below are mostly about the two things that route has to
+// get right and the pool route never has to: the band is never sent, so the price has to be
+// bound to it some other way; and a public address is on the transaction, so the payout has
+// to go back to that address and to nobody else.
+
+/// The reach of a band, computed the way the client does before it sends anything.
+fn offsets(low: u256, high: u256) -> (u256, u256) {
+    molfi::pricing::offsets_of((low + high) / 2, low, high)
+}
+
+fn commitment(secret: felt252, id: u64, low: u256, high: u256) -> felt252 {
+    core::poseidon::poseidon_hash_span(
+        array![
+            'MOLFI_POSITION_V1', secret, id.into(), low.low.into(), low.high.into(),
+            high.low.into(), high.high.into(),
+        ]
+            .span(),
+    )
+}
+
+/// Give a trader tokens and let the market pull them, the way a wallet's approve does.
+fn funded_trader(
+    m: IMolfiMarketDispatcher, token: ContractAddress, who: ContractAddress, amount: u256,
+) {
+    let erc20 = IStubTokenDispatcher { contract_address: token };
+    erc20.mint(who, amount);
+    start_cheat_caller_address(token, who);
+    erc20.approve(m.contract_address, amount);
+    stop_cheat_caller_address(token);
+}
+
+#[test]
+fn a_trader_can_open_a_position_without_naming_the_band() {
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(m.get_market(id).staked == 1_000, 'stake recorded');
+    let p = m.get_position(commitment('s', id, 99_829, 100_171));
+    assert(p.exists, 'position exists');
+    assert(p.owner == trader, 'bound to the trader');
+    assert(p.stake == 1_000, 'stake stored');
+    // What is on chain is the reach, not the band. Nothing here says 99_829.
+    assert(p.low_off_1e8 == low_off, 'reach stored');
+    assert(p.multiplier_bps > 10_000, 'priced above par');
+}
+
+#[test]
+fn the_public_route_charges_what_the_pool_route_charges() {
+    // Two positions, same band, one bought through each route. A trader should not be able
+    // to get a better price by choosing how private to be, in either direction.
+    let (m, anon, _, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('public', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    send_stake(m, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'private', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    let a = m.get_position(commitment('public', id, 99_829, 100_171));
+    let b = m.get_position(commitment('private', id, 99_829, 100_171));
+    assert(a.multiplier_bps == b.multiplier_bps, 'same price both routes');
+    assert(a.low_off_1e8 == b.low_off_1e8, 'same reach both routes');
+    assert(b.owner.is_zero(), 'pool position has no owner');
+}
+
+#[test]
+fn a_winning_public_position_pays_the_trader_directly() {
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    let multiplier = m.get_position(commitment('s', id, 99_829, 100_171)).multiplier_bps;
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    let erc20 = IStubTokenDispatcher { contract_address: token };
+    let before = erc20.balance_of(trader);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.claim_position(id, 's', 99_829, 100_171);
+    stop_cheat_caller_address(m.contract_address);
+
+    let expected = (1_000_u256 * multiplier) / 10_000;
+    assert(erc20.balance_of(trader) == before + expected, 'paid the trader');
+    assert(m.get_market(id).paid == expected, 'payout booked');
+}
+
+#[test]
+#[should_panic(expected: 'NOT_YOUR_POSITION')]
+fn a_stranger_who_learns_the_secret_cannot_take_the_payout() {
+    // The secret is public the instant the owner's own claim is in a block, and on a public
+    // route it is also guessable ahead of one. The address the position was opened from is
+    // what actually gates the money.
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, addr('THIEF'));
+    m.claim_position(id, 's', 99_829, 100_171);
+}
+
+#[test]
+#[should_panic(expected: 'BAND_DOES_NOT_MATCH_PRICE')]
+fn a_cheap_wide_band_cannot_be_claimed_as_an_expensive_narrow_one() {
+    // The attack the reach check exists for. Buy the widest band in the market for almost
+    // nothing, then at claim time reveal a band one tick wide around the settled price and
+    // ask to be paid at the narrow band's multiplier. The commitment binds the band, and the
+    // reach recomputed from it has to be the reach that was paid for.
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (wide_low, wide_high) = offsets(99_700, 100_300);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_990, 100_010), wide_low, wide_high, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, trader);
+    m.claim_position(id, 's', 99_990, 100_010);
+}
+
+#[test]
+#[should_panic(expected: 'BAND_MISSED')]
+fn a_losing_public_band_pays_nothing() {
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(101_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, trader);
+    m.claim_position(id, 's', 99_829, 100_171);
+}
+
+#[test]
+#[should_panic(expected: 'ALREADY_CLAIMED')]
+fn a_public_position_pays_exactly_once() {
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, trader);
+    m.claim_position(id, 's', 99_829, 100_171);
+    m.claim_position(id, 's', 99_829, 100_171);
+}
+
+#[test]
+#[should_panic(expected: 'WRONG_CLAIM_ROUTE')]
+fn a_public_position_cannot_be_drained_through_the_pool() {
+    // Otherwise the owner check is decoration: anyone holding the secret could ask the pool
+    // to claim a public position into a note of their own.
+    let (m, anon, oracle, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 's', 'note');
+}
+
+#[test]
+#[should_panic(expected: 'WRONG_CLAIM_ROUTE')]
+fn a_pool_position_cannot_be_claimed_from_an_address() {
+    // The mirror image. A position opened privately has no owner, so `claim_position` would
+    // otherwise pay whoever called it first.
+    let (m, anon, oracle, token) = setup();
+    let id = a_market(m, token);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    send_stake(m, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 's', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, addr('ANYONE'));
+    m.claim_position(id, 's', 99_829, 100_171);
+}
+
+#[test]
+#[should_panic(expected: 'MARKET_CLOSED')]
+fn a_public_position_cannot_open_after_the_cutoff() {
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+    after_cutoff();
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+}
+
+#[test]
+#[should_panic(expected: 'BAND_PAYS_LESS_THAN_STAKE')]
+fn a_reach_wide_enough_to_pay_par_is_refused_on_the_public_route_too() {
+    // The reach arrives as a bare number on this route rather than being derived from a
+    // band, so nothing stops a caller sending one that is nonsense. The multiplier bounds
+    // are what catch it, and they are the same bounds both routes go through.
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 1, 2), 50_000_000, 50_000_000, 1_000);
+}
+
+#[test]
+fn a_public_open_reserves_the_payout_like_any_other() {
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    let p = m.get_position(commitment('s', id, 99_829, 100_171));
+    let expected = (1_000_u256 * p.multiplier_bps) / 10_000;
+    assert(m.get_market(id).reserved == expected, 'whole payout reserved');
+}
+
+#[test]
+fn quote_offsets_is_the_price_the_position_is_actually_sold_at() {
+    // The trader has to be able to read the price of the exact thing they are buying. On
+    // this route that thing is a pair of ratios, not a band, so `quote_band` alone would
+    // leave them checking a different question than the one the contract answers.
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('TRADER');
+    funded_trader(m, token, trader, 1_000);
+
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    let quoted = m.quote_offsets(id, low_off, high_off);
+
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('s', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(m.get_position(commitment('s', id, 99_829, 100_171)).multiplier_bps == quoted, 'quoted == charged');
+    assert(m.quote_band(id, 100_000, 99_829, 100_171) == quoted, 'both views agree');
 }

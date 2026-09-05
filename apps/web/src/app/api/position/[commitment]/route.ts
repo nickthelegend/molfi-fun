@@ -13,9 +13,27 @@ import { marketAddress, readMarket, readPosition, serialise } from "@/lib/market
  * The commitment itself is public and knowing it proves nothing: deriving it needs the
  * secret, and holding it is what claims the payout. So this route reveals nothing that the
  * chain does not already publish to anyone who asks for that key.
+ *
+ * It cannot tell you whether a position won, and that absence is load bearing. The chain
+ * stores how far the band reached from its own midpoint, never where it sat, so nothing here
+ * — and nothing anywhere until the holder claims — can compare it to the settled price. Pass
+ * `?low=&high=` and this route will answer for *that* band, which is arithmetic on two
+ * numbers you supplied and reveals nothing you did not already know.
  */
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/** A band supplied by the caller, or null. Rejected rather than coerced if it is nonsense. */
+function bandFrom(low: string | null, high: string | null): { low: bigint; high: bigint } | null {
+  if (!low || !high) return null;
+  try {
+    const l = BigInt(low);
+    const h = BigInt(high);
+    return h > l ? { low: l, high: h } : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(
   _req: Request,
@@ -49,9 +67,15 @@ export async function GET(
     }
 
     const market = await readMarket(address, position.marketId);
+
+    // The band is the caller's own, or absent. Absent is the normal case and null is the
+    // honest answer to it: a settled market whose position cannot be evaluated is not a
+    // loss, it is a question this route is not able to answer.
+    const url = new URL(_req.url);
+    const band = bandFrom(url.searchParams.get("low"), url.searchParams.get("high"));
     const won =
-      market.isSettled && market.settledPrice > 0n
-        ? market.settledPrice > position.bandLow && market.settledPrice < position.bandHigh
+      band && market.isSettled && market.settledPrice > 0n
+        ? market.settledPrice > band.low && market.settledPrice < band.high
         : null;
 
     return NextResponse.json(
@@ -62,8 +86,12 @@ export async function GET(
         exists: true,
         position,
         market,
-        /** Null while the market is open: unresolved is not the same as lost. */
+        /**
+         * Null while the market is open, and null without a band: unresolved, unknowable
+         * and lost are three different things and only one of them is a loss.
+         */
         won,
+        band: band ? { low: band.low.toString(), high: band.high.toString() } : null,
         claimable: won === true && !position.claimed,
         payoutUnits:
           won === true

@@ -46,7 +46,7 @@ dependency that genuinely does not exist here, stated as such rather than passed
 | C5 | `GET /api/quote` one-sigma band | 200; `ok:true`; multiplier > 10000 bps; `stakeUnits` = 10 × 1e18 for `stake=10`; window min < max. |
 | C6 | `GET /api/quote` band too wide | 200; `ok:false`; `refusal` `too-cheap`. |
 | C7 | `GET /api/quote` band too tight | 200; `ok:false`; `refusal` `too-rich`. |
-| C8 | `GET /api/quote` bad tier / no spot / stake twice | 400 each. |
+| C8 | `GET /api/quote` bad tier / no spot / stake twice / unknown param | 400 each. The parameter is `tier`, not `round`; an unknown key is refused rather than silently ignored. |
 | C9 | `GET /api/markets` | 200; `deployed:true`; every market carries `roundSeconds`, `bankroll`, `reserved`. |
 | C10 | `GET /api/audit/<settled>` | 200; `sound:true`; `failed` and `unchecked` both empty; 11 checks. |
 | C11 | `GET /api/audit/999999` | 404. `GET /api/audit/abc` → 400. |
@@ -97,11 +97,29 @@ dependency that genuinely does not exist here, stated as such rather than passed
 | F9 | Mobile 380px | The device frame fits without horizontal scroll. |
 | F10 | Reduced motion | Honoured — no animation when the OS asks for none. |
 
+## H. The public trading route
+
+The route that made molfi tradeable from an ordinary wallet. Every item below is exercised by
+`scripts/e2e.mjs` against a real chain, not in a harness.
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| H1 | `quote_offsets` before committing | The multiplier the contract quotes for a reach is the one it then charges, to the basis point. |
+| H2 | `open_position` from a plain account | Position exists under the browser's commitment, with the stake actually transferred. |
+| H3 | The band is not on chain | The stored position holds two reach ratios and no band; nothing in the transaction reveals which range was bought. |
+| H4 | Ownership | The position records the opening address, and `claim_position` pays that address. |
+| H5 | A stranger with the secret | Refused with `NOT_YOUR_POSITION`, even holding the full preimage. |
+| H6 | A band that was not paid for | Refused — the commitment binds the band and the reach binds the price. |
+| H7 | Cross-route claims | A direct position cannot be claimed through the pool, or a pool position from an address: `WRONG_CLAIM_ROUTE`. |
+| H8 | Winning payout | The trader's balance rises by exactly `stake × multiplier`, and the market's `paid` never exceeds `staked + bankroll`. |
+| H9 | Route parity | The same band costs the same on both routes. |
+| H10 | Wallet without STRK20 | Offered the direct route rather than refused; the console says what it hides. |
+
 ## G. Repo hygiene
 
 | # | Item | Correct means |
 | --- | --- | --- |
 | G1 | No mocks in shipped code | No mock/stub/TODO/fake/dummy outside `cairo/src/devnet.cairo` and HTML `placeholder` attributes. |
-| G2 | Tests | 68 Cairo, 65 SDK, all passing. |
+| G2 | Tests | 81 Cairo, 65 SDK, all passing. |
 | G3 | Typecheck | Clean across SDK, web, keeper. |
 | G4 | README accurate | Every path it names exists. |

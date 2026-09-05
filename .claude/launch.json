@@ -1,11 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    {
-      "name": "molfi-console",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@molfi/web", "dev"],
-      "port": 3400
-    }
+    { "name": "molfi-web", "runtimeExecutable": "pnpm", "runtimeArgs": ["--filter", "@molfi/web", "dev", "--port", "3400"], "port": 3400 }
   ]
 }

@@ -49,6 +49,11 @@ pub trait IERC20<T> {
     fn approve(ref self: T, spender: ContractAddress, amount: u256) -> bool;
     fn balance_of(self: @T, account: ContractAddress) -> u256;
     fn transfer(ref self: T, recipient: ContractAddress, amount: u256) -> bool;
+    /// Pulls a public stake in. Only the direct trading route uses it; the pool route sends
+    /// the stake ahead of the call and this contract measures what landed.
+    fn transfer_from(
+        ref self: T, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+    ) -> bool;
 }
 
 /// What Pragma's `get_data_median` answers with, in declaration order.

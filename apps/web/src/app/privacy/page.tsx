@@ -58,28 +58,52 @@ export default async function PrivacyPage() {
             Take the privacy away and molfi is a worse version of every public prediction
             market. That is the test the pitch has to pass.
           </p>
+
+          {/* The two routes, stated before any claim is made about them. A page that lists
+              what is hidden without saying which route it is describing is not an honesty
+              page, it is a brochure. */}
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="rounded-xl bg-[#131313] p-4">
+              <p className="text-[13px] font-semibold">Via the STRK20 pool</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-white/55">
+                Hides the band, the size, and you. The pool is the caller, so the contract
+                never learns who initiated anything. Needs a wallet that speaks STRK20.
+              </p>
+            </div>
+            <div className="rounded-xl bg-[#131313] p-4">
+              <p className="text-[13px] font-semibold">Direct from your address</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-white/55">
+                Hides the band, and only the band. The chain sees that you staked and how
+                much, never what on. Works from any Starknet account — which is why it
+                exists: a market only one kind of wallet can reach is one nobody trades.
+              </p>
+            </div>
+          </div>
         </header>
 
         <Group title="Hidden" tone="green">
           <Row
             what="Which band you bought"
-            how={`The contract stores poseidon(${POSITION_TAG}, secret, market, low, high) and nothing else about the position. The band is inside the hash.`}
-            evidence="Nothing on chain reveals a band until its holder claims."
+            how={`The contract stores poseidon(${POSITION_TAG}, secret, market, low, high) and, to price it, how far the band reaches from its own midpoint — a pair of ratios with the price divided out. Never the band.`}
+            evidence="Nothing on chain reveals a band until its holder claims. True on both routes; it is the one claim molfi will not trade away for reach."
           />
           <Row
             what="How much you staked"
             how="A position's stake is stored under the commitment, not under an address. Reading it requires knowing the commitment, and deriving that requires the secret."
             evidence="get_position takes a commitment. There is no by-address call and there cannot be one."
+            only="pool"
           />
           <Row
             what="Whether a position is yours"
-            how="The pool calls the contract; the caller is always the pool. The contract never learns who initiated the transaction."
-            evidence="assert_pool is the only caller check the contract makes."
+            how="The pool calls the contract; the caller is always the pool, and the position is stored with no owner at all. The contract never learns who initiated the transaction."
+            evidence="A pool position's owner field is zero, and the secret is the only credential that claims it."
+            only="pool"
           />
           <Row
             what="Your position count"
             how="Positions are keyed by commitment. Two positions from one person and two from two people are indistinguishable."
             evidence="Even molfi cannot count them — this page cannot show you a number for it."
+            only="pool"
           />
         </Group>
 
@@ -107,6 +131,18 @@ export default async function PrivacyPage() {
             what="Shielding and withdrawing"
             how="Both are public ERC-20 legs. An address funding the pool is visible, and so is one withdrawing from it."
             evidence="The privacy is in what happens between them, not at the edges."
+            only="pool"
+          />
+          <Row
+            what="That your address staked, and for how much"
+            how="A direct open is an ordinary transfer_from followed by open_position, both signed by you. Your address, the stake and the market are all in the block."
+            evidence="Everything except the band. If that is too much, the pool route is the one to use."
+            only="direct"
+          />
+          <Row
+            what="How wide your band is"
+            how="The two reach ratios are the price, and the price has to be checkable, so they are stored in the clear. They say a band is 0.4% wide; they say nothing about which 0.4%."
+            evidence="A wide band and a narrow one are distinguishable. Where either sits is not."
           />
         </Group>
 
@@ -189,10 +225,36 @@ function Group({
   );
 }
 
-function Row({ what, how, evidence }: { what: string; how: string; evidence: string }) {
+/**
+ * Which route a claim holds for.
+ *
+ * Omitted means both. molfi has two ways into a market and they hide different amounts, so a
+ * page whose whole job is to be believed cannot state a claim without saying which one it is
+ * about. "Pool only" is the honest label for everything the direct route gives up.
+ */
+type RouteScope = "pool" | "direct";
+
+function Row({
+  what,
+  how,
+  evidence,
+  only,
+}: {
+  what: string;
+  how: string;
+  evidence: string;
+  only?: RouteScope;
+}) {
   return (
     <div className="rounded-xl bg-[#131313] p-4">
-      <p className="text-[14px] font-semibold leading-snug">{what}</p>
+      <p className="text-[14px] font-semibold leading-snug">
+        {what}
+        {only ? (
+          <span className="mono ml-2 rounded bg-white/8 px-1.5 py-0.5 align-middle text-[9px] tracking-[0.08em] text-white/45">
+            {only === "pool" ? "VIA POOL ONLY" : "DIRECT ONLY"}
+          </span>
+        ) : null}
+      </p>
       <p className="mt-1.5 text-[12px] leading-relaxed text-white/55">{how}</p>
       <p className="mono mt-2 text-[10px] leading-relaxed tracking-wide text-white/30">
         {evidence}

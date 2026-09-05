@@ -205,19 +205,46 @@ export function networkMismatch(
 }
 
 /**
+ * Which way into the market a wallet can actually take.
+ *
+ * `pool` hides the trader, the size and the band. `direct` hides the band only — the chain
+ * is sent a commitment and two widths, never the band itself — and works from any Starknet
+ * account. Both are real routes to a real position, so a wallet without STRK20 support gets
+ * the second rather than a refusal.
+ */
+export type Route = "pool" | "direct";
+
+export function routesFor(connection: Connection | null): Route[] {
+  if (!connection) return [];
+  return connection.capabilities.privateActions ? ["pool", "direct"] : ["direct"];
+}
+
+/**
  * Why a wallet cannot be used, in words that say what to do about it.
  *
- * Returns null when it can. Separate reasons, because they need separate responses:
- * install a privacy wallet, or switch network.
+ * Returns null when it can. This used to refuse any wallet without STRK20 support, on the
+ * grounds that falling back to acting in public would defeat the point. It did worse than
+ * that: it made molfi untradeable for every wallet anyone actually had, and a market nobody
+ * can trade defeats the point completely. The public route hides the band, which is the
+ * claim molfi makes, so the refusal has become a note about what each route hides instead.
  */
 export function blockingReason(connection: Connection | null): string | null {
   if (!connection) return "Connect a wallet to open a position.";
-  if (!connection.capabilities.privateActions) {
-    return `${connection.walletName} does not expose the STRK20 actions molfi needs. A privacy-enabled wallet is required — molfi will not fall back to acting in public, because that would defeat the point.`;
-  }
   const mismatch = networkMismatch(connection);
   if (mismatch.mismatched) return mismatch.message;
   return null;
+}
+
+/** What a route hides and what it does not, for the line shown next to the trade button. */
+export function routeNote(route: Route, connection: Connection | null): string {
+  if (route === "pool") {
+    return "Through the STRK20 pool: the chain sees neither who opened this, nor for how much, nor which band.";
+  }
+  const why =
+    connection && !connection.capabilities.privateActions
+      ? `${connection.walletName} does not expose STRK20 actions, so this is the route available to it. `
+      : "";
+  return `${why}Direct from your address: the chain sees that you staked, and how much — but not the band. That is revealed only when you claim.`;
 }
 
 /** The shielded balance, read through the wallet rather than by holding a key. */

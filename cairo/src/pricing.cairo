@@ -93,17 +93,42 @@ pub fn half_prob(t: Span<u256>, z1e4: u256) -> u256 {
     lo + ((hi - lo) * rem) / Z_STEP
 }
 
-/// The probability the price is inside the band at the cutoff, in 1e6 fixed point.
+/// How far each edge of a band reaches from spot, as a fraction of spot times 1e8.
+///
+/// This is the only thing pricing ever needed from a band. `z` in `prob_inside` is
+/// `(spot - low) / spot`, scaled — a *ratio*, with the absolute price cancelling out of it
+/// entirely. Splitting the ratio out is what lets a position be priced without the contract
+/// ever being told where the band sits, which is what keeps a public trade private until it
+/// is claimed.
 ///
 /// The band has to straddle spot. A band that does not is not a prediction, it is a claim the
 /// price has already moved, and pricing one would produce a multiplier that means nothing.
-pub fn prob_inside(t: Span<u256>, spot: u256, low: u256, high: u256, sig1e4: u256) -> u256 {
-    assert(sig1e4 != 0, errors::ZERO_SIGMA);
+pub fn offsets_of(spot: u256, low: u256, high: u256) -> (u256, u256) {
     assert(low < spot, errors::SPOT_OUTSIDE_BAND);
     assert(high > spot, errors::SPOT_OUTSIDE_BAND);
-    let z_low = (((spot - low) * 100_000_000) / spot) * BPS / sig1e4;
-    let z_high = (((high - spot) * 100_000_000) / spot) * BPS / sig1e4;
+    (((spot - low) * 100_000_000) / spot, ((high - spot) * 100_000_000) / spot)
+}
+
+/// The probability the price is inside the band, from the band's reach rather than its place.
+///
+/// No assertion that an offset is non-zero: `offsets_of` truncates, so a band one wei wide
+/// around a large spot legitimately reaches zero on one side, and the original spot-based
+/// form priced that at zero rather than refusing it. The multiplier bounds in the market are
+/// what turn a degenerate band away, and they do it for both routes at once.
+pub fn prob_inside_off(
+    t: Span<u256>, low_off_1e8: u256, high_off_1e8: u256, sig1e4: u256,
+) -> u256 {
+    assert(sig1e4 != 0, errors::ZERO_SIGMA);
+    let z_low = low_off_1e8 * BPS / sig1e4;
+    let z_high = high_off_1e8 * BPS / sig1e4;
     (half_prob(t, z_low) + half_prob(t, z_high)) / 2
+}
+
+/// The probability the price is inside the band at the cutoff, in 1e6 fixed point.
+pub fn prob_inside(t: Span<u256>, spot: u256, low: u256, high: u256, sig1e4: u256) -> u256 {
+    assert(sig1e4 != 0, errors::ZERO_SIGMA);
+    let (low_off, high_off) = offsets_of(spot, low, high);
+    prob_inside_off(t, low_off, high_off, sig1e4)
 }
 
 #[derive(Drop, Copy, Serde, PartialEq, Debug)]
@@ -112,16 +137,24 @@ pub struct Quote {
     pub prob_1e6: u256,
 }
 
-/// The multiplier a band sells for, after the house edge.
-pub fn quote(
-    t: Span<u256>, spot: u256, low: u256, high: u256, sig1e4: u256, house_edge_bps: u256,
+/// The multiplier a band of this reach sells for, after the house edge.
+pub fn quote_off(
+    t: Span<u256>, low_off_1e8: u256, high_off_1e8: u256, sig1e4: u256, house_edge_bps: u256,
 ) -> Quote {
-    let prob_1e6 = prob_inside(t, spot, low, high, sig1e4);
+    let prob_1e6 = prob_inside_off(t, low_off_1e8, high_off_1e8, sig1e4);
     if prob_1e6 == 0 {
         return Quote { multiplier_bps: 0, prob_1e6: 0 };
     }
     let gross = (PROB_ONE * BPS) / prob_1e6;
     Quote { multiplier_bps: (gross * (BPS - house_edge_bps)) / BPS, prob_1e6 }
+}
+
+/// The multiplier a band sells for, after the house edge.
+pub fn quote(
+    t: Span<u256>, spot: u256, low: u256, high: u256, sig1e4: u256, house_edge_bps: u256,
+) -> Quote {
+    let (low_off, high_off) = offsets_of(spot, low, high);
+    quote_off(t, low_off, high_off, sig1e4, house_edge_bps)
 }
 
 /// What a winning stake pays.

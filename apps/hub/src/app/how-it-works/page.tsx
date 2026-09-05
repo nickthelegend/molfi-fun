@@ -26,7 +26,7 @@ const STEPS: Array<{ n: string; title: string; body: string; public: string; hid
   {
     n: "02",
     title: "Open a position",
-    body: "You pick a range and a horizon. The pool withdraws your stake to molfi's anonymizer contract and calls its privacy_invoke. The contract parks the stake against poseidon(tag, secret, market, band) and returns an empty span, so nothing is credited back yet.",
+    body: "You pick a range and a horizon. Through the STRK20 pool, the pool withdraws your stake to molfi's anonymizer and calls its privacy_invoke; from an ordinary wallet, you call open_position directly and the stake moves by a plain transfer. Either way the contract parks the stake against poseidon(tag, secret, market, band) and stores only how far the band reaches from its own midpoint — never the band.",
     public: "That the pool paid the contract",
     hidden: "Your range, your size, that it was you",
   },

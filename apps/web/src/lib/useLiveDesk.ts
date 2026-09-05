@@ -8,10 +8,14 @@ import {
   blockingReason,
   connectTo,
   reconnect,
+  routeNote,
+  routesFor,
   shieldedBalances,
   type Connection,
+  type Route,
   type StarknetWallet,
 } from "./wallet";
+import { claimCalls, openCalls, submitDirect } from "./direct";
 import {
   claimActions,
   errorText,
@@ -24,6 +28,7 @@ import {
 import {
   allPositions,
   exportPosition,
+  forget,
   markClaimed,
   remember,
   subscribe,
@@ -85,6 +90,14 @@ export interface LiveState {
   connection: Connection | null;
   /** Why the connected wallet cannot act, or null. */
   blocked: string | null;
+  /**
+   * Whether the deployed contract has the public trading route.
+   *
+   * Probed, not assumed. An older deployment only has `privacy_invoke`, and offering a
+   * direct trade against it produces `ENTRYPOINT_NOT_FOUND` after the user has already
+   * approved a stake. Null while the probe is in flight.
+   */
+  directRoute: boolean | null;
   wallets: StarknetWallet[];
   /** Shielded STRK, as the wallet reports it. molfi never holds a key to check. */
   shielded: bigint | null;
@@ -110,6 +123,7 @@ const EMPTY: LiveState = {
   error: null,
   connection: null,
   blocked: null,
+  directRoute: null,
   wallets: [],
   shielded: null,
   markets: [],
@@ -203,6 +217,46 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       stop = true;
     };
   }, []);
+
+  /**
+   * Ask the contract whether it can be traded directly.
+   *
+   * `quote_offsets` is a view and costs nothing, and it exists only on a deployment that
+   * also has `open_position` — the two shipped together. A revert here is the honest answer
+   * that this contract is pool-only, and the console then stops offering the direct route
+   * rather than letting someone find out by paying for a transaction that cannot work.
+   */
+  useEffect(() => {
+    if (!addresses) return;
+    let stop = false;
+    void (async () => {
+      try {
+        await provider.callContract({
+          contractAddress: addresses.market,
+          entrypoint: "quote_offsets",
+          calldata: CallData.compile([1, { low: 171_077n, high: 0n }, { low: 171_077n, high: 0n }]),
+        });
+        if (!stop) setState((s) => ({ ...s, directRoute: true }));
+      } catch (e) {
+        // Only an unknown entrypoint means "no direct route". Every other failure — an
+        // unreachable node, a market id that does not exist yet — says nothing about the
+        // contract's shape, and treating those as a missing route would hide a working one.
+        //
+        // The whole error, not `errorText`. starknet.js puts the request params on the first
+        // line and the actual reason twenty lines below it, so the one-line summary this app
+        // shows users is exactly the part that never contains the answer.
+        const text = String((e as Error)?.message ?? e);
+        if (/entrypoint does not exist|ENTRYPOINT_NOT_FOUND|not found in contract/i.test(text)) {
+          if (!stop) setState((s) => ({ ...s, directRoute: false }));
+        } else if (!stop) {
+          setState((s) => ({ ...s, directRoute: true }));
+        }
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [addresses]);
 
   // ---- the markets the contract holds
   const refresh = useCallback(async () => {
@@ -488,10 +542,22 @@ export function useLiveDesk(market: MarketDef, tier: number) {
    * by anyone.
    */
   const fire = useCallback(
-    (marketId: number, bandLow: bigint, bandHigh: bigint, stake: bigint) =>
+    (marketId: number, bandLow: bigint, bandHigh: bigint, stake: bigint, route?: Route) =>
       queued(async () => {
         const c = connectionRef.current;
         if (!c || !addresses) throw new Error("connect a wallet first");
+
+        // Default to the most private route the wallet can take, and never silently take a
+        // less private one than was asked for.
+        const available = routesFor(c);
+        const chosen = route ?? available[0];
+        if (!available.includes(chosen)) {
+          throw new Error(
+            chosen === "pool"
+              ? `${c.walletName} does not expose STRK20 actions, so it cannot open a position through the pool.`
+              : "That route is not available with this wallet.",
+          );
+        }
 
         const secret: PositionSecret = {
           secret: newSecret(),
@@ -503,17 +569,27 @@ export function useLiveDesk(market: MarketDef, tier: number) {
           pair: market.label,
           seconds: ROUND_SECONDS[tier] ?? 0,
           stake,
+          route: chosen,
         });
         exportPosition(entry, { network: ADDRESSES.market, contract: addresses.market });
 
         setState((s) => ({ ...s, pending: "opening" }));
-        const r = await submit(c, openActions(addresses, secret, stake));
+        const r =
+          chosen === "pool"
+            ? await submit(c, openActions(addresses, secret, stake))
+            : await submitDirect(c, openCalls(addresses, secret, stake));
+        if (r.ok && chosen === "direct") await provider.waitForTransaction(r.txHash!);
         setState((s) => ({
           ...s,
           pending: null,
           lastTx: r.ok ? { hash: r.txHash!, label: "opened" } : s.lastTx,
         }));
-        if (!r.ok) throw new Error(r.error);
+        if (!r.ok) {
+          // A position whose transaction never landed is not a position, and leaving it in
+          // the list would offer a claim button that can only ever fail.
+          forget(entry.commitment);
+          throw new Error(r.error);
+        }
         void refresh();
         return r.txHash!;
       }),
@@ -521,13 +597,25 @@ export function useLiveDesk(market: MarketDef, tier: number) {
   );
 
   /** Claim a settled winning position into an open note the wallet then owns. */
+  /**
+   * Claim a settled winning position.
+   *
+   * Which route it goes back out by is not a choice — it is a property of how the position
+   * was opened. A pool position has no owner on chain and is claimed into a note by whoever
+   * holds the secret; a direct one is bound to the address that opened it and is paid back
+   * there. The contract refuses the wrong pairing by name, so the stored route decides.
+   */
   const claim = useCallback(
     (p: LivePosition) =>
       queued(async () => {
         const c = connectionRef.current;
         if (!c || !addresses) throw new Error("connect a wallet first");
         setState((s) => ({ ...s, pending: "claiming" }));
-        const r = await submit(c, claimActions(addresses, p, c.address));
+        const r =
+          p.route === "direct"
+            ? await submitDirect(c, claimCalls(addresses, p))
+            : await submit(c, claimActions(addresses, p, c.address));
+        if (r.ok && p.route === "direct") await provider.waitForTransaction(r.txHash!);
         setState((s) => ({
           ...s,
           pending: null,
@@ -600,8 +688,38 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     [addresses],
   );
 
+  /**
+   * The routes available right now, most private first.
+   *
+   * The wallet decides whether the pool route is possible; the deployed contract decides
+   * whether the direct one is. Both have to agree before a button is offered.
+   */
+  const routes = useMemo(
+    () =>
+      routesFor(state.connection).filter((r) => r !== "direct" || state.directRoute !== false),
+    [state.connection, state.directRoute],
+  );
+
+  /**
+   * The reason nothing can be traded, or null.
+   *
+   * The wallet's own problems first — those are the ones the user can fix. A wallet with no
+   * STRK20 support against a pool-only deployment is the one case where both halves are fine
+   * and there is still no way in, and it needs saying explicitly rather than as a disabled
+   * button.
+   */
+  const blocked = useMemo(() => {
+    if (state.blocked) return state.blocked;
+    if (state.connection && routes.length === 0) {
+      return `${state.connection.walletName} cannot open a private position, and this deployment of the market has no public route. Connect a STRK20-capable wallet, or wait for the market to be redeployed.`;
+    }
+    return null;
+  }, [state.blocked, state.connection, routes.length]);
+
   return {
-    state,
+    state: blocked === state.blocked ? state : { ...state, blocked },
+    routes,
+    routeNote,
     connect,
     disconnect,
     shield,

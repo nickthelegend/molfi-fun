@@ -18,8 +18,20 @@ import { commitmentOf, type PositionSecret } from "@molfi/sdk";
 
 const KEY = "molfi.positions.v1";
 
+/** Which way into the market this position was opened. They claim differently. */
+export type Route = "pool" | "direct";
+
 export interface StoredPosition extends PositionSecret {
   commitment: string;
+  /**
+   * Recorded rather than inferred.
+   *
+   * A position opened through the pool has no owner on chain and is claimed with the secret
+   * alone; one opened from an address is bound to that address and is claimed by it. The
+   * contract refuses the wrong route by name, so guessing here would produce a claim that
+   * fails for a reason the trader cannot act on.
+   */
+  route: Route;
   /** The market pair, kept so a position can be shown without a chain read. */
   pair: string;
   /** Round length in seconds, for display. */
@@ -45,6 +57,8 @@ function read(): StoredPosition[] {
       ...(p as unknown as StoredPosition),
       bandLow: BigInt(String(p.bandLow)),
       bandHigh: BigInt(String(p.bandHigh)),
+      // Positions stored before molfi had a public route were all pool positions.
+      route: (p.route === "direct" ? "direct" : "pool") as Route,
     }));
   } catch {
     // A corrupt store must not take the app down with it. Losing the index is bad; losing
@@ -83,11 +97,12 @@ export function subscribe(listener: Listener): () => void {
 
 export function remember(
   secret: PositionSecret,
-  meta: { pair: string; seconds: number; stake: bigint; txHash?: string },
+  meta: { pair: string; seconds: number; stake: bigint; route: Route; txHash?: string },
 ): StoredPosition {
   const entry: StoredPosition = {
     ...secret,
     commitment: commitmentOf(secret),
+    route: meta.route,
     pair: meta.pair,
     seconds: meta.seconds,
     stake: meta.stake.toString(),
@@ -121,6 +136,7 @@ export function exportPosition(p: StoredPosition, extra: Record<string, unknown>
           ...extra,
           pair: p.pair,
           marketId: p.marketId,
+          route: p.route,
           roundSeconds: p.seconds,
           secret: p.secret,
           bandLow: p.bandLow.toString(),
@@ -163,6 +179,7 @@ export function importPosition(json: string): StoredPosition {
   const entry: StoredPosition = {
     ...secret,
     commitment,
+    route: raw.route === "direct" ? "direct" : "pool",
     pair: String(raw.pair ?? "unknown"),
     seconds: Number(raw.roundSeconds ?? 0),
     stake: String(raw.stake ?? "0"),

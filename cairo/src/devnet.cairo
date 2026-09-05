@@ -76,8 +76,17 @@ pub mod StubToken {
 
     #[storage]
     struct Storage {
+        /// The last approval made, whoever made it. Only `last_approval` reads it — it is a
+        /// test observation, not the allowance the transfer checks.
         approved_spender: ContractAddress,
         approved_amount: u256,
+        /// The real allowance, keyed (owner, spender) the way an ERC-20 keys it.
+        ///
+        /// A single global allowance was enough while the pool was the only thing pulling
+        /// tokens. The public trading route has the market pull from a trader in the same
+        /// contract that approves the pool on the way out, and with one slot those two
+        /// allowances are the same slot.
+        allowances: Map<(ContractAddress, ContractAddress), u256>,
         balances: Map<ContractAddress, u256>,
     }
 
@@ -86,6 +95,7 @@ pub mod StubToken {
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
             self.approved_spender.write(spender);
             self.approved_amount.write(amount);
+            self.allowances.write((get_caller_address(), spender), amount);
             true
         }
 
@@ -119,14 +129,17 @@ pub mod StubToken {
             recipient: ContractAddress,
             amount: u256,
         ) -> bool {
-            let allowed = self.approved_amount.read();
-            assert(self.approved_spender.read() == get_caller_address(), 'NOT_APPROVED_SPENDER');
+            let spender = get_caller_address();
+            let allowed = self.allowances.read((sender, spender));
             assert(allowed >= amount, 'INSUFFICIENT_ALLOWANCE');
             let held = self.balances.read(sender);
             assert(held >= amount, 'INSUFFICIENT_BALANCE');
             self.balances.write(sender, held - amount);
             self.balances.write(recipient, self.balances.read(recipient) + amount);
-            self.approved_amount.write(allowed - amount);
+            self.allowances.write((sender, spender), allowed - amount);
+            if self.approved_spender.read() == spender {
+                self.approved_amount.write(self.approved_amount.read() - amount);
+            }
             true
         }
 
