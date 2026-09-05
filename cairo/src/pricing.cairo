@@ -93,11 +93,6 @@ pub fn half_prob(t: Span<u256>, z1e4: u256) -> u256 {
     lo + ((hi - lo) * rem) / Z_STEP
 }
 
-/// Volatility scaled to a round length. Sigma grows with the square root of time.
-pub fn sigma_bps_1e4(vol_bps: u256, blocks: u256, ref_blocks: u256) -> u256 {
-    vol_bps * sqrt_u256((blocks * 100_000_000) / ref_blocks)
-}
-
 /// The probability the price is inside the band at the cutoff, in 1e6 fixed point.
 ///
 /// The band has to straddle spot. A band that does not is not a prediction, it is a claim the

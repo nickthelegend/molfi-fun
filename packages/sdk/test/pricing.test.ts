@@ -6,8 +6,6 @@ import {
   halfProb,
   probInside,
   quote,
-  sigmaBps1e4,
-  sigmaForBlocks,
   sqrt,
   validateTable,
   zForProb,
@@ -15,15 +13,13 @@ import {
 
 const SPOT = 100_000_00000000n;
 
+/** A 1.2% move, in the kernel's units: a fraction of spot times 1e8. */
+const SIGMA = 120_000n;
+
 test("the normal table reproduces textbook values", () => {
   assert.equal(halfProb(NORMAL_TABLE, 10_000n), 682_689n); // 1 sigma
   assert.equal(halfProb(NORMAL_TABLE, 20_000n), 954_500n); // 2 sigma
   assert.equal(halfProb(NORMAL_TABLE, 30_000n), 997_300n); // 3 sigma
-});
-
-test("sigma scales with the square root of time", () => {
-  assert.equal(sigmaBps1e4(12n, 100n, 100n), 120_000n);
-  assert.equal(sigmaBps1e4(12n, 400n, 100n), 240_000n); // 4x blocks, 2x sigma
 });
 
 test("integer sqrt matches the Solidity implementation", () => {
@@ -35,14 +31,14 @@ test("integer sqrt matches the Solidity implementation", () => {
 
 test("a band pinned at spot on one side is priced as a coin flip", () => {
   // The case a "narrower band pays more" width rule gets catastrophically wrong.
-  const sig = sigmaBps1e4(12n, 100n, 100n);
+  const sig = SIGMA;
   const { multiplierBps, prob1e6 } = quote(NORMAL_TABLE, SPOT, SPOT - 1n, SPOT * 2n, sig, 400n);
   assert.equal(prob1e6, 499_968n);
   assert.equal(multiplierBps, 19_200n); // 1.92x, not 8x
 });
 
 test("widening a band never increases the multiplier", () => {
-  const sig = sigmaBps1e4(12n, 100n, 100n);
+  const sig = SIGMA;
   let prev = 1_000_000n;
   for (let halfBps = 5n; halfBps <= 200n; halfBps += 5n) {
     const half = (SPOT * halfBps) / 10_000n;

@@ -1,7 +1,7 @@
 //! The pricing library, checked against the properties a multiplier has to have.
 
 use molfi::pricing::{
-    BPS, PROB_ONE, half_prob, normal_table, payout_for, prob_inside, quote, sigma_bps_1e4,
+    BPS, PROB_ONE, half_prob, normal_table, payout_for, prob_inside, quote,
     sqrt_u256, validate_table,
 };
 
@@ -69,14 +69,6 @@ fn a_band_that_does_not_straddle_spot_is_refused() {
 #[should_panic(expected: 'ZERO_SIGMA')]
 fn zero_volatility_is_refused_rather_than_dividing_by_it() {
     prob_inside(normal_table(), 100_000, 99_000, 101_000, 0);
-}
-
-#[test]
-fn sigma_grows_with_the_square_root_of_time() {
-    let one = sigma_bps_1e4(100, 1, 1);
-    let four = sigma_bps_1e4(100, 4, 1);
-    // Four times the blocks is twice the sigma.
-    assert(four == one * 2, 'sqrt of time');
 }
 
 #[test]

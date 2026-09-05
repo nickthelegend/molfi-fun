@@ -23,14 +23,19 @@ use starknet::ContractAddress;
 pub struct Market {
     /// Pragma pair id — the label as a short string, e.g. 'BTC/USD'.
     pub pair: felt252,
-    /// Block after which the market may be settled.
-    pub cutoff_block: u64,
+    /// Unix second after which the market may be settled.
+    ///
+    /// A time, not a block height. Starknet's block cadence is neither fixed nor the thing
+    /// that constrains a round here — the oracle's publish interval is — and a horizon
+    /// expressed in blocks would drift against the horizon the table was fitted for.
+    pub cutoff_at: u64,
     /// Settlement token, and the token every stake is denominated in.
     pub token: ContractAddress,
-    /// Volatility used to price bands, in basis points.
-    pub vol_bps: u256,
-    /// Round length in blocks, for scaling volatility.
-    pub blocks: u256,
+    /// Move size over this market's horizon, as a fraction of spot times 1e8.
+    ///
+    /// Measured from real tape for this pair and this horizon, not assumed. The matching
+    /// probability table is stored alongside it, knot by knot.
+    pub sigma_1e4: u256,
     /// House edge, basis points.
     pub house_edge_bps: u256,
     /// Zero until settled.
@@ -59,12 +64,13 @@ pub trait IMolfiMarket<T> {
     fn create_market(
         ref self: T,
         pair: felt252,
-        cutoff_block: u64,
+        cutoff_at: u64,
         token: ContractAddress,
-        vol_bps: u256,
-        blocks: u256,
+        sigma_1e4: u256,
         house_edge_bps: u256,
+        table: Span<u256>,
     ) -> u64;
+    fn get_table(self: @T, market_id: u64) -> Span<u256>;
     fn settle(ref self: T, market_id: u64);
     fn get_market(self: @T, market_id: u64) -> Market;
     fn market_count(self: @T) -> u64;
@@ -77,7 +83,7 @@ pub trait IMolfiMarket<T> {
 #[starknet::contract]
 pub mod MolfiMarket {
     use core::poseidon::poseidon_hash_span;
-    use starknet::{ContractAddress, get_caller_address, get_block_number, get_block_timestamp};
+    use starknet::{ContractAddress, get_caller_address, get_block_timestamp};
     use starknet::storage::{
         Map, StoragePointerReadAccess, StoragePointerWriteAccess, StorageMapReadAccess,
         StorageMapWriteAccess,
@@ -120,6 +126,8 @@ pub mod MolfiMarket {
         pub const DUPLICATE: felt252 = 'POSITION_EXISTS';
         pub const INSOLVENT: felt252 = 'PAYOUT_EXCEEDS_STAKE';
         pub const BAD_BAND: felt252 = 'BAND_NOT_ORDERED';
+        pub const NOT_OWNER: felt252 = 'CALLER_NOT_OWNER';
+        pub const ZERO_SIGMA: felt252 = 'ZERO_SIGMA';
     }
 
     #[storage]
@@ -130,6 +138,12 @@ pub mod MolfiMarket {
         market_count: u64,
         markets: Map<u64, Market>,
         positions: Map<felt252, Position>,
+        /// The probability table for each market, one knot per slot.
+        ///
+        /// Stored per market rather than compiled in, because the shape of a fifteen minute
+        /// move is not the shape of a four hour one and a single table would misprice at
+        /// least one of them. Cairo has no storable array, so the knots are keyed by index.
+        tables: Map<(u64, u32), u256>,
     }
 
     #[event]
@@ -147,7 +161,7 @@ pub mod MolfiMarket {
         #[key]
         market_id: u64,
         pair: felt252,
-        cutoff_block: u64,
+        cutoff_at: u64,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -191,6 +205,17 @@ pub mod MolfiMarket {
 
     #[generate_trait]
     impl Internal of InternalTrait {
+        /// The table a market prices with, read back knot by knot.
+        fn table_of(self: @ContractState, market_id: u64) -> Span<u256> {
+            let mut knots: Array<u256> = array![];
+            let mut i: u32 = 0;
+            while i != pricing::TABLE_LEN {
+                knots.append(self.tables.read((market_id, i)));
+                i += 1;
+            }
+            knots.span()
+        }
+
         /// The commitment a position is stored under.
         fn commitment_of(
             self: @ContractState, secret: felt252, market_id: u64, low: u256, high: u256,
@@ -218,27 +243,47 @@ pub mod MolfiMarket {
 
     #[abi(embed_v0)]
     impl MolfiMarketImpl of IMolfiMarket<ContractState> {
+        /// List a market.
+        ///
+        /// Owner only, and the restriction is load bearing rather than reflexive: the whole
+        /// verifier story is that a settled market can be recomputed from the published
+        /// calibration. A market listed by a stranger with a table of their own choosing
+        /// would still be honestly settled and still pay out correctly — conservation sees to
+        /// that — but nobody could check its odds against anything.
         fn create_market(
             ref self: ContractState,
             pair: felt252,
-            cutoff_block: u64,
+            cutoff_at: u64,
             token: ContractAddress,
-            vol_bps: u256,
-            blocks: u256,
+            sigma_1e4: u256,
             house_edge_bps: u256,
+            table: Span<u256>,
         ) -> u64 {
+            assert(get_caller_address() == self.owner.read(), errors::NOT_OWNER);
+            assert(cutoff_at > get_block_timestamp(), errors::CLOSED);
+            assert(sigma_1e4 != 0, errors::ZERO_SIGMA);
+            // A table that is not a CDF misprices every band in the market at once, so it is
+            // rejected here rather than discovered at the first quote.
+            pricing::validate_table(table);
+
             let id = self.market_count.read() + 1;
             self.market_count.write(id);
+
+            let mut i: u32 = 0;
+            while i != pricing::TABLE_LEN {
+                self.tables.write((id, i), *table.at(i));
+                i += 1;
+            }
+
             self
                 .markets
                 .write(
                     id,
                     Market {
                         pair,
-                        cutoff_block,
+                        cutoff_at,
                         token,
-                        vol_bps,
-                        blocks,
+                        sigma_1e4,
                         house_edge_bps,
                         settled_price: 0,
                         settled_at: 0,
@@ -248,8 +293,12 @@ pub mod MolfiMarket {
                         paid: 0,
                     },
                 );
-            self.emit(MarketCreated { market_id: id, pair, cutoff_block });
+            self.emit(MarketCreated { market_id: id, pair, cutoff_at });
             id
+        }
+
+        fn get_table(self: @ContractState, market_id: u64) -> Span<u256> {
+            self.table_of(market_id)
         }
 
         /// Settle a market against the oracle. Permissionless on purpose.
@@ -260,9 +309,9 @@ pub mod MolfiMarket {
         /// nobody should trust, so neither is waved through.
         fn settle(ref self: ContractState, market_id: u64) {
             let mut m = self.markets.read(market_id);
-            assert(m.cutoff_block != 0, errors::NO_MARKET);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
             assert(!m.is_settled, errors::ALREADY_SETTLED);
-            assert(get_block_number() >= m.cutoff_block, errors::TOO_EARLY);
+            assert(get_block_timestamp() >= m.cutoff_at, errors::TOO_EARLY);
 
             let oracle = IPragmaOracleDispatcher { contract_address: self.oracle.read() };
             let response = oracle.get_data_median(DataType::SpotEntry(m.pair));
@@ -305,10 +354,9 @@ pub mod MolfiMarket {
             self: @ContractState, market_id: u64, spot: u256, low: u256, high: u256,
         ) -> u256 {
             let m = self.markets.read(market_id);
-            assert(m.cutoff_block != 0, errors::NO_MARKET);
-            let sigma = pricing::sigma_bps_1e4(m.vol_bps, m.blocks, m.blocks);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
             let q = pricing::quote(
-                pricing::normal_table(), spot, low, high, sigma, m.house_edge_bps,
+                self.table_of(market_id), spot, low, high, m.sigma_1e4, m.house_edge_bps,
             );
             q.multiplier_bps
         }
@@ -360,9 +408,9 @@ pub mod MolfiMarket {
             amount: u128,
         ) -> Span<OpenNoteDeposit> {
             let mut m = self.markets.read(market_id);
-            assert(m.cutoff_block != 0, errors::NO_MARKET);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
             assert(!m.is_settled, errors::CLOSED);
-            assert(get_block_number() < m.cutoff_block, errors::CLOSED);
+            assert(get_block_timestamp() < m.cutoff_at, errors::CLOSED);
             assert(band_low < band_high, errors::BAD_BAND);
 
             let commitment = self.commitment_of(secret, market_id, band_low, band_high);
@@ -371,10 +419,14 @@ pub mod MolfiMarket {
 
             // The multiplier is fixed at open, from the band the trader actually bought.
             // Pricing it again at claim time would let a later move change what they were sold.
-            let sigma = pricing::sigma_bps_1e4(m.vol_bps, m.blocks, m.blocks);
+            // Priced about the band's own midpoint rather than a spot the contract would
+            // have to read from the oracle. For the symmetric bands the desk sells these are
+            // the same number exactly, and this way the price a position is sold at cannot be
+            // moved by an oracle update landing in the same block.
             let mid = (band_low + band_high) / 2;
             let q = pricing::quote(
-                pricing::normal_table(), mid, band_low, band_high, sigma, m.house_edge_bps,
+                self.table_of(market_id), mid, band_low, band_high, m.sigma_1e4,
+                m.house_edge_bps,
             );
 
             self
@@ -415,7 +467,7 @@ pub mod MolfiMarket {
             token: ContractAddress,
         ) -> Span<OpenNoteDeposit> {
             let mut m = self.markets.read(market_id);
-            assert(m.cutoff_block != 0, errors::NO_MARKET);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
             assert(m.is_settled, errors::NOT_SETTLED);
 
             let commitment = self.commitment_of(secret, market_id, band_low, band_high);

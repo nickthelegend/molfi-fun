@@ -14,7 +14,7 @@ use molfi::pricing::{half_prob, normal_table, payout_for, prob_inside, quote, sq
 /// Note `sqrt(2) = 2`, which is not the floor of the real root. The Babylonian seed makes
 /// both implementations stop a step early for inputs that small, and parity means matching
 /// what the kernel does rather than what a textbook does. It never bites in practice: sqrt is
-/// only ever called on `(blocks * 1e8) / ref_blocks`, which is at least 1e8.
+/// only ever called on values of at least 1e8.
 #[test]
 fn sqrt_agrees_with_the_kernel() {
     let cases = array![
@@ -106,6 +106,45 @@ fn payout_agrees_with_the_kernel() {
         }
         let (stake, mult, expected) = *cases.at(i);
         assert(payout_for(stake, mult) == expected, 'payout parity');
+        i += 1;
+    };
+}
+
+/// The vector that actually ships.
+///
+/// Every case above uses the normal table, which is a fixture: production never quotes with
+/// it, because each market carries the table measured for its own pair and horizon. Agreeing
+/// about a table neither implementation uses proves very little, so this case runs the real
+/// BTC fifteen minute calibration — the same seventeen knots `create_market` is handed — and
+/// checks the desk's numbers against the chain's to the unit.
+#[test]
+fn the_shipped_calibration_quotes_identically_on_both_sides() {
+    let t = array![
+        0_u256, 369_779, 580_923, 714_633, 799_682, 855_174, 893_299, 921_146, 940_715,
+        955_015, 963_815, 970_676, 976_060, 980_721, 984_310, 986_887, 989_202,
+    ]
+        .span();
+    let sigma: u256 = 178_325;
+    let spot: u256 = 11_000_000_000_000; // $110,000 at Pragma's 8 decimals
+
+    // (half width, prob 1e6, multiplier bps) from packages/sdk/test/parity.ts.
+    let cases = array![
+        (11_000_000_000_u256, 613_387_u256, 15_649_u256),
+        (27_500_000_000, 878_338, 10_929),
+        (55_000_000_000, 971_834, 9_877),
+        (110_000_000_000, 989_202, 9_704),
+        (220_000_000_000, 989_202, 9_704),
+    ];
+
+    let mut i = 0;
+    loop {
+        if i == cases.len() {
+            break;
+        }
+        let (half, expected_prob, expected_mult) = *cases.at(i);
+        let q = quote(t, spot, spot - half, spot + half, sigma, 400);
+        assert(q.prob_1e6 == expected_prob, 'calibrated prob parity');
+        assert(q.multiplier_bps == expected_mult, 'calibrated quote parity');
         i += 1;
     };
 }

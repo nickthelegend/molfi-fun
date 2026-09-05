@@ -62,17 +62,6 @@ export function sqrt(x: bigint): bigint {
 }
 
 /**
- * Scale a reference-horizon sigma by sqrt(time), at 1e4 precision.
- *
- * Only used to interpolate between calibrated round tiers and by the calibration
- * tooling. Each sellable round carries its own measured sigma, because measured on
- * real tape sqrt-scaling does not hold at these horizons.
- */
-export function sigmaBps1e4(volBps: bigint, blocks: bigint, refBlocks: bigint): bigint {
-  return volBps * sqrt((blocks * 100_000_000n) / refBlocks);
-}
-
-/**
  * Probability the cutoff print lands inside [low, high], 1e6 fp.
  *
  * For ANY symmetric distribution with CDF F, writing T(z) = P(|move| <= z*sigma):
@@ -213,30 +202,3 @@ export function payoutFor(stake: bigint, multiplierBps: bigint): bigint {
   return (stake * multiplierBps) / BPS;
 }
 
-/**
- * Sigma for a horizon between two calibrated rounds. Mirrors
- * RangeMarket.sigmaForBlocks: interpolate between measured points rather than
- * sqrt-scaling one of them, and take the shape from the lower bracketing round.
- */
-export function sigmaForBlocks(
-  roundBlocks: readonly number[],
-  sigmas: readonly bigint[],
-  remaining: number,
-): { sigma1e4: bigint; tableTier: number } {
-  const n = roundBlocks.length;
-  if (n === 0) throw new Error("RoundsNotSet");
-  if (remaining <= roundBlocks[0]) return { sigma1e4: sigmas[0], tableTier: 0 };
-  if (remaining >= roundBlocks[n - 1]) return { sigma1e4: sigmas[n - 1], tableTier: n - 1 };
-
-  for (let i = 0; i + 1 < n; i++) {
-    const lo = roundBlocks[i];
-    const hi = roundBlocks[i + 1];
-    if (remaining >= lo && remaining <= hi) {
-      const sLo = sigmas[i];
-      const sHi = sigmas[i + 1];
-      const sigma1e4 = sLo + ((sHi - sLo) * BigInt(remaining - lo)) / BigInt(hi - lo);
-      return { sigma1e4, tableTier: i };
-    }
-  }
-  return { sigma1e4: sigmas[0], tableTier: 0 };
-}

@@ -16,6 +16,7 @@ import {
   quote,
   sqrt,
 } from "../src/pricing.ts";
+import { CALIBRATIONS } from "../src/generated/tables.ts";
 
 const line = (...xs: (bigint | number)[]) => `(${xs.map((x) => `${x}`).join(", ")})`;
 
@@ -58,3 +59,28 @@ const payCases: Array<[bigint, bigint]> = [
   [1_000n, 20_000n], [1_000n, 10_000n], [3n, 15_000n], [7n, 33_333n], [1_000_000n, 623_393n],
 ];
 console.log(payCases.map(([s, m]) => line(s, m, payoutFor(s, m))).join(", "));
+
+/**
+ * The vector that matters most: the shipped BTC 15m calibration, priced by the kernel.
+ *
+ * Everything above is checked against the normal table, which is a fixture. Production never
+ * quotes with it — the contract carries the measured table for each market — so a parity
+ * suite that only exercises the normal one proves the two implementations agree about a table
+ * neither of them uses. These are the numbers a real quote is made of.
+ */
+const btc15m = CALIBRATIONS.find((c) => c.marketKey === "btc" && c.horizonKey === "15m");
+if (!btc15m) throw new Error("btc/15m calibration missing — regenerate the tables first");
+
+console.log("\n// calibrated quote, BTC 15m (halfWidth, prob1e6, multiplierBps)");
+console.log(`// sigma_1e4 = ${btc15m.sigma1e4}`);
+const spot = 11_000_000_000_000n; // $110,000 at Pragma's 8 decimals
+console.log(
+  [10n, 25n, 50n, 100n, 200n]
+    .map((bps) => {
+      const half = (spot * bps) / 10_000n;
+      const q = quote(btc15m.table, spot, spot - half, spot + half, btc15m.sigma1e4, 400n);
+      return line(half, q.prob1e6, q.multiplierBps);
+    })
+    .join(", "),
+);
+console.log(`// spot = ${spot}, table = [${btc15m.table.join(", ")}]`);
