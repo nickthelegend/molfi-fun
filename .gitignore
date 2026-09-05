@@ -22,3 +22,4 @@ docs/strk20-reference.txt
 apps/poker/dist/
 
 apps/poker/.env
+.vercel

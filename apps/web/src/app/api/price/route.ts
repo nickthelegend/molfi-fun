@@ -198,65 +198,78 @@ export async function GET(req: Request) {
 
   const symbol = BINANCE[market];
 
-  try {
-    const got = await cached(`spot:${market}`, SPOT_TTL_MS, () => binance(symbol));
-    if (got.price <= 0n) throw new Error("non-positive price");
+  // The mark and the oracle fail independently, and the response says so per source rather
+  // than collapsing to one error. They are different numbers with different jobs: the mark
+  // is what a screen shows between publishes, and the oracle is the only thing that settles
+  // a position. Losing the exchange should not hide the settlement price, and losing the
+  // node should not blank the screen.
+  const [markResult, oracleResult] = await Promise.allSettled([
+    (async () => {
+      const got = await cached(`spot:${market}`, SPOT_TTL_MS, () => binance(symbol));
+      if (got.price <= 0n) throw new Error("non-positive price");
 
-    let returns: number[] | undefined;
-    if (wantHistory) {
-      const closes = await cached(`hist:${symbol}`, HISTORY_TTL_MS, () =>
-        binanceHistory(symbol, 1000),
-      );
-      returns = [];
-      for (let i = 1; i < closes.length; i++) {
-        if (closes[i - 1] > 0 && closes[i] > 0) returns.push(Math.log(closes[i] / closes[i - 1]));
+      let returns: number[] | undefined;
+      if (wantHistory) {
+        const closes = await cached(`hist:${symbol}`, HISTORY_TTL_MS, () =>
+          binanceHistory(symbol, 1000),
+        );
+        returns = [];
+        for (let i = 1; i < closes.length; i++) {
+          if (closes[i - 1] > 0 && closes[i] > 0) {
+            returns.push(Math.log(closes[i] / closes[i - 1]));
+          }
+        }
       }
-    }
+      return { got, returns };
+    })(),
+    cached(`oracle:${market}`, ORACLE_TTL_MS, () => pragma(def.label)),
+  ]);
 
-    // The oracle is asked for separately and allowed to fail on its own. A node that is
-    // down should not take the demo desk with it — but it must not be silently absent
-    // either, so the failure is reported in place rather than omitted.
-    let oracle: Awaited<ReturnType<typeof pragma>> | null = null;
-    let oracleError: string | null = null;
-    try {
-      oracle = await cached(`oracle:${market}`, ORACLE_TTL_MS, () => pragma(def.label));
-    } catch (e) {
-      oracleError = (e as Error).message;
-    }
+  const mark = markResult.status === "fulfilled" ? markResult.value : null;
+  const markError =
+    markResult.status === "rejected" ? String(markResult.reason?.message ?? markResult.reason) : null;
+  const oracle = oracleResult.status === "fulfilled" ? oracleResult.value : null;
+  const oracleError =
+    oracleResult.status === "rejected"
+      ? String(oracleResult.reason?.message ?? oracleResult.reason)
+      : null;
 
+  // Only when *both* are gone is there nothing to answer with.
+  if (!mark && !oracle) {
     return NextResponse.json(
-      {
-        market,
-        pair: def.label,
-        // The mark. What the screen shows between publishes.
-        price: got.price.toString(),
-        decimals: 8,
-        source: got.source,
-        at: Date.now(),
-        // The settlement price. What the contract sees, and the only thing that resolves
-        // a band.
-        oracle: oracle
-          ? {
-              network: NETWORK,
-              price: oracle.price.toString(),
-              display: oracle.display,
-              decimals: oracle.decimals,
-              updatedAt: oracle.updatedAt,
-              sources: oracle.sources,
-              ageSeconds: oracle.ageSeconds,
-              quotable: oracle.quotable,
-              refusal: oracle.refusal,
-            }
-          : null,
-        oracleError,
-        ...(returns ? { returns, returnsInterval: "1m" } : {}),
-      },
-      { headers: { "cache-control": "no-store" } },
-    );
-  } catch (e) {
-    return NextResponse.json(
-      { market, error: (e as Error).message },
+      { market, pair: def.label, error: markError ?? oracleError ?? "no price available" },
       { status: 502, headers: { "cache-control": "no-store" } },
     );
   }
+
+  return NextResponse.json(
+    {
+      market,
+      pair: def.label,
+      // The mark. What the screen shows between publishes.
+      price: mark ? mark.got.price.toString() : null,
+      decimals: 8,
+      source: mark ? mark.got.source : null,
+      markError,
+      at: Date.now(),
+      // The settlement price. What the contract sees, and the only thing that resolves a
+      // band.
+      oracle: oracle
+        ? {
+            network: NETWORK,
+            price: oracle.price.toString(),
+            display: oracle.display,
+            decimals: oracle.decimals,
+            updatedAt: oracle.updatedAt,
+            sources: oracle.sources,
+            ageSeconds: oracle.ageSeconds,
+            quotable: oracle.quotable,
+            refusal: oracle.refusal,
+          }
+        : null,
+      oracleError,
+      ...(mark?.returns ? { returns: mark.returns, returnsInterval: "1m" } : {}),
+    },
+    { headers: { "cache-control": "no-store" } },
+  );
 }

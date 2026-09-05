@@ -49,8 +49,17 @@ async function fetchRealTape(
   const r = await fetch(`/api/price?market=${encodeURIComponent(marketKey)}&history=1`, {
     cache: "no-store",
   });
-  const j = (await r.json()) as { price?: string; returns?: number[]; error?: string };
-  if (!r.ok || !j.price) throw new Error(j.error ?? `price unavailable (${r.status})`);
+  const j = (await r.json()) as {
+    price?: string | null;
+    returns?: number[];
+    error?: string;
+    markError?: string | null;
+  };
+  // `markError` is the exchange's own reason and is worth more than "price unavailable" —
+  // a 451 means the region is geo-blocked, which is a different fix from a 500.
+  if (!r.ok || !j.price) {
+    throw new Error(j.markError ?? j.error ?? `price unavailable (${r.status})`);
+  }
   if (!j.returns || j.returns.length < 8) throw new Error("no recent tape to replay");
   return { price: BigInt(j.price), returns: j.returns };
 }

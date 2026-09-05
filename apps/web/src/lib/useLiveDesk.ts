@@ -328,9 +328,15 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         const r = await fetch(`/api/price?market=${encodeURIComponent(market.key)}`, {
           cache: "no-store",
         });
-        const j = (await r.json()) as { price?: string; error?: string };
+        const j = (await r.json()) as {
+          price?: string | null;
+          error?: string;
+          markError?: string | null;
+        };
         if (stop) return;
-        if (!r.ok || !j.price) throw new Error(j.error ?? `price service ${r.status}`);
+        if (!r.ok || !j.price) {
+          throw new Error(j.markError ?? j.error ?? `price service ${r.status}`);
+        }
         const price = BigInt(j.price);
         const h = historyRef.current;
         if (h.length === 0 || h[h.length - 1].price !== price) {
