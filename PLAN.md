@@ -174,11 +174,17 @@ Both are now stored.
 | --- | --- | --- |
 | 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
 | 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | **DONE ON SEPOLIA**, blocked on mainnet. `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953` — nine markets listed and funded with 1 STRK each, on a real public chain, through the same script mainnet would use. Mainnet needs a funded account; both configured accounts hold 0 there. |
-| 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | BLOCKED on 6.2. The transaction shape is confirmed accepted by the deployed pool — see `pnpm pool:probe` — and the deploy script records every hash it sends for `pnpm submission` to verify. |
+| 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | **PARTIAL.** Seven verified Sepolia transactions are in `strk20.json`, which carries a `network` field so they cannot be mistaken for mainnet. They are direct calls to molfi's contract, not calls *through* the pool — driving the pool needs a registered account holding a note, which needs a real deposit. `pnpm pool:probe` confirms the transaction shape is accepted by the deployed pool on both networks. |
 | 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi-production.up.railway.app, verified with `pnpm api:check` against the live URL. Repo Website field set. |
 | 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, and fillable from Sepolia today** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
-| 6.6 | Record the 3-minute demo. | BLOCKED — a person has to narrate it. The console is live and the verifier renders a real settled market, so there is something to record. |
-| 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment. The UI is being rebuilt separately. |
+| 6.6 | Record the 3-minute demo. | BLOCKED — a person has to narrate it. There is something to record: the console is live on a real public-chain deployment, and `/m/1` recomputes a real market from the chain. |
+| 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` green against the live public site backed by the real Sepolia contract, `pnpm e2e:devnet` green for the full open/settle/claim cycle. The UI is being rebuilt separately. |
+
+**Deployed on Sepolia:** `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953`, nine
+markets funded with 1 STRK each, contract ledger and token balance agreeing exactly. The
+console at https://molfi-production.up.railway.app serves it, and `/api/audit/1` recomputes it.
+Those markets can never settle — Pragma Sepolia stopped publishing months ago — so the
+deployment proves the deploy path and the contract, not trading.
 
 **Preflight against mainnet, today:** the node is on `SN_MAIN`, the STRK20 pool is deployed at
 the address in the config, STRK is where it should be, all three Pragma pairs are settleable
@@ -200,7 +206,7 @@ the markets.
 | --- | --- | --- | --- |
 | G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | **STILL TRUE.** A Sepolia deploy would list markets that can never settle, so mainnet is the only place a real settlement happens. |
 | G11 | **`strk20.json` is empty** — no contracts, no transactions, no demo. | 6.3–6.6 | Every field is a deliverable and every one is blocked on a mainnet spend. |
-| G16 | **The pool sandwich has never run against the real pool.** | 6.3 | Narrowed twice, not closed. Reading the deployed pool's own class settled the shape: `InvokeExternalInput` is `{contract_address, calldata}` and carries no token or amount, so the stake must arrive by a separate `Withdraw` action in the same transaction — which `openActions` now sends, and which its absence had silently omitted. What remains untested is whether the pool deserializes our calldata into `privacy_invoke`'s parameters in the order the escrow helper implies. `strk20PrepareInvoke` dry-runs that for free; it needs a wallet on a funded account. |
+| G16 | **The pool sandwich has never run against the real pool.** | 6.3 | Narrowed three times, not closed. `pnpm pool:probe` compiles molfi's exact action list against the deployed pool on mainnet and Sepolia: it parses, satisfies replay protection, and stops at `SUBCHANNEL_NOT_FOUND` — a note that does not exist, because the probe has no account. Reading the deployed pool's own class settled the shape: `InvokeExternalInput` is `{contract_address, calldata}` and carries no token or amount, so the stake must arrive by a separate `Withdraw` action in the same transaction — which `openActions` now sends, and which its absence had silently omitted. What remains untested is whether the pool deserializes our calldata into `privacy_invoke`'s parameters in the order the escrow helper implies. `strk20PrepareInvoke` dry-runs that for free; it needs a wallet on a funded account. |
 | G17 | **No mainnet deployer.** | 6.2 | Both configured accounts hold 0 STRK on mainnet. `ghost_deployer` holds 119 STRK on **Sepolia**, which is why the contract is deployed and funded there. Mainnet preflight is otherwise clear. This is the money decision, and it is the user's. |
 | G18 | **The Alchemy key's app does not have Starknet Mainnet enabled.** | nothing, but it should be fixed | Every request to it returns 403, so the live deployment is running on the public fallback — which works and is rate limited. One toggle at https://dashboard.alchemy.com/apps/jxx5a0i4bn502vc1/networks. `/api/health` reports which endpoint answered, so this is visible rather than silent. |
 
@@ -269,13 +275,16 @@ driving it over a real RPC, or by reading the deployed pool rather than the docs
 
 Phases 1 through 5 are done. What is left is one decision and the work that follows it.
 
-1. **Fund a mainnet deployer.** Everything below is blocked on it, and it is the only step
-   that costs money. `pnpm preflight` is clear otherwise.
+1. **Fund a mainnet deployer.** The only step that costs money, and the only thing left
+   between here and a complete submission. `pnpm preflight` is clear otherwise, and the
+   identical script has now run end to end on Sepolia — so what remains is the same
+   sequence against a chain where the oracle is alive.
 2. **Dry-run the pool sandwich** with `strk20PrepareInvoke` before submitting anything. It
    costs nothing and it is what remains of G16 — whether the pool deserializes our calldata
    into `privacy_invoke`'s parameters the way the escrow helper's example implies. The
    transaction shape itself is no longer a guess: it came from the deployed pool's class.
 3. **Deploy**, list and fund the markets, then open, settle and claim one real position.
+   `--resume` makes a half-finished run recoverable rather than a stranded contract.
 4. **Fill `strk20.json`** with `pnpm submission --network mainnet`. The deploy script
    records every hash it sends, and the filler verifies each receipt before recording it —
    a reverted transaction still has a hash, so listing them unchecked would let a failed run
