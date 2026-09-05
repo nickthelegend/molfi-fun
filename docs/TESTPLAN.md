@@ -231,10 +231,27 @@ Sierra already drops unused impls), `inlining-strategy = "avoid"` (11% *worse*).
 declare into the balance needs roughly 2,100 Sierra felts; the contract is 9,752 and the
 *previous* one was 7,287. It is arithmetic, not effort.
 
-Both official faucets gate on a GitHub sign-in, which is the account holder's to give; the
-one third-party CLI faucet's backend returns 404. This is a funding dependency, not a bug,
-and it is marked FAIL rather than BLOCKED because a user of molfi.fun genuinely cannot trade
-today.
+### The funding path, since it is the whole of the fix
+
+The Starknet Foundation faucet publishes a **public Agent API with no auth**, gated by a
+proof of work the caller solves locally. `pnpm faucet <address>` implements it: request a
+challenge, find a nonce whose SHA-256 has the required leading zero *bits* — bit-level, not
+whole hex digits — submit, poll. It worked, and put 5 STRK on the deployer
+([tx](https://sepolia.voyager.online/tx/0x3786f917ca4fc947fc8c6a4bef5b6c014a27d0ac3e7a1523bc1928b07807c77)).
+
+Five is what the unauthenticated tier drips. The same faucet's web form gives **100 STRK**
+with no sign-in at all, and **3,000 with a GitHub sign-in** — but every tier shares one
+cooldown of 24 hours per address, and the deployer is now inside it. Farming fresh addresses
+would get around that and would be abuse of a shared testnet resource, so `faucet.mjs` asks
+once for the address it is given and reports the remaining cooldown instead of retrying.
+
+So the gap is 56 STRK and one sign-in nobody but the account holder can perform. That makes
+D11 and D12 a funding dependency rather than a defect — they are recorded as FAIL rather than
+BLOCKED because the consequence is real: a visitor to molfi.fun genuinely cannot trade today.
+
+`pnpm golive` is the whole remaining path in one command: check the balance and say exactly
+how short it is, declare, deploy, list and fund the markets, repoint the SDK, open a real
+position through the console's own call builders, and re-run the plan.
 
 ## What is blocked, and why
 
