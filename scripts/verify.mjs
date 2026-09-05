@@ -37,13 +37,36 @@ function check(id, ok, what, detail = "") {
 }
 
 const get = async (path) => {
-  const r = await fetch(`${BASE}${path}`, { headers: { "cache-control": "no-cache" } });
+  const r = await chain(() => fetch(`${BASE}${path}`, { headers: { "cache-control": "no-cache" } }));
   let body = null;
   try { body = await r.json(); } catch { /* not json */ }
   return { status: r.status, body };
 };
 
 const u = (a, b) => (BigInt(b) << 128n) | BigInt(a);
+
+/**
+ * Retry a chain read a few times before believing it.
+ *
+ * A dropped connection is not an answer. Public endpoints shed requests under load, and one
+ * of them landing mid-run used to abort the whole verifier — which reports a transport
+ * hiccup as a product failure, the single worst thing a test harness can do. A revert still
+ * fails immediately: that *is* an answer, and retrying it just asks twice.
+ */
+async function chain(fn, attempts = 4) {
+  let last;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      const transient = /fetch failed|ECONNRESET|ETIMEDOUT|socket hang up|429|502|503|504/i.test(String(e?.message ?? e));
+      if (!transient) throw e;
+      await new Promise((r) => setTimeout(r, 400 * 2 ** i));
+    }
+  }
+  throw last;
+}
 
 // ─────────────────────────────────────────────────────────────────── C. API
 process.stdout.write("\nC. API\n");
@@ -160,21 +183,21 @@ check("C13", (await get("/api/position/nothex")).status === 400, "a malformed co
 // ────────────────────────────────────────────────────── D. contracts on chain
 process.stdout.write("\nD. Contracts, on the real network\n");
 const d = JSON.parse(readFileSync(`deployments/${network}.json`, "utf8"));
-check("D1", Boolean(await provider.getClassHashAt(d.market).catch(() => null)), "market deployed", d.market.slice(0, 14) + "…");
-check("D2", Boolean(await provider.getClassHashAt(d.oracle).catch(() => null)), "relay deployed", d.oracle.slice(0, 14) + "…");
+check("D1", Boolean(await chain(() => provider.getClassHashAt(d.market)).catch(() => null)), "market deployed", d.market.slice(0, 14) + "…");
+check("D2", Boolean(await chain(() => provider.getClassHashAt(d.oracle)).catch(() => null)), "relay deployed", d.oracle.slice(0, 14) + "…");
 {
   const short = (t) => { let o = 0n; for (const c of t) o = (o << 8n) | BigInt(c.charCodeAt(0)); return "0x" + o.toString(16); };
-  const r = await provider.callContract({ contractAddress: d.oracle, entrypoint: "get_relayed", calldata: [short("BTC/USD")] });
+  const r = await chain(() => provider.callContract({ contractAddress: d.oracle, entrypoint: "get_relayed", calldata: [short("BTC/USD")] }));
   check("D3", BigInt(r[2]) !== BigInt(r[5]) && BigInt(r[2]) > 0n,
     "the relay serves Pragma's timestamp, not its own", `published ${BigInt(r[2])} vs relayed ${BigInt(r[5])}`);
 }
 const markets = await (async () => {
-  const n = Number(BigInt((await provider.callContract({ contractAddress: d.market, entrypoint: "market_count", calldata: [] }))[0]));
+  const n = Number(BigInt((await chain(() => provider.callContract({ contractAddress: d.market, entrypoint: "market_count", calldata: [] })))[0]));
   const out = [];
   for (let id = 1; id <= n; id += 1) {
-    out.push(decodeMarket(id, await provider.callContract({
+    out.push(decodeMarket(id, await chain(() => provider.callContract({
       contractAddress: d.market, entrypoint: "get_market", calldata: ["0x" + id.toString(16)],
-    })));
+    }))));
   }
   return out;
 })();
@@ -183,9 +206,9 @@ check("D4", settled.length >= 1 && settled.every((m) => m.settledPrice > 0n && m
   "settlement is real", `${settled.length}/${markets.length} settled`);
 {
   const one = settled.at(-1);
-  const again = decodeMarket(one.id, await provider.callContract({
+  const again = decodeMarket(one.id, await chain(() => provider.callContract({
     contractAddress: d.market, entrypoint: "get_market", calldata: ["0x" + one.id.toString(16)],
-  }));
+  })));
   check("D5", again.settledPrice === one.settledPrice, "a settled price is immutable", one.settledPrice.toString());
 }
 check("D6", markets.every((m) => m.paid <= m.staked + m.bankroll), "conservation holds across every market");
@@ -194,10 +217,10 @@ check("D8", markets.every((m) => [900, 3600, 14400].includes(m.roundSeconds)), "
 {
   let live = false, why = "";
   try {
-    await provider.callContract({
+    await chain(() => provider.callContract({
       contractAddress: d.market, entrypoint: "quote_offsets",
       calldata: ["0x1", "0x29c45", "0x0", "0x29c45", "0x0"],
-    });
+    }), 2);
     live = true;
   } catch (e) { why = /entrypoint does not exist/i.test(String(e.message)) ? "the deployed contract predates the public route" : String(e.message).slice(0, 60); }
   check("D11", live, "open_position is live on the deployed contract", why);
