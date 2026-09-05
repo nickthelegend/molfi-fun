@@ -187,3 +187,91 @@ the wrong slot deserialises into a different parameter.
 | K4 | Claim from the browser | Payout returns to the connected address. |
 | K5 | Shield / unshield | STRK moves into and out of the pool. |
 | K6 | Wrong-network wallet | The console names the expected chain and refuses to act. |
+
+---
+
+# Results
+
+Run against https://molfi.fun in a real browser, against Starknet Sepolia for the deployed
+contracts, and against a local devnet for the trading route the live contract does not yet
+carry. Console and network checked on every browser item.
+
+Re-runnable: `pnpm verify` (C, D, E, G) · `pnpm test` (J) · `pnpm test:cairo` ·
+`pnpm e2e:devnet` (H) · `pnpm test:integration` (I).
+
+| Tier | Result |
+| --- | --- |
+| A. Pages | 9 / 9 PASS |
+| B. Menu sheets | 7 / 7 PASS |
+| C. API | 18 / 18 PASS |
+| D. Contracts on the real network | 9 PASS · 1 BLOCKED · 2 FAIL |
+| E. External integrations | 6 / 6 PASS |
+| F. Desk flows | 10 / 10 PASS |
+| G. Repo hygiene | 5 / 5 PASS |
+| H. Public trading route, on chain | 10 / 10 PASS on a real chain · 0 / 10 reachable on the live deployment |
+| I. The console's own trading code | 16 / 16 PASS |
+| J. Unit tests on the calldata | 9 / 9 PASS |
+| K. Wallet-dependent flows | 6 BLOCKED |
+
+**90 PASS · 2 FAIL · 7 BLOCKED.**
+
+## The two failures, and they are one failure
+
+**D11 — `open_position` is not on the deployed contract.**
+**D12 — nothing has ever been staked: 41 markets, `staked` 0 across all of them.**
+
+Both are the same fact. The public trading route is written, unit tested on its calldata,
+proven end to end against a real chain twice over, and not on Sepolia — because declaring the
+class costs about **60 STRK** and the deployer holds under 7. Measured, not guessed:
+`estimateDeclareFee` returns 2.028e9 L2 gas from two independent nodes, and a
+randomly-sampled Sepolia declare 200 blocks earlier cost 17 STRK for a quarter the bytecode.
+
+Tried and rejected: the release profile (−14%), stripping `Debug`/`PartialEq` derives (0% —
+Sierra already drops unused impls), `inlining-strategy = "avoid"` (11% *worse*). Fitting the
+declare into the balance needs roughly 2,100 Sierra felts; the contract is 9,752 and the
+*previous* one was 7,287. It is arithmetic, not effort.
+
+Both official faucets gate on a GitHub sign-in, which is the account holder's to give; the
+one third-party CLI faucet's backend returns 404. This is a funding dependency, not a bug,
+and it is marked FAIL rather than BLOCKED because a user of molfi.fun genuinely cannot trade
+today.
+
+## What is blocked, and why
+
+**D10 — the pool sandwich against the real STRK20 pool.** Needs a registered account holding
+a note. No public proving or discovery endpoint exists: the SDK docs, `starknet-privacy`,
+`strk20-by-example.org` and the starter kit all point at localhost, self-hosting needs a
+synced Pathfinder node, and the pool verifies an FPI screening signature on chain, so
+self-hosting is not a route around it. `scripts/pool-probe.mjs` validates molfi's action list
+against the deployed pool's own `compile_actions` view as far as `SUBCHANNEL_NOT_FOUND`,
+which is the last inch reachable without a note.
+
+**K1–K6 — everything that needs a wallet to sign.** The Claude in Chrome extension is not
+connected in this session and the in-app browser has no Starknet wallet installed, so no
+extension can be driven. What this leaves untested is the wallet's own approval dialog. The
+code path behind it is covered: `scripts/integration.mjs` imports the same `openCalls` and
+`claimCalls` the console calls, hands them to a real `Account.execute` — the same call
+`submitDirect` makes — and reads the result back with the same `decodePosition` the API uses.
+
+## Fixed during this run
+
+| Item | Was | Fix |
+| --- | --- | --- |
+| B2 | The oracle sheet printed Pragma's Sepolia address, which settles nothing here | Reads the configured oracle and says it is a relay, with the reason |
+| B5 | The account sheet labelled the relay "Pragma oracle" | Labelled by what the address actually is |
+| C8 | `/api/quote` ignored unknown parameters, so `?round=2` priced the 15m round | Unknown keys are refused, naming the parameter |
+| C18 | The position route reported `won: false` for a band it cannot see | `won` is null unless the caller supplies the band |
+| G5 | 29 files of verified work uncommitted, and `git push` deploys nothing here | Committed; deployed with the CLI, which is how this project has always shipped |
+| — | A Sepolia deploy left `MOLFI_MARKET` pointing at the old contract | The deploy rewrites it, scoped to that record |
+
+## Mocks, stubs and errors
+
+Zero mocks and zero stubs in shipped code: `cairo/src/devnet.cairo`'s `StubOracle` and
+`StubToken` exist only for local runs and `deploy.mjs` refuses to put them on a public chain.
+Every price is a real multi-publisher Pragma median, every settlement a real transaction,
+every ledger row a real Postgres row that outlived a restart, every trade in the H and I
+tiers a real signed transaction against a real contract.
+
+Zero console errors and zero failed network requests across every page and sheet tested —
+checked per item, including under injected failure, where the live console rendered
+`market list unavailable (502)` and recovered cleanly rather than blanking.
