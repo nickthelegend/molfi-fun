@@ -202,20 +202,41 @@ function transient(why: string): boolean {
 export async function send(call: Call, label: string, attempts = 3): Promise<string> {
   let last = "";
   for (let i = 0; i < attempts; i += 1) {
+    let hash: string | null = null;
     try {
       if (nextNonce === null) await syncNonce();
-      const { transaction_hash } = await account.execute(call, { nonce: nextNonce! });
+      const sent = await account.execute(call, { nonce: nextNonce! });
+      hash = sent.transaction_hash;
       nextNonce! += 1n;
-      await provider.waitForTransaction(transaction_hash, { retryInterval: 2_000 });
-      console.log(`  ${label} → ${transaction_hash}`);
-      return transaction_hash;
     } catch (e) {
+      // Submission failed, so nothing reached the chain and retrying is safe. The local
+      // nonce is suspect either way; ask the chain again.
       last = reason(e);
-      if (!transient(last) || i === attempts - 1) throw new Error(last);
-      // Whatever went wrong, the local nonce is now suspect. Ask the chain again.
       nextNonce = null;
+      if (!transient(last) || i === attempts - 1) throw new Error(last);
       console.log(`    ${label}: ${last} — retrying`);
       await new Promise((r) => setTimeout(r, 1_500 * (i + 1)));
+      continue;
+    }
+
+    /**
+     * Past this point the transaction has been submitted, and retrying is **never** safe.
+     *
+     * A failed confirmation says nothing about whether the transaction landed — and it
+     * usually did. Retrying it listed the same market twice: the first `create_market`
+     * succeeded, its receipt read timed out, and the retry created a duplicate. Two ETH
+     * markets, no STRK market, and a bankroll paid twice for one round.
+     *
+     * So a confirmation failure is reported against the hash rather than retried. The next
+     * cycle reads the chain and sees whatever actually happened, which is the only source
+     * that knows.
+     */
+    try {
+      await provider.waitForTransaction(hash, { retryInterval: 2_000 });
+      console.log(`  ${label} → ${hash}`);
+      return hash;
+    } catch (e) {
+      throw new Error(`${label} was submitted as ${hash} but could not be confirmed: ${reason(e)}`);
     }
   }
   throw new Error(last);

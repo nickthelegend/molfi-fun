@@ -170,6 +170,26 @@ async function openNewRounds(
     if (open.length > 0) continue;
 
     try {
+      /**
+       * Re-read immediately before listing, and check this pair specifically.
+       *
+       * The snapshot this loop is walking was taken before any of its own listings, so by
+       * the third pair it is several transactions out of date. Combined with a confirmation
+       * that timed out on a transaction that had actually landed, that produced two ETH
+       * markets and no STRK market in one cycle — each with a bankroll paid for it.
+       *
+       * The chain is the only thing that knows what exists. Asking it costs one call and
+       * makes a duplicate structurally impossible rather than merely unlikely.
+       */
+      const fresh = await allMarkets();
+      const alreadyOpen = fresh.some(
+        (x) => x.pair === m.label && !x.isSettled && x.cutoffAt > Math.floor(Date.now() / 1000),
+      );
+      if (alreadyOpen) {
+        log(`list ${m.label}: already open on chain, skipping`);
+        continue;
+      }
+
       const seconds = MARKETS.find((x) => x.label === m.label)!.rounds[TIER].seconds;
       const cutoffAt = now + seconds;
       const tx = await send(createMarketCall(m.label, TIER, cutoffAt), `listed ${m.label}`);
@@ -177,18 +197,18 @@ async function openNewRounds(
 
       // The new id is the count, because ids are assigned sequentially from one.
       const created = await allMarkets();
-      const fresh = created[created.length - 1];
+      const listedMarket = created[created.length - 1];
 
       // Fund it in the same cycle. The contract measures funding as a balance delta, so the
       // tokens have to arrive before the call that records them.
-      await send(transferCall(MARKET, BANKROLL), `sent bankroll for market ${fresh.id}`);
+      await send(transferCall(MARKET, BANKROLL), `sent bankroll for market ${listedMarket.id}`);
       const fundTx = await send(
-        fundMarketCall(fresh.id, BANKROLL),
-        `funded market ${fresh.id}`,
+        fundMarketCall(listedMarket.id, BANKROLL),
+        `funded market ${listedMarket.id}`,
       );
 
       await db.record({
-        kind: "list", network: NETWORK, pair: m.label, marketId: fresh.id, txHash: tx,
+        kind: "list", network: NETWORK, pair: m.label, marketId: listedMarket.id, txHash: tx,
         ok: true, detail: `${seconds}s round, cutoff ${cutoffAt}`,
         meta: { cutoffAt, seconds, bankroll: BANKROLL.toString(), fundTx },
       });
