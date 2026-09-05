@@ -608,4 +608,45 @@ const out = {
 };
 writeFileSync(`deployments/${network}.json`, JSON.stringify(out, null, 2) + "\n");
 say(`\nwrote deployments/${network}.json`);
+
+/**
+ * Point the SDK at what was just deployed.
+ *
+ * `MOLFI_MARKET` in `packages/sdk/src/networks.ts` is what the console, the API routes and
+ * the verifier all read. Leaving it to a hand edit means a deploy that succeeds completely
+ * and changes nothing anyone can see, and the symptom — a new contract on chain and an old
+ * one in the browser — looks like a caching problem rather than a missed step.
+ *
+ * Rewritten by locating the network's own line inside the record, so the comment block above
+ * it survives and nothing else in the file is touched.
+ */
+if (!isLocal) {
+  const file = "packages/sdk/src/networks.ts";
+  const before = readFileSync(file, "utf8");
+
+  // Scoped to the MOLFI_MARKET record, not the whole file. `sepolia:` also appears in
+  // CHAIN_IDS and in NETWORKS, and a file-wide replace rewrote the chain id — a deployment
+  // that then fails every wallet check for a reason nothing points at.
+  const open = before.indexOf("export const MOLFI_MARKET");
+  const close = open >= 0 ? before.indexOf("\n};", open) : -1;
+  const line = new RegExp(`(\\n  ${network}: )(?:"0x[0-9a-fA-F]+"|null)(,)`);
+
+  if (open < 0 || close < 0 || !line.test(before.slice(open, close))) {
+    say(`  ! could not find MOLFI_MARKET.${network} in ${file}; set it by hand`);
+  } else {
+    const record = before.slice(open, close);
+    const updated = record.replace(line, `$1"${market}"$2`);
+    if (updated !== record) {
+      writeFileSync(file, before.slice(0, open) + updated + before.slice(close));
+      say(`updated MOLFI_MARKET.${network} in ${file}`);
+    } else {
+      say(`MOLFI_MARKET.${network} already points at this deployment`);
+    }
+  }
+}
+
 say(`\n  market ${market}\n`);
+if (!isLocal) {
+  say(`  Next: commit, redeploy the console, then open a real position:`);
+  say(`    node --experimental-strip-types scripts/trade.mjs --network ${network} --account ${account} --stake 1\n`);
+}
