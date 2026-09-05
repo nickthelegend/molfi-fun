@@ -175,7 +175,7 @@ Both are now stored.
 | 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
 | 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | BLOCKED |
 | 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | BLOCKED |
-| 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | NOT STARTED |
+| 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi-production.up.railway.app, verified with `pnpm api:check` against the live URL. Set the repo's Website field to it. |
 | 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, blocked on 6.2** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
 | 6.6 | Record the 3-minute demo. | BLOCKED |
 | 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment. The UI is being rebuilt separately. |
@@ -202,6 +202,7 @@ the markets.
 | G11 | **`strk20.json` is empty** — no contracts, no transactions, no demo. | 6.3–6.6 | Every field is a deliverable and every one is blocked on a mainnet spend. |
 | G16 | **The pool sandwich has never run against the real pool.** | 6.3 | Narrowed, not closed. Reading the deployed pool's own class settled the shape: `InvokeExternalInput` is `{contract_address, calldata}` and carries no token or amount, so the stake must arrive by a separate `Withdraw` action in the same transaction — which `openActions` now sends, and which its absence had silently omitted. What remains untested is whether the pool deserializes our calldata into `privacy_invoke`'s parameters in the order the escrow helper implies. `strk20PrepareInvoke` dry-runs that for free; it needs a wallet on a funded account. |
 | G17 | **No mainnet deployer.** | 6.2 | Preflight is otherwise clear. This is the money decision, and it is the user's. |
+| G18 | **The Alchemy key's app does not have Starknet Mainnet enabled.** | nothing, but it should be fixed | Every request to it returns 403, so the live deployment is running on the public fallback — which works and is rate limited. One toggle at https://dashboard.alchemy.com/apps/jxx5a0i4bn502vc1/networks. `/api/health` reports which endpoint answered, so this is visible rather than silent. |
 
 ### Closed
 
@@ -279,7 +280,8 @@ Phases 1 through 5 are done. What is left is one decision and the work that foll
    records every hash it sends, and the filler verifies each receipt before recording it —
    a reverted transaction still has a hash, so listing them unchecked would let a failed run
    look like a successful one.
-5. **Deploy the console** and record the demo.
+5. **Record the demo.** The console is already deployed at
+   https://molfi-production.up.railway.app and `strk20.json` carries it as `demo_url`.
 
 The risk worth naming, now that the code is done: **the parameter *order* inside the invoke
 calldata is still inferred from one documented example.** The transaction shape around it is
