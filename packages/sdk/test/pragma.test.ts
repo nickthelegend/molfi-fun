@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodePrint, freshness, pairId, toDisplay, type Print } from "../src/pragma.ts";
+import {
+  MAX_PRICE_AGE_SECONDS,
+  SETTLEMENT_MAX_PRICE_AGE_SECONDS,
+  decodePrint,
+  freshness,
+  pairId,
+  toDisplay,
+  type Print,
+} from "../src/pragma.ts";
 
 const NOW = 1_800_000_000;
 const print = (over: Partial<Print> = {}): Print => ({
@@ -61,4 +69,51 @@ test("a short response is an error, not a partially filled print", () => {
 test("display conversion respects the oracle's own decimals", () => {
   assert.equal(toDisplay(print()), 79_751.525);
   assert.equal(toDisplay(print({ raw: 100n, decimals: 2 })), 1);
+});
+
+/**
+ * Two limits, two questions.
+ *
+ * These exist because /api/health asked the desk's question and labelled the answer
+ * `settleable`, and reported the oracle `down` for a 646-second print the contract would
+ * have settled against without complaint. The API contradicting the chain is the failure
+ * mode this whole repo is organised against, so the distinction is pinned rather than
+ * described.
+ */
+test("a print past the desk's limit but inside the contract's is settleable, not quotable", () => {
+  const now = 1_800_000_000;
+  const print = { raw: 7_900_000_000_000n, decimals: 8, updatedAt: now - 700, sources: 10 };
+
+  const quote = freshness(print, now, MAX_PRICE_AGE_SECONDS);
+  const settle = freshness(print, now, SETTLEMENT_MAX_PRICE_AGE_SECONDS);
+
+  assert.equal(quote.fresh, false, "the desk will not sell a band around a 700s-old number");
+  assert.equal(settle.fresh, true, "the contract settles anything under 900s");
+  assert.equal(settle.ageSeconds, 700);
+});
+
+test("past the contract's limit, both refuse", () => {
+  const now = 1_800_000_000;
+  const print = { raw: 7_900_000_000_000n, decimals: 8, updatedAt: now - 1_000, sources: 10 };
+  assert.equal(freshness(print, now, MAX_PRICE_AGE_SECONDS).fresh, false);
+  assert.equal(freshness(print, now, SETTLEMENT_MAX_PRICE_AGE_SECONDS).fresh, false);
+});
+
+test("a thin median is refused however fresh it is", () => {
+  // Age and breadth are independent ways a feed goes bad. A one-publisher median is one
+  // opinion wearing a median's clothes, and no amount of freshness fixes that.
+  const now = 1_800_000_000;
+  const print = { raw: 7_900_000_000_000n, decimals: 8, updatedAt: now - 5, sources: 2 };
+  assert.equal(freshness(print, now, SETTLEMENT_MAX_PRICE_AGE_SECONDS).fresh, false);
+});
+
+test("the second argument is now, not the limit", () => {
+  // `freshness(print, 900)` reads like "allow 900 seconds" and means "pretend it is 1970",
+  // which dates every print to the future and makes everything look fresh. One call site
+  // nearly shipped that.
+  const now = 1_800_000_000;
+  const print = { raw: 1n, decimals: 8, updatedAt: now - 700, sources: 10 };
+  const wrong = freshness(print, SETTLEMENT_MAX_PRICE_AGE_SECONDS);
+  assert.ok(wrong.ageSeconds < 0, "passing the limit as `now` produces a negative age");
+  assert.notEqual(wrong.ageSeconds, 700);
 });

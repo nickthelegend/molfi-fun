@@ -20,7 +20,7 @@ import {
   freshness,
   pairId,
 } from "../packages/sdk/src/index.ts";
-import { NETWORKS } from "../packages/sdk/src/networks.ts";
+import { NETWORKS, STRK_TOKEN } from "../packages/sdk/src/networks.ts";
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) =>
@@ -180,6 +180,42 @@ try {
   const LIMIT = 81_290;
   if (felts >= LIMIT) bad("too large to declare", `${felts} felts, limit ${LIMIT}`);
   else ok("small enough to declare", `${felts} felts, ${Math.round((felts / LIMIT) * 100)}% of the limit`);
+
+  /**
+   * And whether the declare is *affordable*, which is a different question and the one that
+   * actually stopped a deploy.
+   *
+   * Size against the bytecode limit passed at 12% while the declare was unaffordable by a
+   * factor of seven. A preflight that checks the constraint nobody hits and not the one that
+   * bites is a preflight that says "clear" and then watches the deploy fail — so it now
+   * prices the declare against the chain's current L2 gas and the deployer's balance.
+   *
+   * The felts-to-gas ratio is measured from a real `estimateDeclareFee` on this contract
+   * rather than assumed: 2.028e9 L2 gas for 9,752 felts.
+   */
+  const GAS_PER_FELT = 2_028_243_360 / 9_752;
+  try {
+    const head = await fetch(RPC, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "starknet_getBlockWithTxHashes", params: ["latest"],
+      }),
+    }).then((r) => r.json());
+    const price = BigInt(head.result.l2_gas_price.price_in_fri);
+    const cost = (BigInt(Math.round(felts * GAS_PER_FELT)) * price) / 10n ** 18n;
+    const who = process.env.DEPLOYER_ADDRESS;
+    if (!who) {
+      warn("declare would cost about " + cost + " STRK", "set DEPLOYER_ADDRESS to check affordability");
+    } else {
+      const r = await call(STRK_TOKEN, "balance_of", [who]);
+      const balance = ((BigInt(r[1]) << 128n) | BigInt(r[0])) / 10n ** 18n;
+      if (balance >= cost + 3n) ok("the declare is affordable", `costs about ${cost} STRK, balance ${balance}`);
+      else bad(`cannot afford the declare`, `needs about ${cost} STRK, balance ${balance} — run \`pnpm faucet ${who}\``);
+    }
+  } catch {
+    warn("could not price the declare", "the node did not answer with a gas price");
+  }
 } catch {
   warn("no build to measure", "run `scarb build` in cairo/ first");
 }
