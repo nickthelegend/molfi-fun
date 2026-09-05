@@ -186,9 +186,47 @@ export async function GET() {
     };
   }
 
-  const parts = { chain, oracle, market, pool };
+  // ---- the keeper
+  //
+  // Reported, and deliberately never able to make this endpoint unhealthy. Settlement is
+  // permissionless: a dead keeper means nobody is settling automatically, not that markets
+  // cannot settle. Marking the deployment down for it would be claiming a dependency that
+  // does not exist.
+  let keeper: Part = {
+    status: "absent",
+    detail: "no keeper configured — settlement is permissionless and anyone may do it",
+  };
+  if (process.env.KEEPER_URL) {
+    try {
+      const res = await fetch(`${process.env.KEEPER_URL}/health`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(6_000),
+      });
+      const body = (await res.json()) as Record<string, unknown>;
+      keeper = {
+        status: body.ok ? "ok" : "degraded",
+        cycles: body.cycles,
+        lagMs: body.lagMs,
+        relayed: body.relayed,
+        settled: body.settled,
+        listed: body.listed,
+        detail: body.ok
+          ? `last cycle ${body.lagMs}ms ago`
+          : `alive but stalled — last cycle ${body.lagMs}ms ago`,
+      };
+    } catch (e) {
+      keeper = {
+        status: "degraded",
+        detail: `unreachable: ${(e as Error).message.slice(0, 100)}`,
+      };
+    }
+  }
+
+  const parts = { chain, oracle, market, pool, keeper };
   const answering = lastGoodEndpoint();
-  const down = Object.values(parts).some((p) => p.status === "down");
+  // The keeper is excluded on purpose: it is a convenience and not a dependency, so its
+  // absence or death must not make the deployment report itself down.
+  const down = Object.entries(parts).some(([k, p]) => k !== "keeper" && p.status === "down");
 
   return NextResponse.json(
     {

@@ -203,6 +203,42 @@ async function openNewRounds(
   }
 }
 
+/**
+ * Step 2.5 — fund anything open that has no bankroll.
+ *
+ * A listing is three transactions: create, transfer, fund. Any of them can fail on its own,
+ * and when the funding leg does the market is left open, quotable-looking, and able to sell
+ * nothing at all — the contract refuses every position it cannot already cover. That is the
+ * worst of the three outcomes, because it looks fine from outside.
+ *
+ * Recovering it here rather than at listing time means a transient failure heals on the next
+ * cycle instead of stranding a market until someone notices.
+ */
+async function fundUnfunded(
+  markets: Awaited<ReturnType<typeof allMarkets>>,
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  for (const m of markets) {
+    if (m.isSettled || m.cutoffAt <= now || m.bankroll > 0n) continue;
+    log(`market ${m.id} (${m.pair}) is open with no bankroll — funding it`);
+    try {
+      await send(transferCall(MARKET, BANKROLL), `sent bankroll for market ${m.id}`);
+      const tx = await send(fundMarketCall(m.id, BANKROLL), `funded market ${m.id}`);
+      await db.record({
+        kind: "fund", network: NETWORK, pair: m.pair, marketId: m.id, txHash: tx,
+        ok: true, detail: `recovered an unfunded market with ${BANKROLL}`,
+      });
+    } catch (e) {
+      const why = reason(e);
+      log(`fund ${m.id}: FAILED ${why}`);
+      await db.record({
+        kind: "fund", network: NETWORK, pair: m.pair, marketId: m.id, txHash: null,
+        ok: false, detail: why,
+      });
+    }
+  }
+}
+
 /** Mirror chain state into the ledger, so the site can read history without replaying logs. */
 async function indexMarkets(markets: Awaited<ReturnType<typeof allMarkets>>): Promise<void> {
   for (const m of markets) {
@@ -230,6 +266,8 @@ async function cycle(): Promise<void> {
     // Re-read after relaying: settling depends on a price that may have just landed.
     let markets = await allMarkets();
     await settleDue(markets);
+    markets = await allMarkets();
+    await fundUnfunded(markets);
     markets = await allMarkets();
     await openNewRounds(markets);
     await indexMarkets(await allMarkets());
