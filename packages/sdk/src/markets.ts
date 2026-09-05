@@ -19,13 +19,14 @@ import {
   CALIBRATED_MARKETS,
   GENERATED_AT,
   HOUSE_EDGE_BPS,
+  ROUND_KEYS,
   ROUND_SECONDS,
   type CalibratedMarket,
   type CalibratedRound,
 } from "./generated/markets.ts";
 import { pairId } from "./pragma.ts";
 
-export { CALIBRATED_MARKETS, GENERATED_AT, HOUSE_EDGE_BPS, ROUND_SECONDS };
+export { CALIBRATED_MARKETS, GENERATED_AT, HOUSE_EDGE_BPS, ROUND_KEYS, ROUND_SECONDS };
 export type { CalibratedMarket, CalibratedRound };
 
 /** Below this a band is not worth selling; the fee eats the whole edge. */

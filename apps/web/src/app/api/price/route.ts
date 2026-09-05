@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
-import { MARKETS, PRAGMA, decodePrint, freshness, pairId, toDisplay } from "@molfi/sdk";
-import { NETWORK, call } from "@/lib/rpc.ts";
+import { MARKETS, decodePrint, freshness, pairId, toDisplay } from "@molfi/sdk";
+import { NETWORK, ORACLE_ADDRESS, call } from "@/lib/rpc";
 
 /**
  * Prices, fetched server-side. Two of them, and the difference matters.
@@ -63,8 +63,9 @@ async function binanceHistory(symbol: string, limit: number) {
  * asked for one.
  */
 async function pragma(pair: string) {
+  if (!ORACLE_ADDRESS) throw new Error(`no oracle is configured for ${NETWORK}`);
   const raw = await call(
-    PRAGMA[NETWORK === "sepolia" ? "sepolia" : "mainnet"],
+    ORACLE_ADDRESS,
     hash.getSelectorFromName("get_data_median"),
     // DataType::SpotEntry(pair_id) — variant index, then the felt.
     ["0x0", "0x" + pairId(pair).toString(16)],

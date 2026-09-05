@@ -22,6 +22,16 @@ export const RPC_URL = process.env.STARKNET_RPC_URL ?? NETWORKS[NETWORK].rpcUrl;
 /** The keyless public endpoint for this network. Rate limited, always there. */
 export const FALLBACK_RPC_URL = NETWORKS[NETWORK].rpcUrl;
 
+/**
+ * The oracle this deployment settles against.
+ *
+ * Taken from the network config rather than from Pragma's address book. They are the same
+ * thing on mainnet and Sepolia, and deliberately not on devnet, where a stand-in stands in —
+ * so reaching for the address book directly means a local run checks a contract that is not
+ * there and reports its own oracle as down.
+ */
+export const ORACLE_ADDRESS = NETWORKS[NETWORK].oracle;
+
 const ENDPOINTS = RPC_URL === FALLBACK_RPC_URL ? [RPC_URL] : [RPC_URL, FALLBACK_RPC_URL];
 
 export class RpcError extends Error {}

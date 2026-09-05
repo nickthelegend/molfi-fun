@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
 import { MARKETS, NETWORKS } from "@molfi/sdk";
-import { NETWORK, call } from "@/lib/rpc.ts";
+import { NETWORK, call } from "@/lib/rpc";
 
 /**
  * The markets that exist on chain, read from the contract.

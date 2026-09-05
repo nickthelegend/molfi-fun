@@ -1,0 +1,111 @@
+name: ci
+
+# Two jobs, kept apart on purpose. The Cairo toolchain is slow to install and the TypeScript
+# tests are not; folding them together would mean waiting on Scarb to find out that a
+# formatting change broke the SDK.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          # The SDK ships TypeScript source and is run directly with
+          # --experimental-strip-types, so the Node version is part of the contract.
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: |
+          pnpm --filter @molfi/sdk exec tsc --noEmit
+          pnpm --filter @molfi/web exec tsc --noEmit
+
+      - name: SDK tests
+        run: pnpm --filter @molfi/sdk test
+
+      - name: Build the console
+        run: pnpm --filter @molfi/web build
+        env:
+          # A build must not need a key. If it does, the deployment is not reproducible by
+          # anyone but us, which is the opposite of what this project claims.
+          MOLFI_NETWORK: mainnet
+
+  cairo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/setup-snfoundry@v4
+        with:
+          starknet-foundry-version: 0.56.0
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: 2.15.1
+
+      - name: Build
+        run: scarb build
+        working-directory: cairo
+
+      - name: Tests
+        run: snforge test
+        working-directory: cairo
+
+      - name: Contract size
+        # Sierra has a hard size limit and a contract that grows past it fails at declare
+        # time, on a network, after the fee has been paid. Cheaper to know here.
+        run: |
+          set -e
+          FELTS=$(python3 -c "import json;print(len(json.load(open('cairo/target/dev/molfi_MolfiMarket.contract_class.json'))['sierra_program']))")
+          echo "MolfiMarket: $FELTS sierra felts"
+          test "$FELTS" -lt 81290
+
+  parity:
+    # The one that matters most: the desk's kernel and the contract's must agree exactly.
+    # Vectors are generated from the TypeScript and asserted in Cairo, so a drift in either
+    # implementation fails here rather than at a contested settlement.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: foundry-rs/setup-snfoundry@v4
+        with:
+          starknet-foundry-version: 0.56.0
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: 2.15.1
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Regenerate the parity vectors
+        run: pnpm --filter @molfi/sdk parity > /tmp/vectors.txt
+
+      - name: The Cairo side agrees with them
+        run: snforge test test_parity
+        working-directory: cairo
+
+      - name: Show the vectors
+        if: always()
+        run: cat /tmp/vectors.txt

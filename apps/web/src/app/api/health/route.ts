@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
-import { MARKETS, NETWORKS, PRAGMA, decodePrint, freshness, pairId } from "@molfi/sdk";
-import { FALLBACK_RPC_URL, NETWORK, RPC_URL, call, lastGoodEndpoint } from "@/lib/rpc";
+import { MARKETS, NETWORKS, decodePrint, freshness, pairId } from "@molfi/sdk";
+import {
+  FALLBACK_RPC_URL,
+  NETWORK,
+  ORACLE_ADDRESS,
+  RPC_URL,
+  call,
+  lastGoodEndpoint,
+} from "@/lib/rpc";
 
 /**
  * Is this deployment actually working right now?
@@ -101,8 +108,8 @@ export async function GET() {
   }
 
   // ---- the oracle, measured by reading it rather than by asking whether it is up
-  const oracleAddress = PRAGMA[NETWORK === "sepolia" ? "sepolia" : "mainnet"];
-  const pairs = await Promise.all(
+  const oracleAddress = ORACLE_ADDRESS;
+  const pairs = oracleAddress === null ? [] : await Promise.all(
     MARKETS.map(async (m) => {
       try {
         const raw = await call(oracleAddress, hash.getSelectorFromName("get_data_median"), [
@@ -128,7 +135,9 @@ export async function GET() {
     (n, p) => Math.max(n, typeof p.ageSeconds === "number" ? p.ageSeconds : Infinity),
     0,
   );
-  const oracle: Part = pairs.every((p) => p.settleable)
+  const oracle: Part = oracleAddress === null
+    ? { status: "absent", detail: `no oracle is configured for ${NETWORK}` }
+    : pairs.every((p) => p.settleable)
     ? worst > ORACLE_DEGRADED_AFTER_S
       ? {
           status: "degraded",

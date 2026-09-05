@@ -9,11 +9,15 @@
     "node": ">=24"
   },
   "scripts": {
+    "api:check": "node --experimental-strip-types scripts/api-check.mjs",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "dev": "pnpm --filter @molfi/hub dev",
     "deploy:devnet": "node --experimental-strip-types scripts/deploy.mjs --network devnet",
-    "e2e:devnet": "node --experimental-strip-types scripts/e2e.mjs"
+    "dev": "pnpm --filter @molfi/web dev",
+    "dev:hub": "pnpm --filter @molfi/hub dev",
+    "e2e:devnet": "node --experimental-strip-types scripts/e2e.mjs",
+    "test": "pnpm --filter @molfi/sdk test",
+    "test:cairo": "cd cairo && snforge test",
+    "typecheck": "pnpm --filter @molfi/sdk exec tsc --noEmit && pnpm --filter @molfi/web exec tsc --noEmit"
   },
   "pnpm": {
     "overrides": {
