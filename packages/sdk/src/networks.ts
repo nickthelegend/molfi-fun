@@ -38,6 +38,14 @@ export interface NetworkConfig {
 export const STRK_TOKEN =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
+/**
+ * The Sepolia price relay: mainnet Pragma's median, republished so a testnet can settle.
+ *
+ * Not deployed on mainnet, where Pragma is alive and molfi reads it directly.
+ */
+export const SEPOLIA_PRICE_RELAY =
+  "0x0275a7fdecdb539060b1e7cb2c857f88d505ed0a6c0ea2aafbbcc383456dfcbb";
+
 /** STRK20 privacy pool v2.0, Sepolia (strk20-by-example.org/sdk/getting-started). */
 export const SEPOLIA_PRIVACY_POOL =
   "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91";
@@ -63,13 +71,18 @@ export const CHAIN_IDS = {
 export const MOLFI_MARKET: Record<NetworkName, string | null> = {
   devnet: null,
   /**
-   * Deployed and funded, nine markets, one STRK of bankroll behind each.
+   * Live, and settling.
    *
-   * Sepolia markets can never settle: Pragma stopped publishing there months ago, and the
-   * contract refuses a print that old. The deployment exists to prove the deploy path and
-   * the pool integration on a real public chain, not to be traded.
+   * Pragma stopped publishing to Sepolia months ago, so an earlier deployment here could
+   * open markets and never resolve one. This deployment reads the **price relay** instead —
+   * a contract that republishes mainnet Pragma's own median — so the same settlement path
+   * runs against a real, current, multi-publisher price. The keeper relays, settles, and
+   * opens the next round, continuously.
+   *
+   * The relay is a testnet stand-in with one publisher, and every value it serves carries
+   * the mainnet block it was read at. On mainnet molfi reads Pragma directly.
    */
-  sepolia: "0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953",
+  sepolia: "0x03b00e6e0efd3d35aeb6885ccb5e21a32f5f68a54222094196a7264da158b068",
   mainnet: null,
 };
 
@@ -107,7 +120,11 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     rpcUrl: "https://api.cartridge.gg/x/starknet/sepolia",
     privacyPool: SEPOLIA_PRIVACY_POOL,
     stakeToken: STRK_TOKEN,
-    oracle: PRAGMA.sepolia,
+    /**
+     * The relay, not Pragma. Pragma Sepolia has not published in months; the relay carries
+     * mainnet Pragma's median across so markets here can actually settle.
+     */
+    oracle: SEPOLIA_PRICE_RELAY,
     market: marketFor("sepolia"),
     explorer: "https://sepolia.starkscan.co",
     realPool: true,
