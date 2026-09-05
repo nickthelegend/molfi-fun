@@ -2,6 +2,21 @@ import Link from "next/link";
 import { ConsoleStage } from "@/components/ConsoleStage";
 import { Wordmark } from "@/components/Wordmark";
 
+/** One of the three doors under the fold. Small, and the sub-label does the work. */
+function Door({ href, label, sub }: { href: string; label: string; sub: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-xl bg-[#181818] px-2 py-3 text-center transition-colors hover:bg-[#212121]"
+    >
+      <span className="block text-[12px] font-semibold">{label}</span>
+      <span className="mono mt-0.5 block text-[9px] leading-tight tracking-wide text-white/35">
+        {sub}
+      </span>
+    </Link>
+  );
+}
+
 export default function Home() {
   return (
     <div className="relative min-h-dvh overflow-hidden">
@@ -51,6 +66,19 @@ export default function Home() {
           >
             Just exploring? Try demo mode
           </Link>
+
+          {/*
+            * The three things a sceptic asks, in the order they ask them.
+            *
+            * Every one is a page that answers with chain data rather than with a paragraph,
+            * and none of them needs a wallet. A landing page whose only door is "START" asks
+            * for a connection before it has earned one.
+            */}
+          <nav className="mt-7 grid grid-cols-3 gap-2">
+            <Door href="/live" label="Live" sub="watch one settle" />
+            <Door href="/privacy" label="Private" sub="what leaks" />
+            <Door href="/keeper" label="Who runs it" sub="nobody has to" />
+          </nav>
 
           <div className="mt-7 text-center">
             <div className="label">Powered by</div>
