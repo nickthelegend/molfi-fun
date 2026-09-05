@@ -13,7 +13,28 @@
  */
 
 import { BPS, PROB_ONE, payoutFor, quote } from "./pricing.ts";
-import { MARKETS, MAX_MULTIPLIER_BPS, MIN_MULTIPLIER_BPS, type MarketDef } from "./markets.ts";
+import {
+  CALIBRATED_MARKETS,
+  MARKETS,
+  MAX_MULTIPLIER_BPS,
+  MIN_MULTIPLIER_BPS,
+  ROUND_SECONDS,
+  type MarketDef,
+} from "./markets.ts";
+
+/**
+ * The calibration molfi published for a pair and round length, if it published one.
+ *
+ * Looked up by both, because a table fitted for fifteen minutes is the wrong table for four
+ * hours and comparing against the wrong one would report a substitution that never happened.
+ */
+export function publishedTable(
+  pair: string,
+  roundSeconds: number,
+): readonly bigint[] | undefined {
+  const m = CALIBRATED_MARKETS.find((c) => c.label === pair);
+  return m?.rounds.find((r) => r.seconds === roundSeconds)?.probTable;
+}
 
 /** How old a settlement print may be, matching MAX_PRICE_AGE in `market.cairo`. */
 export const MAX_PRICE_AGE = 900;
@@ -26,14 +47,23 @@ export interface OnChainMarket {
   id: number;
   pair: string;
   cutoffAt: number;
+  /** How long the round was, in seconds, as the contract recorded it. */
+  roundSeconds: number;
   sigma1e4: bigint;
   houseEdgeBps: bigint;
   isSettled: boolean;
   settledPrice: bigint;
+  /** When the oracle published the settling print. */
   settledAt: number;
+  /** When `settle` ran — the moment the contract measured the print's age against. */
+  settledBlockAt: number;
   settledSources: number;
   staked: bigint;
   paid: bigint;
+  /** What the house put behind this market. */
+  bankroll: bigint;
+  /** Payouts committed to positions still open. */
+  reserved: bigint;
   /** The seventeen knots the contract stores for this market. */
   table: readonly bigint[];
 }
@@ -69,13 +99,13 @@ const no = "no";
 /**
  * Audit one market.
  *
- * `known` is the calibration molfi published for this pair and round length. Passing it lets
- * the audit check the contract is pricing with the table that was published rather than one
- * substituted later — the single most valuable check here, and the only one that needs
- * anything beyond the chain itself.
+ * The published calibration is looked up from the market's own pair and recorded round
+ * length, so the check that the contract prices with the table molfi published needs
+ * nothing from the caller but the chain's own answer.
  */
-export function auditMarket(m: OnChainMarket, known?: readonly bigint[]): Audit {
+export function auditMarket(m: OnChainMarket): Audit {
   const definition = MARKETS.find((d) => d.label === m.pair) ?? null;
+  const known = publishedTable(m.pair, m.roundSeconds);
   const checks: Check[] = [];
 
   const add = (c: Check) => checks.push(c);
@@ -119,6 +149,17 @@ export function auditMarket(m: OnChainMarket, known?: readonly bigint[]): Audit 
     });
   }
 
+  // ---- the round is one molfi lists ------------------------------------------------------
+  add({
+    key: "round-is-listed",
+    claim: "The round length is one molfi publishes a calibration for",
+    verdict: ROUND_SECONDS.includes(m.roundSeconds as never) ? "ok" : "failed",
+    onChain: `${m.roundSeconds}s`,
+    recomputed: `listed: ${ROUND_SECONDS.join("s, ")}s`,
+    matters:
+      "A round length nothing was fitted for has no published table behind it, so its odds cannot be checked against anything — and if it is shorter than the oracle's publish interval it settles against a price that was already public when it opened.",
+  });
+
   // ---- the settlement print ------------------------------------------------------------
   if (!m.isSettled) {
     add({
@@ -130,18 +171,38 @@ export function auditMarket(m: OnChainMarket, known?: readonly bigint[]): Audit 
       matters: "Nothing below can be checked until there is a settled price to check.",
     });
   } else {
-    const age = m.settledAt > 0 ? m.cutoffAt - m.settledAt : null;
+    // The exact comparison the contract made: the print's age at the moment `settle` ran.
+    // Comparing against the cutoff instead looks equivalent and is not — a print published
+    // shortly *after* the cutoff is both legitimate and fresher, and that reading reported
+    // a negative age for a market that had settled correctly.
+    const age =
+      m.settledAt > 0 && m.settledBlockAt > 0 ? m.settledBlockAt - m.settledAt : null;
     add({
       key: "price-was-fresh",
-      claim: `The settling print was published within ${MAX_PRICE_AGE}s of settlement`,
-      // The contract compares against the block timestamp at settlement, which is at or
-      // after the cutoff. Using the cutoff here is the strictest reading available from
-      // stored data, so a pass is a genuine pass.
+      claim: `The settling print was under ${MAX_PRICE_AGE}s old when the market settled`,
       verdict: age === null ? "unchecked" : age <= MAX_PRICE_AGE ? "ok" : "failed",
-      onChain: `published at ${m.settledAt}, cutoff ${m.cutoffAt}`,
-      recomputed: age === null ? "no timestamp" : `${age}s before cutoff`,
+      onChain: `published ${m.settledAt}, settled ${m.settledBlockAt}`,
+      recomputed: age === null ? "no timestamp" : `${age}s old at settlement`,
       matters:
         "A stale print settles every position in this market against a price that had already moved.",
+    });
+
+    add({
+      key: "settled-after-cutoff",
+      claim: "The market was not settled before its cutoff",
+      verdict:
+        m.settledBlockAt === 0
+          ? "unchecked"
+          : m.settledBlockAt >= m.cutoffAt
+            ? "ok"
+            : "failed",
+      onChain: `settled ${m.settledBlockAt}, cutoff ${m.cutoffAt}`,
+      recomputed:
+        m.settledBlockAt === 0
+          ? "no settle timestamp"
+          : `${m.settledBlockAt - m.cutoffAt}s after cutoff`,
+      matters:
+        "Settling early resolves every band against a price from inside the round, which is a different question from the one anyone was betting on.",
     });
 
     add({
@@ -166,14 +227,33 @@ export function auditMarket(m: OnChainMarket, known?: readonly bigint[]): Audit 
   }
 
   // ---- conservation ---------------------------------------------------------------------
+  //
+  // A market pays winners more than they staked — that is what a multiplier is — so the
+  // bound is the stakes it took *plus* the bankroll the house put behind it, not the stakes
+  // alone. Checking against stakes alone is not merely strict, it is wrong: it fails every
+  // market that has correctly paid its first winner.
+  const backing = m.staked + m.bankroll;
   add({
     key: "conservation",
-    claim: "The market has never paid out more than it took in",
-    verdict: m.paid <= m.staked ? "ok" : "failed",
-    onChain: `paid ${m.paid}, staked ${m.staked}`,
-    recomputed: m.paid <= m.staked ? `${m.staked - m.paid} still held` : "insolvent",
+    claim: "The market has never paid out more than the stakes and bankroll behind it",
+    verdict: m.paid <= backing ? "ok" : "failed",
+    onChain: `paid ${m.paid}, staked ${m.staked}, bankroll ${m.bankroll}`,
+    recomputed: m.paid <= backing ? `${backing - m.paid} still held` : "insolvent",
     matters:
-      "This is the only promise molfi makes about the money, and it is the reason both totals are public. If it fails, someone's payout is funded by someone else's stake.",
+      "This is the only promise molfi makes about the money, and it is the reason all three totals are public. If it fails, someone's payout is funded by someone else's stake.",
+  });
+
+  add({
+    key: "commitments-are-covered",
+    claim: "Everything still owed to open positions is already covered",
+    verdict: m.paid + m.reserved <= backing ? "ok" : "failed",
+    onChain: `reserved ${m.reserved}, paid ${m.paid}, backing ${backing}`,
+    recomputed:
+      m.paid + m.reserved <= backing
+        ? `${backing - m.paid - m.reserved} unallocated`
+        : `${m.paid + m.reserved - backing} short`,
+    matters:
+      "The stronger promise, and the one that has to hold while a market is still open. Solvency measured only at claim time discovers a shortfall after the position was sold — the trader held a winning band all round and it does not pay. The contract reserves the full payout when a position opens, and this is that reservation checked from outside.",
   });
 
   // ---- the quote the contract would give -------------------------------------------------

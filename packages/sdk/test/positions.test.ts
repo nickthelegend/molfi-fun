@@ -24,12 +24,12 @@ test("the commitment matches the one the contract derives", () => {
   const commitment = commitmentOf({
     secret: shortStringToFelt("secret"),
     marketId: 1,
-    bandLow: 90_000n,
-    bandHigh: 110_000n,
+    bandLow: 99_829n,
+    bandHigh: 100_171n,
   });
   assert.equal(
     commitment,
-    "0x4d41e3ad2552475273859e87b4fe034503ce567ad72fead91991ef5fc5b20bf",
+    "0x42b3b35b705ba57b3a643f0cda1af6386f77a9534208b3df8e6595e555ec1f6",
   );
 });
 

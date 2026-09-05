@@ -3,7 +3,7 @@ import { hash } from "starknet";
 import {
   CALIBRATED_MARKETS,
   MARKETS,
-  ROUND_SECONDS,
+  secondsLabel,
   auditMarket,
   fmtCountdown,
   fmtPrice,
@@ -57,35 +57,30 @@ async function readMarket(id: number): Promise<OnChainMarket | null> {
     const knots: bigint[] = [];
     for (let i = 1; i + 1 < t.length; i += 2) knots.push(u256(t[i], t[i + 1]));
 
+    // Market, in declaration order: pair, cutoff_at, round_seconds, token, sigma_1e4,
+    // house_edge_bps, settled_price, settled_at, settled_block_at, settled_sources,
+    // is_settled, staked, paid. Every u256 is two felts, low limb first.
     return {
       id,
       pair: toLabel(r[0]),
       cutoffAt,
-      sigma1e4: u256(r[3], r[4]),
-      houseEdgeBps: u256(r[5], r[6]),
-      settledPrice: u256(r[7], r[8]),
-      settledAt: Number(BigInt(r[9])),
-      settledSources: Number(BigInt(r[10])),
-      isSettled: BigInt(r[11]) === 1n,
-      staked: u256(r[12], r[13]),
-      paid: u256(r[14], r[15]),
+      roundSeconds: Number(BigInt(r[2])),
+      sigma1e4: u256(r[4], r[5]),
+      houseEdgeBps: u256(r[6], r[7]),
+      settledPrice: u256(r[8], r[9]),
+      settledAt: Number(BigInt(r[10])),
+      settledBlockAt: Number(BigInt(r[11])),
+      settledSources: Number(BigInt(r[12])),
+      isSettled: BigInt(r[13]) === 1n,
+      staked: u256(r[14], r[15]),
+      paid: u256(r[16], r[17]),
+      bankroll: u256(r[18], r[19]),
+      reserved: u256(r[20], r[21]),
       table: knots,
     };
   } catch {
     return null;
   }
-}
-
-/** The calibration molfi published for this pair and round length, if it published one. */
-function publishedTable(pair: string, cutoffAt: number, settledAt: number) {
-  const m = CALIBRATED_MARKETS.find((c) => c.label === pair);
-  if (!m) return undefined;
-  // The round length is not stored on chain — only the cutoff — so it is inferred from how
-  // long the market was open. Inexact by design: if no tier is close, nothing is claimed
-  // rather than the nearest one being asserted.
-  const lived = settledAt > 0 ? cutoffAt - settledAt : 0;
-  const tier = ROUND_SECONDS.findIndex((s) => Math.abs(s - lived) < s * 0.5);
-  return tier >= 0 ? m.rounds[tier]?.probTable : undefined;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -122,10 +117,7 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const audit = auditMarket(
-    market,
-    publishedTable(market.pair, market.cutoffAt, market.settledAt),
-  );
+  const audit = auditMarket(market);
   const def = MARKETS.find((m) => m.label === market.pair);
   const dp = def?.dp ?? 2;
   const failed = audit.checks.filter((c) => c.verdict === "failed");
@@ -156,21 +148,24 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
           </p>
 
           <dl className="mono mt-5 space-y-2 text-[12px]">
+            <Row k="Round" v={secondsLabel(market.roundSeconds)} />
             <Row k="Cutoff" v={new Date(market.cutoffAt * 1000).toUTCString()} />
             {market.isSettled ? (
               <>
                 <Row k="Settled at" v={fmtPrice(market.settledPrice, dp)} />
                 <Row
-                  k="Print published"
-                  v={`${fmtCountdown(Math.max(0, market.cutoffAt - market.settledAt))} before cutoff`}
+                  k="Print age at settlement"
+                  v={fmtCountdown(Math.max(0, market.settledBlockAt - market.settledAt))}
                 />
                 <Row k="Publishers" v={String(market.settledSources)} />
               </>
             ) : (
               <Row k="State" v="still open" />
             )}
-            <Row k="Staked" v={`${fmtStrk(market.staked, 4)} STRK`} />
-            <Row k="Paid out" v={`${fmtStrk(market.paid, 4)} STRK`} />
+            <Row k="Staked" v={`${fmtStrk(market.staked, 6)} STRK`} />
+            <Row k="Paid out" v={`${fmtStrk(market.paid, 6)} STRK`} />
+            <Row k="House bankroll" v={`${fmtStrk(market.bankroll, 6)} STRK`} />
+            <Row k="Owed to open positions" v={`${fmtStrk(market.reserved, 6)} STRK`} />
             <Row k="House edge" v={`${market.houseEdgeBps} bps`} />
             <Row k="Sigma" v={`${(Number(market.sigma1e4) / 1e6).toFixed(4)}% of spot`} />
           </dl>

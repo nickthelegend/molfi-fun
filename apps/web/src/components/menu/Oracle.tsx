@@ -20,6 +20,8 @@ import type { OracleState } from "@/components/device/OracleStrip";
 interface Row {
   market: string;
   pair: string;
+  /** Display decimals for this pair. Two would render STRK's whole price as "0.02". */
+  dp: number;
   mark: string | null;
   oracle: OracleState | null;
   error: string | null;
@@ -46,6 +48,7 @@ export function Oracle() {
             return {
               market: m.key,
               pair: m.label,
+              dp: m.dp,
               mark: j.price ?? null,
               oracle: j.oracle ?? null,
               error: j.oracleError ?? null,
@@ -54,6 +57,7 @@ export function Oracle() {
             return {
               market: m.key,
               pair: m.label,
+              dp: m.dp,
               mark: null,
               oracle: null,
               error: (e as Error).message,
@@ -149,8 +153,8 @@ function MarketRow({ row }: { row: Row }) {
       {o ? (
         <>
           <dl className="mono mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] tracking-wide">
-            <Cell k="median" v={fmtPrice(BigInt(o.price), 2)} />
-            <Cell k="mark" v={row.mark ? fmtPrice(BigInt(row.mark), 2) : "—"} />
+            <Cell k="median" v={fmtPrice(BigInt(o.price), row.dp)} />
+            <Cell k="mark" v={row.mark ? fmtPrice(BigInt(row.mark), row.dp) : "—"} />
             <Cell
               k="published"
               v={`${o.ageSeconds}s ago`}

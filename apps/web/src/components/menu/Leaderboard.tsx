@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fmtPrice, fmtStrk, fmtUsd } from "@molfi/sdk";
+import { MARKETS, fmtPrice, fmtStrk, fmtUsd } from "@molfi/sdk";
 
 interface ChainMarket {
   id: number;
@@ -122,7 +122,12 @@ function Section({ title, markets }: { title: string; markets: ChainMarket[] }) 
                 </span>
                 {m.isSettled ? (
                   <span className="tnum text-[12px] text-white/70">
-                    {fmtPrice(BigInt(m.settledPrice), 2)}
+                    {/* Each market's own precision. Two decimals renders STRK's entire
+                        price as "0.02", which is a number that says nothing. */}
+                    {fmtPrice(
+                      BigInt(m.settledPrice),
+                      MARKETS.find((d) => d.label === m.pair)?.dp ?? 2,
+                    )}
                   </span>
                 ) : (
                   <span className="mono text-[10px] text-amber">OPEN</span>

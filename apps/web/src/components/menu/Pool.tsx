@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { fmtCountdown, fmtMultiplier, fmtPrice, fmtStrk, parseStrk } from "@molfi/sdk";
+import { MARKETS, fmtCountdown, fmtMultiplier, fmtPrice, fmtStrk, parseStrk } from "@molfi/sdk";
 import { ADDRESSES, explorerTx, shortAddress } from "@/lib/chain";
 import { exportPosition, forget, importPosition } from "@/lib/positions";
 import type { LivePosition } from "@/lib/useLiveDesk";
@@ -196,7 +196,12 @@ function Positions({
                 <Verdict p={p} />
               </div>
               <p className="mono mt-1 text-[10px] leading-relaxed tracking-wide text-white/35">
-                {fmtPrice(p.bandLow, 2)} – {fmtPrice(p.bandHigh, 2)} · {fmtStrk(BigInt(p.stake), 2)} STRK
+                {/* Enough decimals to tell the two edges apart. A market's display
+                    precision is chosen for reading a price, not a band, and the tightest
+                    bands are narrower than it — a receipt whose two numbers are the same
+                    number is not a receipt. */}
+                {fmtPrice(p.bandLow, bandDp(p))} – {fmtPrice(p.bandHigh, bandDp(p))} ·{" "}
+                {fmtStrk(BigInt(p.stake), 2)} STRK
                 {p.onChain?.exists
                   ? ` · pays ${fmtMultiplier(p.onChain.multiplierBps)}`
                   : p.onChain
@@ -260,6 +265,15 @@ function Positions({
       )}
     </div>
   );
+}
+
+/** Enough decimals that a band's two edges are visibly different numbers. */
+function bandDp(p: LivePosition): number {
+  const base = MARKETS.find((m) => m.label === p.pair)?.dp ?? 2;
+  for (let d = base; d <= 8; d += 1) {
+    if (fmtPrice(p.bandLow, d) !== fmtPrice(p.bandHigh, d)) return d;
+  }
+  return 8;
 }
 
 /** Where a position stands, in one word, without guessing at anything unread. */

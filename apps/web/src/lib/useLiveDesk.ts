@@ -58,6 +58,8 @@ export interface LiveMarket {
   settledSources: number;
   staked: bigint;
   paid: bigint;
+  bankroll: bigint;
+  reserved: bigint;
   sigma1e4: bigint;
   houseEdgeBps: number;
 }
@@ -221,21 +223,25 @@ export function useLiveDesk(market: MarketDef, tier: number) {
             entrypoint: "get_market",
             calldata: CallData.compile([id]),
           });
-          // Market, in declaration order: pair, cutoff_at, token, sigma_1e4,
-          // house_edge_bps, settled_price, settled_at, settled_sources, is_settled,
-          // staked, paid. Every u256 is two felts, low limb first.
+          // Market, in declaration order: pair, cutoff_at, round_seconds, token,
+          // sigma_1e4, house_edge_bps, settled_price, settled_at, settled_block_at,
+          // settled_sources, is_settled, staked, paid. Every u256 is two felts, low first.
           return {
             id,
             pair: toLabel(r[0]),
             cutoffAt: Number(BigInt(r[1])),
-            sigma1e4: u256(r[3], r[4]),
-            houseEdgeBps: Number(u256(r[5], r[6])),
-            settledPrice: u256(r[7], r[8]),
-            settledAt: Number(BigInt(r[9])),
-            settledSources: Number(BigInt(r[10])),
-            isSettled: BigInt(r[11]) === 1n,
-            staked: u256(r[12], r[13]),
-            paid: u256(r[14], r[15]),
+            roundSeconds: Number(BigInt(r[2])),
+            sigma1e4: u256(r[4], r[5]),
+            houseEdgeBps: Number(u256(r[6], r[7])),
+            settledPrice: u256(r[8], r[9]),
+            settledAt: Number(BigInt(r[10])),
+            settledBlockAt: Number(BigInt(r[11])),
+            settledSources: Number(BigInt(r[12])),
+            isSettled: BigInt(r[13]) === 1n,
+            staked: u256(r[14], r[15]),
+            paid: u256(r[16], r[17]),
+            bankroll: u256(r[18], r[19]),
+            reserved: u256(r[20], r[21]),
           };
         }),
       );
@@ -256,13 +262,17 @@ export function useLiveDesk(market: MarketDef, tier: number) {
               entrypoint: "get_position",
               calldata: CallData.compile([p.commitment]),
             });
-            // Position: market_id, band_low, band_high, stake, multiplier_bps, claimed,
-            // exists.
+            // Position, in declaration order: market_id (u64), band_low (u256),
+            // band_high (u256), stake (u128), multiplier_bps (u256), claimed, exists.
+            // A u256 is two felts and a u128 is one, so the offsets are 0, 1-2, 3-4, 5,
+            // 6-7, 8, 9 — reading them as if every field were one felt made the app report
+            // a stake of 0x742d5b7eda4 and a multiplier of 3.4e43x for a position that had
+            // opened correctly.
             onChain = {
-              stake: BigInt(r[3]),
-              multiplierBps: u256(r[4], r[5]),
-              claimed: BigInt(r[6]) === 1n,
-              exists: BigInt(r[7]) === 1n,
+              stake: BigInt(r[5]),
+              multiplierBps: u256(r[6], r[7]),
+              claimed: BigInt(r[8]) === 1n,
+              exists: BigInt(r[9]) === 1n,
             };
           } catch {
             // A position the node cannot answer for is shown as unknown, not as absent.

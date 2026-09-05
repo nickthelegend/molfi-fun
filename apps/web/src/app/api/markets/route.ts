@@ -54,23 +54,28 @@ export async function GET() {
         const r = await call(address, hash.getSelectorFromName("get_market"), [
           "0x" + id.toString(16),
         ]);
-        // Market, in declaration order: pair, cutoff_at, token, sigma_1e4, house_edge_bps,
-        // settled_price, settled_at, settled_sources, is_settled, staked, paid.
+        // Market, in declaration order: pair, cutoff_at, round_seconds, token, sigma_1e4,
+        // house_edge_bps, settled_price, settled_at, settled_block_at, settled_sources,
+        // is_settled, staked, paid. Every u256 is two felts, low limb first.
         const pair = toLabel(r[0]);
         return {
           id,
           pair,
           known: MARKETS.some((m) => m.label === pair),
           cutoffAt: Number(BigInt(r[1])),
-          token: r[2],
-          sigma1e4: u256(r[3], r[4]).toString(),
-          houseEdgeBps: Number(u256(r[5], r[6])),
-          settledPrice: u256(r[7], r[8]).toString(),
-          settledAt: Number(BigInt(r[9])),
-          settledSources: Number(BigInt(r[10])),
-          isSettled: BigInt(r[11]) === 1n,
-          staked: u256(r[12], r[13]).toString(),
-          paid: u256(r[14], r[15]).toString(),
+          roundSeconds: Number(BigInt(r[2])),
+          token: r[3],
+          sigma1e4: u256(r[4], r[5]).toString(),
+          houseEdgeBps: Number(u256(r[6], r[7])),
+          settledPrice: u256(r[8], r[9]).toString(),
+          settledAt: Number(BigInt(r[10])),
+          settledBlockAt: Number(BigInt(r[11])),
+          settledSources: Number(BigInt(r[12])),
+          isSettled: BigInt(r[13]) === 1n,
+          staked: u256(r[14], r[15]).toString(),
+          paid: u256(r[16], r[17]).toString(),
+          bankroll: u256(r[18], r[19]).toString(),
+          reserved: u256(r[20], r[21]).toString(),
         };
       }),
     );

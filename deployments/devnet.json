@@ -1,0 +1,58 @@
+{
+  "network": "devnet",
+  "deployedAt": "2026-09-05T15:14:55.852Z",
+  "classHash": "0x076ba876ca30159a6773d98d1751283d0a4bd1580085c921726909fb9e9530ff",
+  "market": "0x015590c72ccbf97569ade311e1819c03ba9fba85fc9762b72474e46bfbd65107",
+  "oracle": "0x0361083ba4466947b05ba580aa7017af5e9aada7ed869fd639cae739a42b5a67",
+  "token": "0x00db9140171a5c70ecf2d567891e32ef179cdd1e1dd24c8554987920fd26dc5a",
+  "pool": "0x064b48806902a367c8598f4f95c305e8c1a1acba5f082d294a43793113115691",
+  "owner": "0x064b48806902a367c8598f4f95c305e8c1a1acba5f082d294a43793113115691",
+  "bankrollPerMarket": "1000000000000",
+  "markets": [
+    {
+      "pair": "BTC/USD",
+      "seconds": 900,
+      "cutoffAt": 1788624079
+    },
+    {
+      "pair": "BTC/USD",
+      "seconds": 3600,
+      "cutoffAt": 1788626779
+    },
+    {
+      "pair": "BTC/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788637579
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 900,
+      "cutoffAt": 1788624079
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 3600,
+      "cutoffAt": 1788626779
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788637579
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 900,
+      "cutoffAt": 1788624079
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 3600,
+      "cutoffAt": 1788626779
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788637579
+    }
+  ]
+}

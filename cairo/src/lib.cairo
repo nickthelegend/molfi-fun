@@ -12,3 +12,6 @@
 pub mod pricing;
 pub mod objects;
 pub mod market;
+
+/// Stand-ins for the pool's oracle and token, for local runs only. Never deployed publicly.
+pub mod devnet;

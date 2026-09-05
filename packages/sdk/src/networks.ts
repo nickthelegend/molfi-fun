@@ -71,11 +71,17 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     name: "devnet",
     chainId: CHAIN_IDS.devnet,
     rpcUrl: "http://127.0.0.1:5050",
-    privacyPool: null,
-    stakeToken: null,
-    oracle: null,
-    market: MOLFI_MARKET.devnet,
-    explorer: "http://127.0.0.1:5050",
+    /**
+     * No pool locally. The deploying account stands in for it, so the open, settle and
+     * claim paths run for real against the real contract — what a local run does not
+     * exercise is the pool's own proof, which is StarkWare's code rather than molfi's.
+     * Filled from the environment by the deploy script.
+     */
+    privacyPool: process.env.NEXT_PUBLIC_POOL ?? null,
+    stakeToken: process.env.NEXT_PUBLIC_TOKEN ?? null,
+    oracle: process.env.NEXT_PUBLIC_ORACLE ?? null,
+    market: process.env.NEXT_PUBLIC_MARKET ?? MOLFI_MARKET.devnet,
+    explorer: "",
     realPool: false,
   },
   sepolia: {

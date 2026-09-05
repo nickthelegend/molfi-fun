@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fmtUsd, type PaperTicket } from "@molfi/sdk";
+import { fmtStrk, fmtUsd, type PaperTicket } from "@molfi/sdk";
 import { Row, Sheet, Tile } from "./Sheet";
 import type { Connection, StarknetWallet } from "@/lib/wallet";
 import type { LivePosition } from "@/lib/useLiveDesk";
@@ -200,12 +200,14 @@ export function MenuSheet({
       {/* ------------------------------------------------------------ profile */}
       <div className="flex items-center gap-3 rounded-2xl bg-[#161616] p-4">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-purple text-[17px] font-bold">
-          X
+          m
         </span>
         <div className="min-w-0 flex-1">
           {/* No account system on the demo desk, so it says so rather than inventing a
               handle. The live console shows the connected address instead. */}
-          <div className="truncate text-[15px] font-semibold">Demo desk</div>
+          <div className="truncate text-[15px] font-semibold">
+            {live?.connection ? "Live desk" : "Demo desk"}
+          </div>
           <p className="truncate text-[13px] text-white/45">
             {played === 0
               ? "No plays yet. Make your first play."
@@ -232,7 +234,7 @@ export function MenuSheet({
       {/* ------------------------------------------------------------ balance */}
       <div className="mt-3 rounded-2xl bg-[#161616] p-4">
         <div className="flex items-center justify-between">
-          <span className="label">My balance</span>
+          <span className="label">{live?.connection ? "Shielded" : "Paper balance"}</span>
           <button
             onClick={() => setView("history")}
             aria-label="history"
@@ -243,10 +245,17 @@ export function MenuSheet({
         </div>
         <div className="mt-2 flex items-center gap-3">
           <span className="grid h-8 w-8 place-items-center rounded-full bg-blue text-[13px] font-bold">
-            A
+            {live?.connection ? "S" : "$"}
           </span>
+          {/* Two different currencies, and never silently the same one. The demo desk keeps
+              paper dollars; a connected desk holds STRK inside the pool, and an unreadable
+              shielded balance is shown as unknown rather than as zero. */}
           <span className="tnum flex-1 text-[30px] font-bold leading-none">
-            {fmtUsd(balance)}
+            {live?.connection
+              ? live.shielded === null
+                ? "—"
+                : `${fmtStrk(live.shielded, 2)}`
+              : fmtUsd(balance)}
           </span>
           <button
             onClick={() => setView("funds")}

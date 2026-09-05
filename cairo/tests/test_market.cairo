@@ -10,7 +10,10 @@ use snforge_std::{
 use starknet::ContractAddress;
 use molfi::market::{IMolfiMarketDispatcher, IMolfiMarketDispatcherTrait};
 use molfi::objects::{IAnonymizerDispatcher, IAnonymizerDispatcherTrait};
-use super::mocks::{IStubOracleDispatcher, IStubOracleDispatcherTrait};
+use molfi::devnet::{
+    IStubOracleDispatcher, IStubOracleDispatcherTrait, IStubTokenDispatcher,
+    IStubTokenDispatcherTrait,
+};
 
 const OP_OPEN: u8 = 0;
 const OP_CLAIM: u8 = 1;
@@ -70,9 +73,23 @@ fn btc_15m() -> Span<u256> {
 
 fn a_market(m: IMolfiMarketDispatcher, token: ContractAddress) -> u64 {
     start_cheat_caller_address(m.contract_address, owner());
-    let id = m.create_market('BTC/USD', CUTOFF, token, 171_077, 400, btc_15m());
+    let id = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
     stop_cheat_caller_address(m.contract_address);
+    fund(m, token, id, 1_000_000);
     id
+}
+
+/// Put the house's money behind a market, the way the deploy script does.
+///
+/// Every test that opens a position needs this, because a market with no bankroll can sell
+/// nothing: the first winner's payout exceeds their own stake by definition, and the market
+/// refuses to sell a position it cannot already cover.
+fn fund(
+    m: IMolfiMarketDispatcher, token: ContractAddress, id: u64, amount: u256,
+) {
+    let erc20 = IStubTokenDispatcher { contract_address: token };
+    erc20.mint(m.contract_address, amount);
+    m.fund_market(id, amount);
 }
 
 /// Move the clock past the cutoff so the market may settle.
@@ -99,7 +116,7 @@ fn opening_a_position_credits_nothing_back() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    let deposits = anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    let deposits = anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     assert(deposits.len() == 0, 'empty span');
@@ -112,7 +129,7 @@ fn nobody_but_the_pool_can_drive_the_helper() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, addr('ATTACKER'));
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -121,7 +138,7 @@ fn an_unknown_operation_is_refused() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(9, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(9, id, 99_829, 100_171, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -130,8 +147,8 @@ fn the_same_commitment_cannot_be_opened_twice() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -199,7 +216,7 @@ fn a_position_cannot_open_after_the_cutoff() {
     let id = a_market(m, token);
     after_cutoff();
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'late', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'late', 0);
 }
 
 #[test]
@@ -208,8 +225,8 @@ fn a_position_cannot_be_claimed_before_settlement() {
     let (m, anon, _, token) = setup();
     let id = a_market(m, token);
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
-    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'secret', 'note');
 }
 
 #[test]
@@ -218,7 +235,7 @@ fn a_winning_band_is_paid_into_an_open_note() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -226,7 +243,7 @@ fn a_winning_band_is_paid_into_an_open_note() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    let deposits = anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
+    let deposits = anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'secret', 'note');
     stop_cheat_caller_address(m.contract_address);
 
     assert(deposits.len() == 1, 'one note credited');
@@ -243,7 +260,7 @@ fn a_losing_band_pays_nothing() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -251,7 +268,7 @@ fn a_losing_band_pays_nothing() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'secret', 'note');
 }
 
 #[test]
@@ -261,7 +278,7 @@ fn a_position_pays_exactly_once() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -269,8 +286,8 @@ fn a_position_pays_exactly_once() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
-    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'secret', 'note');
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'secret', 'note');
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'secret', 'note');
 }
 
 #[test]
@@ -282,7 +299,7 @@ fn a_wrong_secret_claims_nothing() {
     let id = a_market(m, token);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
     after_cutoff();
@@ -290,7 +307,7 @@ fn a_wrong_secret_claims_nothing() {
     m.settle(id);
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_CLAIM, id, 90_000, 110_000, token, 0, 'guess', 'note');
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'guess', 'note');
 }
 
 #[test]
@@ -307,7 +324,7 @@ fn an_inverted_band_is_refused() {
 fn an_unknown_market_is_refused() {
     let (m, anon, _, token) = setup();
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, 999, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, 999, 99_829, 100_171, token, 1_000, 'secret', 0);
 }
 
 #[test]
@@ -318,7 +335,7 @@ fn a_stranger_cannot_list_a_market() {
     // can still be checked against nothing.
     let (m, _, _, token) = setup();
     start_cheat_caller_address(m.contract_address, addr('STRANGER'));
-    m.create_market('BTC/USD', CUTOFF, token, 171_077, 400, btc_15m());
+    m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
 }
 
 #[test]
@@ -332,7 +349,7 @@ fn a_table_that_is_not_a_cdf_is_refused_at_listing() {
         950_822, 962_639, 971_041, 977_620, 982_135, 985_386, 988_415, 100,
     ];
     start_cheat_caller_address(m.contract_address, owner());
-    m.create_market('BTC/USD', CUTOFF, token, 171_077, 400, broken.span());
+    m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, broken.span());
 }
 
 #[test]
@@ -340,7 +357,7 @@ fn a_table_that_is_not_a_cdf_is_refused_at_listing() {
 fn a_market_cannot_be_listed_already_expired() {
     let (m, _, _, token) = setup();
     start_cheat_caller_address(m.contract_address, owner());
-    m.create_market('BTC/USD', NOW - 1, token, 171_077, 400, btc_15m());
+    m.create_market('BTC/USD', NOW - 1, 900, token, 171_077, 400, btc_15m());
 }
 
 #[test]
@@ -348,7 +365,7 @@ fn a_market_cannot_be_listed_already_expired() {
 fn a_market_with_no_volatility_is_refused() {
     let (m, _, _, token) = setup();
     start_cheat_caller_address(m.contract_address, owner());
-    m.create_market('BTC/USD', CUTOFF, token, 0, 400, btc_15m());
+    m.create_market('BTC/USD', CUTOFF, 900, token, 0, 400, btc_15m());
 }
 
 #[test]
@@ -391,11 +408,159 @@ fn the_commitment_matches_the_one_the_browser_computes() {
     assert(id == 1, 'first market is 1');
 
     start_cheat_caller_address(m.contract_address, pool());
-    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'secret', 0);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
     stop_cheat_caller_address(m.contract_address);
 
-    let expected: felt252 = 0x4d41e3ad2552475273859e87b4fe034503ce567ad72fead91991ef5fc5b20bf;
+    let expected: felt252 = 0x42b3b35b705ba57b3a643f0cda1af6386f77a9534208b3df8e6595e555ec1f6;
     let position = m.get_position(expected);
     assert(position.exists, 'browser commitment agrees');
     assert(position.stake == 1_000, 'and points at the position');
+}
+
+#[test]
+#[should_panic(expected: 'ROUND_SHORTER_THAN_ORACLE')]
+fn a_round_shorter_than_the_oracle_can_settle_is_refused() {
+    // The failure the whole horizon choice exists to prevent: a round that closes before
+    // Pragma has republished settles against a price that was already public when it
+    // opened. Refused at listing rather than discovered at settlement.
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    m.create_market('BTC/USD', CUTOFF, 60, token, 171_077, 400, btc_15m());
+}
+
+#[test]
+fn a_market_records_the_round_it_was_listed_for() {
+    // Without this a verifier cannot know which fitted table the market was supposed to
+    // carry, and the check that matters most — that the contract prices with the published
+    // table — can never run at all.
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    assert(m.get_market(id).round_seconds == 900, 'round length kept');
+}
+
+#[test]
+fn settling_records_when_it_settled_not_only_when_the_price_was_published() {
+    // The contract asserts the print's age against the settling block. A verifier holding
+    // only the publish time and the cutoff cannot repeat that comparison — the print may
+    // legitimately have been published after the cutoff and still be fresh at settlement.
+    let (m, _, oracle, token) = setup();
+    let id = a_market(m, token);
+    after_cutoff();
+    oracle.set(100_000, AFTER - 60, 11);
+    m.settle(id);
+
+    let market = m.get_market(id);
+    assert(market.settled_at == AFTER - 60, 'publish time kept');
+    assert(market.settled_block_at == AFTER, 'settle time kept');
+}
+
+#[test]
+#[should_panic(expected: 'MARKET_CANNOT_COVER_PAYOUT')]
+fn a_market_will_not_sell_a_position_it_cannot_cover() {
+    // The defect this exists to prevent, and it was a real one: with no bankroll the first
+    // winner in a market can never be paid, because the only money present is their own
+    // stake and any multiplier above 1.00x exceeds it. Discovered at claim time that is a
+    // winning band that simply does not pay, after the trader has held it all round.
+    // Refused at open instead.
+    let (m, anon, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let id = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
+}
+
+#[test]
+fn funding_a_market_is_measured_not_taken_on_trust() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let id = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    let erc20 = IStubTokenDispatcher { contract_address: token };
+    erc20.mint(m.contract_address, 5_000);
+    m.fund_market(id, 5_000);
+
+    assert(m.get_market(id).bankroll == 5_000, 'bankroll recorded');
+}
+
+#[test]
+#[should_panic(expected: 'FUNDING_NOT_RECEIVED')]
+fn funding_that_never_arrived_is_refused() {
+    // A market that could advertise a bankroll it does not hold is worse than one with no
+    // bankroll at all: the number backing every quote would be a claim rather than a fact.
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let id = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    m.fund_market(id, 5_000);
+}
+
+#[test]
+fn opening_reserves_the_whole_payout() {
+    let (m, anon, _, token) = setup();
+    let id = a_market(m, token);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    let market = m.get_market(id);
+    let position = m.get_position(
+        // Same commitment the browser derives; see the parity test above.
+        0x42b3b35b705ba57b3a643f0cda1af6386f77a9534208b3df8e6595e555ec1f6,
+    );
+    let payout = molfi::pricing::payout_for(position.stake.into(), position.multiplier_bps);
+    assert(market.reserved == payout, 'full payout reserved');
+    assert(market.staked == 1_000, 'stake recorded');
+}
+
+#[test]
+fn a_claim_releases_the_reservation_it_made() {
+    let (m, anon, oracle, token) = setup();
+    let id = a_market(m, token);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'secret', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_000, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'secret', 'note');
+    stop_cheat_caller_address(m.contract_address);
+
+    let market = m.get_market(id);
+    assert(market.reserved == 0, 'reservation released');
+    assert(market.paid > 1_000, 'paid more than the stake');
+    assert(market.paid <= market.staked + market.bankroll, 'and stayed solvent');
+}
+
+#[test]
+#[should_panic(expected: 'BAND_PAYS_LESS_THAN_STAKE')]
+fn a_band_that_pays_less_than_it_costs_is_refused() {
+    // The desk refuses anything under 1.05x, but a trader does not have to use the desk. A
+    // band ten percent wide on a market whose sigma is under two tenths of a percent is
+    // certain, and certainty prices below 1.00x after the fee — a position that pays back
+    // less than it took even when it wins. Refused by the contract too, whatever client
+    // asked for it.
+    let (m, anon, _, token) = setup();
+    let id = a_market(m, token);
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_OPEN, id, 90_000, 110_000, token, 1_000, 'wide', 0);
+}
+
+#[test]
+#[should_panic(expected: 'BAND_TOO_TIGHT_TO_PRICE')]
+fn a_band_too_tight_to_price_is_refused() {
+    // At the other end the quote is 1/p over a table sampled every quarter sigma, and the
+    // arithmetic runs away faster than the measurement behind it supports.
+    let (m, anon, _, token) = setup();
+    let id = a_market(m, token);
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_OPEN, id, 99_999, 100_001, token, 1_000, 'tight', 0);
 }

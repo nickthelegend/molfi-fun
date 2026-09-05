@@ -12,23 +12,27 @@ function honest(): OnChainMarket {
     id: 1,
     pair: "BTC/USD",
     cutoffAt: 1_800_000_900,
+    roundSeconds: 900,
     sigma1e4: btc15m.sigma1e4,
     houseEdgeBps: 400n,
     isSettled: true,
     settledPrice: 7_967_722_750_000n,
-    settledAt: 1_800_000_800,
+    settledAt: 1_800_000_880,
+    settledBlockAt: 1_800_000_910,
     settledSources: 11,
     staked: 1_000n,
-    paid: 900n,
+    paid: 1_250n,
+    bankroll: 10_000n,
+    reserved: 0n,
     table: btc15m.probTable,
   };
 }
 
-const verdict = (m: OnChainMarket, key: string, known?: readonly bigint[]) =>
-  auditMarket(m, known).checks.find((c) => c.key === key)?.verdict;
+const verdict = (m: OnChainMarket, key: string) =>
+  auditMarket(m).checks.find((c) => c.key === key)?.verdict;
 
 test("an honest settled market passes every check", () => {
-  const a = auditMarket(honest(), btc15m.probTable);
+  const a = auditMarket(honest());
   const failed = a.checks.filter((c) => c.verdict === "failed");
   assert.deepEqual(
     failed.map((c) => c.key),
@@ -39,11 +43,18 @@ test("an honest settled market passes every check", () => {
 
 test("every check names what it compared and why it matters", () => {
   // A verifier whose failures are unreadable is a verifier nobody acts on.
-  for (const c of auditMarket(honest(), btc15m.probTable).checks) {
+  for (const c of auditMarket(honest()).checks) {
     assert.ok(c.claim.length > 10, `${c.key} has no claim`);
     assert.ok(c.matters.length > 30, `${c.key} does not say why it matters`);
     assert.ok(c.onChain.length > 0 && c.recomputed.length > 0, `${c.key} shows no values`);
   }
+});
+
+test("the published table is found from the chain's own answer alone", () => {
+  // The check that matters most has to run without the caller supplying anything: a
+  // verifier that only works when you already hand it the right table is a verifier that
+  // trusts whoever ran it.
+  assert.equal(verdict(honest(), "table-is-the-published-one"), "ok");
 });
 
 test("a substituted table is caught", () => {
@@ -54,10 +65,10 @@ test("a substituted table is caught", () => {
   table[8] = table[8] + 1n;
   tampered.table = table;
 
-  assert.equal(verdict(tampered, "table-is-the-published-one", btc15m.probTable), "failed");
+  assert.equal(verdict(tampered, "table-is-the-published-one"), "failed");
   // And only that check: a one-unit change still leaves a valid CDF and a solvent market.
-  assert.equal(verdict(tampered, "table-is-a-cdf", btc15m.probTable), "ok");
-  assert.equal(verdict(tampered, "conservation", btc15m.probTable), "ok");
+  assert.equal(verdict(tampered, "table-is-a-cdf"), "ok");
+  assert.equal(verdict(tampered, "conservation"), "ok");
 });
 
 test("a dipped table is caught even with nothing to compare against", () => {
@@ -78,29 +89,69 @@ test("a table claiming certainty is caught", () => {
 
 test("a stale settling print is caught", () => {
   const tampered = honest();
-  // Published sixteen minutes before the cutoff, past the contract's own limit.
-  tampered.settledAt = tampered.cutoffAt - 960;
-  assert.equal(verdict(tampered, "price-was-fresh", btc15m.probTable), "failed");
+  // Published sixteen minutes before it was used, past the contract's own limit.
+  tampered.settledAt = tampered.settledBlockAt - 960;
+  assert.equal(verdict(tampered, "price-was-fresh"), "failed");
+});
+
+test("a print published after the cutoff is fresh, not stale", () => {
+  // The reading that was wrong before the contract recorded its settle time: comparing the
+  // publish time against the cutoff reported a negative age for a market that had settled
+  // correctly, on a print that was newer than the cutoff rather than older.
+  const late = honest();
+  late.settledAt = late.cutoffAt + 30;
+  late.settledBlockAt = late.cutoffAt + 60;
+  assert.equal(verdict(late, "price-was-fresh"), "ok");
+  assert.equal(verdict(late, "settled-after-cutoff"), "ok");
+});
+
+test("settling before the cutoff is caught", () => {
+  const early = honest();
+  early.settledBlockAt = early.cutoffAt - 1;
+  assert.equal(verdict(early, "settled-after-cutoff"), "failed");
+});
+
+test("a round length nothing was fitted for is caught", () => {
+  const odd = honest();
+  odd.roundSeconds = 300;
+  assert.equal(verdict(odd, "round-is-listed"), "failed");
+  // And the table check cannot run, because there is no published table to compare with.
+  assert.equal(verdict(odd, "table-is-the-published-one"), "unchecked");
 });
 
 test("a thin settling print is caught", () => {
   const tampered = honest();
   tampered.settledSources = 1;
-  assert.equal(verdict(tampered, "price-was-broad", btc15m.probTable), "failed");
+  assert.equal(verdict(tampered, "price-was-broad"), "failed");
+});
+
+test("paying a winner more than their stake is solvent, not insolvent", () => {
+  // The reading that was wrong before the contract had a bankroll: a market that had
+  // correctly paid its first winner 1.25x reported as insolvent, because the bound used
+  // was the stakes alone. Every honest market would have failed this check.
+  assert.equal(verdict(honest(), "conservation"), "ok");
 });
 
 test("an insolvent market is caught", () => {
   const tampered = honest();
-  tampered.paid = tampered.staked + 1n;
-  const a = auditMarket(tampered, btc15m.probTable);
-  assert.equal(verdict(tampered, "conservation", btc15m.probTable), "failed");
+  tampered.paid = tampered.staked + tampered.bankroll + 1n;
+  const a = auditMarket(tampered);
+  assert.equal(verdict(tampered, "conservation"), "failed");
   assert.ok(!a.sound);
+});
+
+test("a market that has promised more than it can cover is caught", () => {
+  // Caught while the market is still open, which is the only time it can be acted on.
+  const overcommitted = honest();
+  overcommitted.reserved = overcommitted.staked + overcommitted.bankroll;
+  assert.equal(verdict(overcommitted, "commitments-are-covered"), "failed");
+  assert.equal(verdict(overcommitted, "conservation"), "ok");
 });
 
 test("an undisclosed fee is caught", () => {
   const tampered = honest();
   tampered.houseEdgeBps = 900n;
-  assert.equal(verdict(tampered, "fee-is-disclosed", btc15m.probTable), "failed");
+  assert.equal(verdict(tampered, "fee-is-disclosed"), "failed");
 });
 
 test("an unsettled market leaves the price checks unrun rather than passing them", () => {
@@ -108,7 +159,7 @@ test("an unsettled market leaves the price checks unrun rather than passing them
   // reports nothing: it converts absence of evidence into evidence.
   const open = honest();
   open.isSettled = false;
-  const a = auditMarket(open, btc15m.probTable);
+  const a = auditMarket(open);
   assert.equal(a.checks.find((c) => c.key === "settled")?.verdict, "unchecked");
   assert.ok(!a.checks.some((c) => c.key === "price-was-fresh"));
 });

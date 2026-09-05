@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+/**
+ * Drive one position from open to claim against a real deployment.
+ *
+ * Not a unit test — those exist and run in-process. This runs the actual deployed contract
+ * over a real RPC with a real account, which is the only way to catch the things a test
+ * harness cannot: a calldata order that is wrong on the wire, a struct read back at the
+ * wrong offsets, a commitment the browser derives differently from the chain.
+ *
+ * Devnet only. The account stands in for the pool locally, so `privacy_invoke` can be driven
+ * directly; on a public network only the pool may call it, and this script would be refused.
+ */
+
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { commitmentOf, u256Parts } from "../packages/sdk/src/positions.ts";
+
+const RPC = process.env.RPC ?? "http://127.0.0.1:5050";
+const account = process.env.ACCOUNT ?? "devnet0";
+const d = JSON.parse(readFileSync("deployments/devnet.json", "utf8"));
+
+const hex = (v) => "0x" + BigInt(v).toString(16);
+const say = (s) => process.stdout.write(`${s}\n`);
+
+function sncast(...a) {
+  const r = spawnSync("sncast", ["--json", "--account", account, ...a, "--url", RPC], {
+    cwd: "cairo",
+    encoding: "utf8",
+  });
+  const lines = [...String(r.stdout ?? "").split("\n"), ...String(r.stderr ?? "").split("\n")];
+  const objects = [];
+  for (const l of lines) {
+    if (!l.trim()) continue;
+    try {
+      objects.push(JSON.parse(l));
+    } catch {
+      /* progress lines */
+    }
+  }
+  const failed = objects.find((o) => o.error);
+  if (failed) {
+    const named = String(failed.error).match(/\('([A-Z0-9_]+)'\)/);
+    throw new Error(named ? `${named[1]} (contract refused)` : String(failed.error).slice(0, 300));
+  }
+  return objects.reverse().find((o) => o.command) ?? {};
+}
+
+const invoke = (to, fn, calldata) =>
+  sncast("invoke", "--contract-address", to, "--function", fn, "--calldata", ...calldata);
+
+async function rpc(method, params) {
+  const res = await fetch(RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const body = await res.json();
+  if (body.error) throw new Error(JSON.stringify(body.error).slice(0, 300));
+  return body.result;
+}
+
+const chainNow = async () =>
+  (await rpc("starknet_getBlockWithTxHashes", { block_id: "latest" })).timestamp;
+
+const call = (to, selector, calldata = []) =>
+  rpc("starknet_call", [{ contract_address: to, entry_point_selector: selector, calldata }, "latest"]);
+
+// Selectors, computed the same way the app does.
+const { hash } = await import("starknet");
+const sel = (n) => hash.getSelectorFromName(n);
+
+let failures = 0;
+const check = (ok, what, detail = "") => {
+  say(`  ${ok ? "✓" : "✗"} ${what}${detail ? ` — ${detail}` : ""}`);
+  if (!ok) failures += 1;
+};
+
+// ---------------------------------------------------------------- open
+const MARKET_ID = 1;
+const spot = 7_970_000_000_000n; // matches what the stub oracle will print
+const half = (spot * 171_077n) / 100_000_000n; // one sigma
+const bandLow = spot - half;
+const bandHigh = spot + half;
+const stake = 1_000_000_000n;
+
+const secret = {
+  secret: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+  marketId: MARKET_ID,
+  bandLow,
+  bandHigh,
+};
+const commitment = commitmentOf(secret);
+
+say(`\nmolfi end to end · market ${d.market}`);
+say(`  band ${bandLow} – ${bandHigh}, stake ${stake}`);
+say(`  commitment ${commitment}\n`);
+
+say("open");
+const [lowLo, lowHi] = u256Parts(bandLow);
+const [highLo, highHi] = u256Parts(bandHigh);
+invoke(d.market, "privacy_invoke", [
+  "0x0", // operation: open
+  hex(MARKET_ID),
+  lowLo,
+  lowHi,
+  highLo,
+  highHi,
+  d.token,
+  hex(stake),
+  secret.secret,
+  "0x0", // note id, unused on open
+]);
+
+// Position: market_id (u64), band_low (u256), band_high (u256), stake (u128),
+// multiplier_bps (u256), claimed, exists. u256 is two felts; u128 is one.
+const position = await call(d.market, sel("get_position"), [commitment]);
+check(BigInt(position[9]) === 1n, "the chain found the position under the browser's commitment");
+check(BigInt(position[5]) === stake, "it recorded the stake", position[5]);
+const multiplierBps = (BigInt(position[7]) << 128n) | BigInt(position[6]);
+check(multiplierBps > 10_000n, "it fixed a multiplier at open", `${Number(multiplierBps) / 10_000}x`);
+
+// Market: pair, cutoff_at, round_seconds, token, sigma_1e4 (u256), house_edge_bps (u256),
+// settled_price (u256), settled_at, settled_block_at, settled_sources, is_settled,
+// staked (u256), paid (u256), bankroll (u256), reserved (u256).
+let market = await call(d.market, sel("get_market"), [hex(MARKET_ID)]);
+check(BigInt(market[14]) === stake, "the market's staked total went up", market[14]);
+check(BigInt(market[16]) === 0n, "and nothing has been paid out yet");
+const reserved = (BigInt(market[21]) << 128n) | BigInt(market[20]);
+check(reserved > stake, "and the whole payout was reserved", reserved);
+
+// ---------------------------------------------------------------- settle
+say("\nsettle");
+const cutoff = Number(BigInt(market[1]));
+const now = await chainNow();
+if (now < cutoff) {
+  await rpc("devnet_increaseTime", { time: cutoff - now + 30 });
+}
+const at = await chainNow();
+invoke(d.oracle, "set", [hex(spot), hex(at - 60), "0xb"]);
+invoke(d.market, "settle", [hex(MARKET_ID)]);
+
+market = await call(d.market, sel("get_market"), [hex(MARKET_ID)]);
+check(BigInt(market[13]) === 1n, "the market settled");
+const settledPrice = (BigInt(market[9]) << 128n) | BigInt(market[8]);
+check(settledPrice === spot, "against the price the oracle published", settledPrice);
+check(Number(BigInt(market[11])) >= cutoff, "and not before its cutoff");
+check(Number(BigInt(market[12])) === 11, "recording how many publishers stood behind it");
+
+// ---------------------------------------------------------------- claim
+say("\nclaim");
+invoke(d.market, "privacy_invoke", [
+  "0x1", // operation: claim
+  hex(MARKET_ID),
+  lowLo,
+  lowHi,
+  highLo,
+  highHi,
+  d.token,
+  "0x0", // nothing withdrawn on a claim
+  secret.secret,
+  "0xdeadbeef", // note id
+]);
+
+const claimed = await call(d.market, sel("get_position"), [commitment]);
+check(BigInt(claimed[8]) === 1n, "the position is marked claimed");
+
+market = await call(d.market, sel("get_market"), [hex(MARKET_ID)]);
+const paid = (BigInt(market[17]) << 128n) | BigInt(market[16]);
+const staked = (BigInt(market[15]) << 128n) | BigInt(market[14]);
+const bankroll = (BigInt(market[19]) << 128n) | BigInt(market[18]);
+check(paid > stake, "the market paid out more than the stake", paid);
+check(
+  paid <= staked + bankroll,
+  "and never more than the stakes plus the bankroll behind it",
+  `${paid} <= ${staked} + ${bankroll}`,
+);
+check(
+  ((BigInt(market[21]) << 128n) | BigInt(market[20])) === 0n,
+  "and released its reservation",
+);
+
+// A second claim must not pay twice.
+say("\nrefusals");
+try {
+  invoke(d.market, "privacy_invoke", [
+    "0x1", hex(MARKET_ID), lowLo, lowHi, highLo, highHi, d.token, "0x0", secret.secret, "0xdeadbeef",
+  ]);
+  check(false, "a second claim was refused", "it was accepted");
+} catch (e) {
+  check(/ALREADY_CLAIMED/.test(e.message), "a second claim was refused", e.message);
+}
+
+// A wrong secret must find nothing.
+try {
+  invoke(d.market, "privacy_invoke", [
+    "0x1", hex(MARKET_ID), lowLo, lowHi, highLo, highHi, d.token, "0x0", "0xbadbad", "0xdeadbeef",
+  ]);
+  check(false, "a wrong secret claims nothing", "it was accepted");
+} catch (e) {
+  check(/NO_SUCH_POSITION/.test(e.message), "a wrong secret claims nothing", e.message);
+}
+
+say(failures === 0 ? "\nall checks passed\n" : `\n${failures} check(s) failed\n`);
+process.exit(failures === 0 ? 0 : 1);

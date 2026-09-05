@@ -11,11 +11,16 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "dev": "pnpm --filter @molfi/hub dev"
+    "dev": "pnpm --filter @molfi/hub dev",
+    "deploy:devnet": "node --experimental-strip-types scripts/deploy.mjs --network devnet",
+    "e2e:devnet": "node --experimental-strip-types scripts/e2e.mjs"
   },
   "pnpm": {
     "overrides": {
       "@swc/core": "1.13.5"
     }
+  },
+  "dependencies": {
+    "starknet": "10.5.0"
   }
 }
