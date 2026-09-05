@@ -85,11 +85,35 @@
       "skillPath": "skills/stitch-skill/SKILL.md",
       "computedHash": "13322f38406cd3abf16ba45e35bdc9b18002d0153a79b4612b97aefc65d5a335"
     },
+    "strk20-anonymizer-contracts": {
+      "source": "welttowelt/strk20-skills",
+      "sourceType": "github",
+      "skillPath": "skills/strk20-anonymizer-contracts/SKILL.md",
+      "computedHash": "e7b965084de3c254b62b55cce29512ad75962a7a59a1fa94c8c8d5b256535c3d"
+    },
+    "strk20-privacy": {
+      "source": "welttowelt/strk20-skills",
+      "sourceType": "github",
+      "skillPath": "skills/strk20-privacy/SKILL.md",
+      "computedHash": "4268d7efea7f329c42ae9602fa994df33e24986ccf6f163f21373b8110f69e42"
+    },
     "strk20-privacy-integration": {
       "source": "starkience/strk20-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/strk20-privacy-integration/SKILL.md",
       "computedHash": "cf326cefa06fbaf6c8f090a94fd7e439e489cf1276d7ddd3edb454a02605eebc"
+    },
+    "strk20-privacy-sdk": {
+      "source": "welttowelt/strk20-skills",
+      "sourceType": "github",
+      "skillPath": "skills/strk20-privacy-sdk/SKILL.md",
+      "computedHash": "61b968cd3349a0bb05dc637c40aa640807b9b5adbb6a09dc4c3dd92f6ed9ff6c"
+    },
+    "strk20-wallet-api": {
+      "source": "welttowelt/strk20-skills",
+      "sourceType": "github",
+      "skillPath": "skills/strk20-wallet-api/SKILL.md",
+      "computedHash": "2b785874b0c063914153c76b0eeec9cb475e2f4098b1e6fb4e169c392f7a4f45"
     }
   }
 }
