@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { CALIBRATED_MARKETS, ROUND_SECONDS } from "../packages/sdk/src/generated/markets.ts";
 import { NETWORKS, STRK_TOKEN } from "../packages/sdk/src/networks.ts";
-import { PRAGMA } from "../packages/sdk/src/pragma.ts";
+import { PRAGMA, SETTLEMENT_MAX_PRICE_AGE_SECONDS } from "../packages/sdk/src/pragma.ts";
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) =>
@@ -333,7 +333,8 @@ if (!isLocal) {
         }),
       });
       const body = await res.json();
-      const check = freshness(decodePrint(body.result));
+      // Whether a market listed here could ever resolve is the contract's 900s rule.
+      const check = freshness(decodePrint(body.result), undefined, SETTLEMENT_MAX_PRICE_AGE_SECONDS);
       if (!check.fresh) dead.push(`${m.label}: ${check.reason}`);
     } catch (e) {
       dead.push(`${m.label}: ${e.message.slice(0, 60)}`);

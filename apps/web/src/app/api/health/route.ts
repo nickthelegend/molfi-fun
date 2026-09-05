@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
-import { MARKETS, NETWORKS, decodePrint, freshness, pairId } from "@molfi/sdk";
+import {
+  MARKETS,
+  MAX_PRICE_AGE_SECONDS,
+  NETWORKS,
+  SETTLEMENT_MAX_PRICE_AGE_SECONDS,
+  decodePrint,
+  freshness,
+  pairId,
+} from "@molfi/sdk";
 import {
   FALLBACK_RPC_URL,
   NETWORK,
@@ -117,16 +125,35 @@ export async function GET() {
           "0x" + pairId(m.label).toString(16),
         ]);
         const print = decodePrint(raw);
-        const check = freshness(print);
+
+        // Two questions, two limits, and this route was answering the wrong one.
+        //
+        // `freshness` defaults to the desk's 600s, which is how old a print may be before
+        // molfi will *quote* on it. Settling is the contract's rule and it is 900s, because
+        // Pragma publishes every seven to ten minutes and a stricter settlement rule would
+        // strand markets that can never resolve. Labelling the 600s answer `settleable` made
+        // health report the oracle `down` for a print the chain would have settled against
+        // quite happily — the API contradicting the contract, which is the one thing nothing
+        // here is allowed to do.
+        const now = Math.floor(Date.now() / 1000);
+        const settle = freshness(print, now, SETTLEMENT_MAX_PRICE_AGE_SECONDS);
+        const quote = freshness(print, now, MAX_PRICE_AGE_SECONDS);
         return {
           pair: m.label,
-          ageSeconds: check.ageSeconds,
+          ageSeconds: settle.ageSeconds,
           sources: print.sources,
-          settleable: check.fresh,
-          refusal: check.reason,
+          settleable: settle.fresh,
+          /** Whether the desk would sell a band on it, which is a stricter question. */
+          quotable: quote.fresh,
+          refusal: settle.reason,
         };
       } catch (e) {
-        return { pair: m.label, error: (e as Error).message.slice(0, 100), settleable: false };
+        return {
+          pair: m.label,
+          error: (e as Error).message.slice(0, 100),
+          settleable: false,
+          quotable: false,
+        };
       }
     }),
   );
@@ -141,7 +168,10 @@ export async function GET() {
     ? worst > ORACLE_DEGRADED_AFTER_S
       ? {
           status: "degraded",
-          detail: `oldest print is ${worst}s; the contract refuses past ${ORACLE_REFUSES_AFTER_S}s`,
+          detail: pairs.every((p) => p.quotable)
+            ? `oldest print is ${worst}s; the contract refuses past ${ORACLE_REFUSES_AFTER_S}s`
+            : `oldest print is ${worst}s — still settleable, but past the ${MAX_PRICE_AGE_SECONDS}s the desk will quote on`,
+          address: oracleAddress,
           pairs,
         }
       : { status: "ok", address: oracleAddress, pairs }

@@ -12,7 +12,14 @@
 
 import { readFileSync } from "node:fs";
 import { hash } from "starknet";
-import { MARKETS, ROUND_SECONDS, decodePrint, freshness, pairId } from "../packages/sdk/src/index.ts";
+import {
+  MARKETS,
+  ROUND_SECONDS,
+  SETTLEMENT_MAX_PRICE_AGE_SECONDS,
+  decodePrint,
+  freshness,
+  pairId,
+} from "../packages/sdk/src/index.ts";
 import { NETWORKS } from "../packages/sdk/src/networks.ts";
 
 const args = Object.fromEntries(
@@ -126,7 +133,8 @@ if (!config.oracle) {
         "0x" + pairId(m.label).toString(16),
       ]);
       const print = decodePrint(r);
-      const check = freshness(print);
+      // Settleability is the contract's rule (900s), not the desk's quoting rule (600s).
+      const check = freshness(print, undefined, SETTLEMENT_MAX_PRICE_AGE_SECONDS);
       const line = `${print.sources} publishers, ${check.ageSeconds}s old`;
       if (!check.fresh) bad(`${m.label} cannot be settled against`, check.reason);
       else if (print.sources < 5) warn(`${m.label} is thin`, line);

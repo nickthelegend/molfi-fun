@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { hash } from "starknet";
 import { MARKETS, decodePrint, freshness, pairId } from "../packages/sdk/src/index.ts";
-import { PRAGMA } from "../packages/sdk/src/pragma.ts";
+import { PRAGMA, SETTLEMENT_MAX_PRICE_AGE_SECONDS } from "../packages/sdk/src/pragma.ts";
 
 const command = process.argv[2] ?? "status";
 const account = process.env.RELAYER_ACCOUNT ?? "ghost_deployer";
@@ -102,7 +102,10 @@ async function readMainnet(pair) {
     hex(pairId(pair)),
   ]);
   const print = decodePrint(raw);
-  return { print, check: freshness(print), block };
+  // The contract's limit, not the desk's. Whether this print is worth putting on chain is a
+  // settlement question; refusing at the desk's 600s stalls the relay for a third of every
+  // Pragma publish cycle and leaves markets waiting on a price that was always good enough.
+  return { print, check: freshness(print, undefined, SETTLEMENT_MAX_PRICE_AGE_SECONDS), block };
 }
 
 // ---------------------------------------------------------------------------- deploy
