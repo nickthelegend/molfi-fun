@@ -30,7 +30,7 @@ const provider = new RpcProvider({ nodeUrl: process.env.STARKNET_RPC_URL ?? NETW
 
 let failed = 0;
 const results = [];
-const blocked = [];
+const untested = [];
 
 function check(id, ok, what, detail = "") {
   results.push({ id, ok, what, detail });
@@ -53,8 +53,8 @@ function check(id, ok, what, detail = "") {
  */
 function block(id, what, why, unblock) {
   results.push({ id, ok: null, what, detail: why });
-  blocked.push({ id, what, why, unblock });
-  process.stdout.write(`  BLKD  ${id.padEnd(4)} ${what} — ${why}\n`);
+  untested.push({ id, what, why, unblock });
+  process.stdout.write(`  UNTS  ${id.padEnd(4)} ${what} — ${why}\n`);
 }
 
 const get = async (path) => {
@@ -326,13 +326,13 @@ const passed = results.filter((r) => r.ok === true).length;
 process.stdout.write(
   `\n${passed}/${results.length} PASS` +
     (failed ? `, ${failed} FAIL` : "") +
-    (blocked.length ? `, ${blocked.length} BLOCKED` : "") +
+    (untested.length ? `, ${untested.length} UNTESTED` : "") +
     "\n",
 );
 
-if (blocked.length) {
-  process.stdout.write(`\nBlocked — these did not run, and are not passing:\n`);
-  for (const b of blocked) process.stdout.write(`  ${b.id}  ${b.what}\n        ${b.why}\n        → ${b.unblock}\n`);
+if (untested.length) {
+  process.stdout.write(`\nUntested — these could not be run, and are not passing:\n`);
+  for (const b of untested) process.stdout.write(`  ${b.id}  ${b.what}\n        ${b.why}\n        → ${b.unblock}\n`);
   process.stdout.write(
     `\n  Nobody can open a position on molfi.fun until the above clears. That is a real\n` +
       `  consequence, not a formality — it is separated from FAIL because no change to this\n` +

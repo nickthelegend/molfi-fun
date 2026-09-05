@@ -204,16 +204,17 @@ Re-runnable: `pnpm verify` (C, D, E, G) · `pnpm test` (J) · `pnpm test:cairo` 
 | A. Pages | 9 / 9 PASS |
 | B. Menu sheets | 7 / 7 PASS |
 | C. API | 18 / 18 PASS |
-| D. Contracts on the real network | 9 PASS · 3 BLOCKED |
+| D. Contracts on the real network | 9 PASS · 3 UNTESTED |
 | E. External integrations | 6 / 6 PASS |
 | F. Desk flows | 10 / 10 PASS |
 | G. Repo hygiene | 5 / 5 PASS |
-| H. Public trading route, on chain | 10 / 10 PASS on a real chain · 0 / 10 reachable on the live deployment |
+| H. Public trading route, on chain | 10 / 10 PASS on a real chain — none of it reachable on the live deployment, see D11 |
 | I. The console's own trading code | 16 / 16 PASS |
 | J. Unit tests on the calldata | 9 / 9 PASS |
-| K. Wallet-dependent flows | 6 BLOCKED |
+| K. Wallet-dependent flows | 6 UNTESTED |
 
-**99 PASS · 0 FAIL · 9 BLOCKED** across 108 items.
+**99 PASS · 0 FAIL · 9 UNTESTED** across 108 items. Every item is listed individually at
+the end of this document.
 
 Nothing tested is broken. What is blocked is blocked on funds and on a wallet extension,
 and the section below says exactly what each needs. Read the blocked list — "no defects"
@@ -260,7 +261,7 @@ deploying an instance of it costs about a tenth of a STRK. `golive.mjs` computes
 hash from the local artifact, checks whether it is already on chain, and drops its own
 requirement from 62 STRK to 3 when it is.
 
-So the gap is 56 STRK, behind a CAPTCHA and a sign-in. They are recorded as BLOCKED rather
+So the gap is 56 STRK, behind a CAPTCHA and a sign-in. They are recorded as UNTESTED rather
 than FAIL because nothing in this repository can clear them — no commit, no fix, no amount of
 work here. That classification is about cause, not severity: a visitor to molfi.fun genuinely
 cannot trade today, and no label changes that.
@@ -269,7 +270,7 @@ cannot trade today, and no label changes that.
 how short it is, declare, deploy, list and fund the markets, repoint the SDK, open a real
 position through the console's own call builders, and re-run the plan.
 
-## What is blocked, and why
+## What is untested, and why
 
 **D10 — the pool sandwich against the real STRK20 pool.** Needs a registered account holding
 a note. No public proving or discovery endpoint exists: the SDK docs, `starknet-privacy`,
@@ -311,3 +312,131 @@ tiers a real signed transaction against a real contract.
 Zero console errors and zero failed network requests across every page and sheet tested —
 checked per item, including under injected failure, where the live console rendered
 `market list unavailable (502)` and recovered cleanly rather than blanking.
+
+---
+
+# Every item, with its final status
+
+**108 items · 99 PASS · 0 FAIL · 9 UNTESTED.** No item is passing that was not run.
+
+| # | Item | Status | Verified by |
+| --- | --- | --- | --- |
+| **A. Pages** | | | |
+| A1 | / landing | **PASS** | browser — headline, START, three doors; 0 API calls, 0 console errors |
+| A2 | /play demo desk | **PASS** | browser — price 79,754.33, PRAGMA FRESH 10src/75s, 1.25x, 3 req/min |
+| A3 | /play → live console | **PASS** | browser — LIVE · BTC · STARKNET SEPOLIA, CLOSES IN 11:45, SHIELDED —, 22 req/min |
+| A4 | /live | **PASS** | browser + curl — 3 countdowns, 21 settled w/ publishers, 24 /m/ links; present in raw HTML |
+| A5 | /keeper | **PASS** | browser — CAN/CANNOT, RUNNING, 11 cycles, 40 tx links; server-rendered |
+| A6 | /privacy | **PASS** | browser — both routes stated, 3 groups, 5 route badges, live staked |
+| A7 | /m/<settled> | **PASS** | browser — EVERY CHECK PASSED, 11 checks, 0 unchecked |
+| A8 | /m/999999 | **PASS** | browser — 'No market #999999' + console link, no 500 |
+| A9 | /m/abc | **PASS** | browser — same graceful not-found, no exception |
+| **B. Menu sheets** | | | |
+| B1 | Menu opens | **PASS** | browser — sheet, avatar, PAPER BALANCE, RESET |
+| B2 | Oracle sheet | **PASS** | browser — names the relay 0x0275a7fd…, explains it is not Pragma; 3 pairs w/ drift  [FIXED] |
+| B3 | Leaderboard | **PASS** | browser — states no player ranking is possible; markets w/ solvency |
+| B4 | History | **PASS** | browser — empty state is a sentence |
+| B5 | Account | **PASS** | browser — 4 addresses, relay labelled PRICE RELAY  [FIXED] |
+| B6 | Pool sheet (demo) | **PASS** | browser — states the balance is paper |
+| B7 | Settings/Customize/Achievements/How it works/About | **PASS** | browser — all 5 render, 0 console errors |
+| **C. API** | | | |
+| C1 | /api/config | **PASS** | 3 markets, 3 rounds, 18 decimals, market non-null |
+| C2 | /api/price quotability | **PASS** | quotable agrees with age≤600s and sources≥3  [PLAN ITEM FIXED] |
+| C3 | price history | **PASS** | 999 returns, 1m interval |
+| C4 | unknown pair | **PASS** | 404 naming the pair |
+| C5 | one-sigma quote | **PASS** | 1.2508x, stakeUnits 10e18, window min<max |
+| C6 | band too wide | **PASS** | ok:false refusal too-cheap |
+| C7 | band too tight | **PASS** | ok:false refusal too-rich |
+| C8 | bad tier / no spot / stake twice / unknown param | **PASS** | 400/404/400/400  [FIXED: unknown params were ignored] |
+| C9 | /api/markets | **PASS** | deployed:true, every market has roundSeconds/bankroll/reserved |
+| C10 | /api/audit/<settled> | **PASS** | sound:true, 11 checks, 0 failed, 0 unchecked |
+| C11 | audit 999999 / abc | **PASS** | 404 / 400 |
+| C12 | /api/position/0x1 | **PASS** | 200 exists:false — absent, not an error |
+| C13 | /api/position/nothex | **PASS** | 400 |
+| C14 | /api/health | **PASS** | status agrees with ok; 5 components report; keeper cannot force down  [FIXED] |
+| C15 | rpc proxy read | **PASS** | 200 with a block number |
+| C16 | rpc proxy write | **PASS** | 403, code -32601 |
+| C17 | /api/keeper | **PASS** | configured, reachable, cycles>0 |
+| C18 | position ?low=&high= | **PASS** | won null without a band  [FIXED] |
+| **D. Contracts on Sepolia** | | | |
+| D1 | market deployed | **PASS** | chain — class at 0x03b00e6e… |
+| D2 | relay deployed | **PASS** | chain — class at 0x0275a7fd… |
+| D3 | relay serves Pragma's timestamp | **PASS** | chain — published 1788648896 ≠ relayed 1788648916 |
+| D4 | settlement is real | **PASS** | chain — 38/41 settled, ≥3 publishers, price>0 |
+| D5 | settled price immutable | **PASS** | chain — identical on re-read |
+| D6 | conservation | **PASS** | chain — paid ≤ staked+bankroll, every market |
+| D7 | reserve | **PASS** | chain — paid+reserved ≤ staked+bankroll, every market |
+| D8 | round lengths calibrated | **PASS** | chain — all ∈ {900,3600,14400} |
+| D9 | open/settle/claim end to end | **PASS** | pnpm e2e:devnet — 30 checks green |
+| D10 | pool sandwich vs the real STRK20 pool | **UNTESTED** | no public prover/indexer endpoint exists; pool-probe reaches SUBCHANNEL_NOT_FOUND |
+| D11 | open_position live on the deployed contract | **UNTESTED** | declare costs ~60 STRK, balance 8.5 |
+| D12 | somebody has actually traded | **UNTESTED** | blocked by D11 — no route on chain to stake through |
+| **E. External integrations** | | | |
+| E1 | Pragma mainnet via the relay | **PASS** | 10/11/12 publishers, age<900s |
+| E2 | exchange tape | **PASS** | 999 minute closes, no geo-block |
+| E3 | Starknet RPC | **PASS** | chain:ok |
+| E4 | Postgres | **PASS** | 236 ledger rows vs 22 cycles this process — survived restarts |
+| E5 | keeper on Railway | **PASS** | cycling, lastError null, no duplicate market per pair |
+| E6 | keeper balance floor | **PASS** | stops listing below the floor, keeps settling |
+| **F. Desk flows** | | | |
+| F1 | switch market | **PASS** | browser — BTC→ETH→STRK→BTC, price follows |
+| F2 | switch round tier | **PASS** | browser — 1.25/1.25/1.27x across 15m/1h/4h |
+| F3 | change stake | **PASS** | browser — payout/stake == multiplier |
+| F4 | band nudge [ / ] | **PASS** | browser — ] 1.25→1.21, [ →1.30 |
+| F5 | fire on the demo desk | **PASS** | browser — balance 250→248.50, HOUSE 0.2%, ring 14:10 |
+| F6 | settle-due button | **PASS** | browser — 'SETTLE STRK/USD · 1 DUE' when past cutoff |
+| F7 | connect with no wallet | **PASS** | browser — flash 'NO STARKNET WALLET FOUND', demo desk still works |
+| F8 | failed upstream | **PASS** | browser — injected 502s → 'market list unavailable (502)', recovered |
+| F9 | mobile 375px | **PASS** | browser — no horizontal scroll on /play or /live |
+| F10 | reduced motion | **PASS** | browser — prefers-reduced-motion block shipped in production CSS |
+| **G. Repo hygiene** | | | |
+| G1 | no mocks or stubs in shipped code | **PASS** | grep clean outside devnet.cairo |
+| G2 | tests | **PASS** | 81 Cairo, 77 SDK, 30 e2e, 26 integration |
+| G3 | typecheck | **PASS** | 0 errors across SDK, web, keeper |
+| G4 | README/docs paths | **PASS** | every named path exists |
+| G5 | working tree committed | **PASS** | clean, main pushed |
+| **H. Public trading route, on chain** | | | |
+| H1 | quote_offsets before committing | **PASS** | quoted == charged to the bps |
+| H2 | open_position from a plain account | **PASS** | position exists, stake transferred |
+| H3 | the band is not on chain | **PASS** | stored reach only; neither edge present |
+| H4 | ownership | **PASS** | owner recorded; claim pays that address |
+| H5 | stranger with the secret | **PASS** | NOT_YOUR_POSITION |
+| H6 | band not paid for | **PASS** | refused |
+| H7 | cross-route claims | **PASS** | WRONG_CLAIM_ROUTE both directions |
+| H8 | winning payout | **PASS** | stake × multiplier; paid ≤ staked+bankroll |
+| H9 | route parity | **PASS** | same band, same price both routes |
+| H10 | wallet without STRK20 | **PASS** | offered the direct route, console says what it hides |
+| **I. The console's own trading code** | | | |
+| I1 | desk quote == chain quote | **PASS** | quoteOff == quote_offsets |
+| I2 | openCalls shape | **PASS** | exact approve + open_position |
+| I3 | pre-signature simulation | **PASS** | accepted |
+| I4 | stake debited | **PASS** | exactly the stake, no more |
+| I5 | readable by the app's decoder | **PASS** | decodePosition finds it |
+| I6 | owner bound | **PASS** | == trading address |
+| I7 | reach stored, band absent | **PASS** | offsets == reachOf |
+| I8 | market accounting | **PASS** | staked up, whole payout reserved |
+| I9 | duplicate open | **PASS** | POSITION_EXISTS |
+| I10 | claim before settlement | **PASS** | NOT_SETTLED_YET |
+| I11 | settlement | **PASS** | ≥3 publishers, price inside the band |
+| I12 | stranger claim | **PASS** | NOT_YOUR_POSITION from a second real account |
+| I13 | wrong band claim | **PASS** | NO_SUCH_POSITION |
+| I14 | payout exact | **PASS** | payoutFor(stake, multiplier) |
+| I15 | claimed once | **PASS** | ALREADY_CLAIMED on the second |
+| I16 | conservation | **PASS** | paid ≤ staked+bankroll after the trade |
+| **J. Unit tests on the calldata** | | | |
+| J1 | open is approve + open_position | **PASS** | node:test |
+| J2 | approve is exact | **PASS** | allowance == stake, never unlimited |
+| J3 | open_position fields | **PASS** | 8 felts in order |
+| J4 | no band, no secret on the wire | **PASS** | asserted absent |
+| J5 | reach is scale free | **PASS** | same shape → same felts |
+| J6 | claim reveals the band | **PASS** | 6 felts |
+| J7 | reach prices identically to the band | **PASS** | quoteOff == quote |
+| J8 | offsetsOf refuses a non-straddling band | **PASS** | throws SpotOutsideBand |
+| J9 | two secrets, one band | **PASS** | different commitments, identical reach |
+| **K. Wallet-signed flows** | | | |
+| K1 | connect a Starknet wallet | **UNTESTED** | no wallet extension in either available browser |
+| K2 | route picker with a STRK20 wallet | **UNTESTED** | same |
+| K3 | open a position from the browser | **UNTESTED** | same — code path covered by tier I |
+| K4 | claim from the browser | **UNTESTED** | same — code path covered by tier I |
+| K5 | shield / unshield | **UNTESTED** | same, and needs the STRK20 pool route (see D10) |
+| K6 | wrong-network wallet | **UNTESTED** | same |
