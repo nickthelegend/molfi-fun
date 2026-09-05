@@ -204,7 +204,7 @@ Re-runnable: `pnpm verify` (C, D, E, G) · `pnpm test` (J) · `pnpm test:cairo` 
 | A. Pages | 9 / 9 PASS |
 | B. Menu sheets | 7 / 7 PASS |
 | C. API | 18 / 18 PASS |
-| D. Contracts on the real network | 9 PASS · 1 BLOCKED · 2 FAIL |
+| D. Contracts on the real network | 9 PASS · 3 BLOCKED |
 | E. External integrations | 6 / 6 PASS |
 | F. Desk flows | 10 / 10 PASS |
 | G. Repo hygiene | 5 / 5 PASS |
@@ -213,14 +213,19 @@ Re-runnable: `pnpm verify` (C, D, E, G) · `pnpm test` (J) · `pnpm test:cairo` 
 | J. Unit tests on the calldata | 9 / 9 PASS |
 | K. Wallet-dependent flows | 6 BLOCKED |
 
-**99 PASS · 2 FAIL · 7 BLOCKED** across 108 items.
+**99 PASS · 0 FAIL · 9 BLOCKED** across 108 items.
 
-## The two failures, and they are one failure
+Nothing tested is broken. What is blocked is blocked on funds and on a wallet extension,
+and the section below says exactly what each needs. Read the blocked list — "no defects"
+and "a visitor can trade" are different sentences, and only the first is true today.
+
+## The blocker that matters: nobody can trade
 
 **D11 — `open_position` is not on the deployed contract.**
-**D12 — nothing has ever been staked: 41 markets, `staked` 0 across all of them.**
+**D12 — nothing has ever been staked: `staked` is 0 across every market.**
 
-Both are the same fact. The public trading route is written, unit tested on its calldata,
+One fact, not two: with no route on chain there is no way for anyone to stake, so D12 is
+blocked *by* D11 rather than being a second problem. The public trading route is written, unit tested on its calldata,
 proven end to end against a real chain twice over, and not on Sepolia — because declaring the
 class costs about **60 STRK** and the deployer holds under 7. Measured, not guessed:
 `estimateDeclareFee` returns 2.028e9 L2 gas from two independent nodes, and a
@@ -255,9 +260,10 @@ deploying an instance of it costs about a tenth of a STRK. `golive.mjs` computes
 hash from the local artifact, checks whether it is already on chain, and drops its own
 requirement from 62 STRK to 3 when it is.
 
-So the gap is 56 STRK and one sign-in nobody but the account holder can perform. That makes
-D11 and D12 a funding dependency rather than a defect — they are recorded as FAIL rather than
-BLOCKED because the consequence is real: a visitor to molfi.fun genuinely cannot trade today.
+So the gap is 56 STRK, behind a CAPTCHA and a sign-in. They are recorded as BLOCKED rather
+than FAIL because nothing in this repository can clear them — no commit, no fix, no amount of
+work here. That classification is about cause, not severity: a visitor to molfi.fun genuinely
+cannot trade today, and no label changes that.
 
 `pnpm golive` is the whole remaining path in one command: check the balance and say exactly
 how short it is, declare, deploy, list and fund the markets, repoint the SDK, open a real
