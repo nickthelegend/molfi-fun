@@ -280,6 +280,9 @@ code path behind it is covered: `scripts/integration.mjs` imports the same `open
 | C18 | The position route reported `won: false` for a band it cannot see | `won` is null unless the caller supplies the band |
 | G5 | 29 files of verified work uncommitted, and `git push` deploys nothing here | Committed; deployed with the CLI, which is how this project has always shipped |
 | — | A Sepolia deploy left `MOLFI_MARKET` pointing at the old contract | The deploy rewrites it, scoped to that record |
+| C14/E1 | `/api/health` reported `oracle: down` for a 646s print the contract settles at 900s | Four call sites asked the desk's 600s question about an on-chain decision; health now reports `settleable` (900s) and `quotable` (600s) separately |
+| — | The verifier aborted on one dropped RPC connection | Retries transport failures; reverts still fail on the first attempt |
+| — | Preflight measured bytecode size and said Clear while the declare was unaffordable 7× over | It prices the declare against live gas and the deployer's balance |
 
 ## Mocks, stubs and errors
 
