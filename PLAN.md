@@ -174,13 +174,21 @@ Both are now stored.
 | --- | --- | --- |
 | 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
 | 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | **DONE ON SEPOLIA**, blocked on mainnet. `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953` — nine markets listed and funded with 1 STRK each, on a real public chain, through the same script mainnet would use. Mainnet needs a funded account; both configured accounts hold 0 there. |
-| 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | **PARTIAL.** Seven verified Sepolia transactions are in `strk20.json`, which carries a `network` field so they cannot be mistaken for mainnet. They are direct calls to molfi's contract, not calls *through* the pool — driving the pool needs a registered account holding a note, which needs a real deposit. `pnpm pool:probe` confirms the transaction shape is accepted by the deployed pool on both networks. |
+| 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | **PARTIAL, and much larger than before.** Seven verified Sepolia transactions are in `strk20.json`, which carries a `network` field so they cannot be mistaken for mainnet. They are direct calls to molfi's contract, not calls *through* the pool — driving the pool needs a registered account holding a note, which needs a real deposit. `pnpm pool:probe` confirms the transaction shape is accepted by the deployed pool on both networks. |
 | 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi.fun on Vercel, verified with `pnpm api:check` against the live domain. Repo Website field set. |
 | 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, and fillable from Sepolia today** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
 | 6.6 | Record the 3-minute demo. | BLOCKED — a person has to narrate it. There is something to record: the console is live on a real public-chain deployment, and `/m/1` recomputes a real market from the chain. |
 | 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` green against the live public site backed by the real Sepolia contract, `pnpm e2e:devnet` green for the full open/settle/claim cycle. The UI is being rebuilt separately. |
 
-**Deployed on Sepolia:** `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953`, nine
+**Live, and settling.** `0x03b00e6e0efd3d35aeb6885ccb5e21a32f5f68a54222094196a7264da158b068`
+reads the price relay at `0x0275a7fdecdb539060b1e7cb2c857f88d505ed0a6c0ea2aafbbcc383456dfcbb`,
+which republishes mainnet Pragma's median. A keeper on Railway relays, settles and opens the
+next round every minute, writing every transaction to Postgres. Six markets have settled
+unattended against 10–12 publisher prices; `/live` shows them, `/keeper` shows who did it and
+what it cannot do, and `/m/<id>` recomputes any of them from published data with all eleven
+checks passing.
+
+**Superseded — the first Sepolia deployment:** `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953`, nine
 markets funded with 1 STRK each, contract ledger and token balance agreeing exactly. The
 console at https://molfi.fun serves it, and `/api/audit/1` recomputes it.
 Those markets can never settle — Pragma Sepolia stopped publishing months ago — so the
@@ -204,9 +212,9 @@ the markets.
 
 | # | Gap | Blocks | Note |
 | --- | --- | --- | --- |
-| G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | **STILL TRUE.** A Sepolia deploy would list markets that can never settle, so mainnet is the only place a real settlement happens. |
 | G11 | **`strk20.json` is empty** — no contracts, no transactions, no demo. | 6.3–6.6 | Every field is a deliverable and every one is blocked on a mainnet spend. |
 | G16 | **The pool sandwich has never run against the real pool.** | 6.3 | Narrowed three times, not closed. `pnpm pool:probe` compiles molfi's exact action list against the deployed pool on mainnet and Sepolia: it parses, satisfies replay protection, and stops at `SUBCHANNEL_NOT_FOUND` — a note that does not exist, because the probe has no account. Reading the deployed pool's own class settled the shape: `InvokeExternalInput` is `{contract_address, calldata}` and carries no token or amount, so the stake must arrive by a separate `Withdraw` action in the same transaction — which `openActions` now sends, and which its absence had silently omitted. What remains untested is whether the pool deserializes our calldata into `privacy_invoke`'s parameters in the order the escrow helper implies. `strk20PrepareInvoke` dry-runs that for free; it needs a wallet on a funded account. |
+| G19 | **The relay has one publisher, and that publisher is us.** | nothing, but it is a real limitation | It cannot launder a price's age — it serves Pragma's timestamp, not its own — and it cannot move a pair backwards in time. It can still stop publishing, and then Sepolia markets stall exactly as they did before. Stated on `/keeper` and `/live` rather than buried. |
 | G17 | **No mainnet deployer.** | 6.2 | Both configured accounts hold 0 STRK on mainnet. `ghost_deployer` holds 119 STRK on **Sepolia**, which is why the contract is deployed and funded there. Mainnet preflight is otherwise clear. This is the money decision, and it is the user's. |
 | G18 | **The Alchemy key's app does not have Starknet Mainnet enabled.** | nothing, but it should be fixed | Every request to it returns 403, so the live deployment is running on the public fallback — which works and is rate limited. One toggle at https://dashboard.alchemy.com/apps/jxx5a0i4bn502vc1/networks. `/api/health` reports which endpoint answered, so this is visible rather than silent. |
 
@@ -226,6 +234,7 @@ the markets.
 | G12 | Game leftovers on disk | Deleted, along with the CrewKill keeper, its Postgres and its docker-compose |
 | G13 | Hub nav 404s | Fixed |
 | G14 | `packages/protocol` is 39 lines | Folded into the SDK. Splitting it had produced two copies of the Pragma addresses. |
+| G3 | Pragma Sepolia is dead | **CLOSED, by routing around it.** `PriceRelay` republishes mainnet Pragma's median onto Sepolia and the deployment reads that instead. Six markets have settled there against real 10–12 publisher prices. The relay is a testnet stand-in with one publisher and says so on every page that shows it; mainnet reads Pragma directly. |
 | G15 | No CI | TypeScript, Cairo, Sierra size, and a parity job that regenerates the kernel vectors and asserts Cairo still agrees |
 
 ### Found by running it, not by reading it

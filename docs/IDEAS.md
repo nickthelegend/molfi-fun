@@ -126,6 +126,32 @@ context it would cost.
 
 ---
 
+## What was actually built
+
+Top-down, and verified against the live deployment rather than against a build passing.
+
+| # | Idea | Status |
+| --- | --- | --- |
+| 1 | Price relay on Sepolia | **Built.** `PriceRelay` at `0x0275a7fd…`, 10 tests. Serves Pragma's timestamp not its own, refuses to move a pair backwards, records the mainnet block every value came from. |
+| 2 | Settable oracle | **Built.** Owner-only, event-logged, and bounded — a settled price is written once and never re-read. 3 tests. |
+| 3 | Keeper | **Built and hosted.** `apps/keeper` on Railway, cycling every 60s: relay, settle, fund what is unfunded, open the next round. |
+| 4 | Postgres ledger | **Built.** Every action with its transaction hash, plus a market index. Best-effort: a database that is down slows the keeper and never stops it settling. |
+| 5 | Point the live site at a network with a contract | **Built.** molfi.fun is on Sepolia and shows the real deployment instead of the demo desk. |
+| 6 | Continuous round rotation | **Built.** Six markets settled unattended; three open at any time. |
+| 7 | A settled market on `/m/<id>` | **Built.** All eleven audit checks pass against a genuinely settled market. |
+| 8 | Live settlement feed | **Built.** `/live`, server-rendered, no wallet, ticking countdowns. |
+| 9 | Open → settle → claim on a public chain | **Settle and claim proven** on devnet end to end and **settle proven on Sepolia**. Opening through the *pool* remains G16. |
+| 10 | `/api/keeper` | **Built.** Proxied so a dead keeper degrades the route rather than breaking the page. |
+| 13 | Privacy ledger page | **Built.** `/privacy`, including the group most projects omit — what an observer can still infer. |
+| 19 | Keeper in `/api/health` | **Built**, and deliberately unable to make the deployment report itself down. |
+| 34 | Keeper retry and nonce handling | **Built**, after three of four listings failed on a lagging nonce. |
+| 11, 12 | Settlement moment, price odometer | **Already existed** — ported from xorr-monad and wired. Not rebuilt. |
+| 17, 18 | Empty states, error boundaries | **Partly existed**, extended on the new pages. |
+| 14, 15, 16, 20–33, 35–96 | | **Not built.** Ranked below the cut once the market was actually running; several are decoration next to a live settlement. |
+| 97–100 | Sub-accounts, order book, token, mainnet deploy | **Rejected**, for the reasons below. |
+
+---
+
 ## What that ranking means
 
 Ideas 1 through 10 are one feature wearing ten hats: **make the market actually run.** They
