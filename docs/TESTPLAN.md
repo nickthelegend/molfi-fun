@@ -213,7 +213,7 @@ Re-runnable: `pnpm verify` (C, D, E, G) · `pnpm test` (J) · `pnpm test:cairo` 
 | J. Unit tests on the calldata | 9 / 9 PASS |
 | K. Wallet-dependent flows | 6 BLOCKED |
 
-**90 PASS · 2 FAIL · 7 BLOCKED.**
+**99 PASS · 2 FAIL · 7 BLOCKED** across 108 items.
 
 ## The two failures, and they are one failure
 
