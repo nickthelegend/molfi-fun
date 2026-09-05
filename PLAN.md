@@ -176,7 +176,7 @@ Both are now stored.
 | 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | BLOCKED |
 | 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | BLOCKED |
 | 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | NOT STARTED |
-| 6.5 | Fill `contracts` in `strk20.json`. | BLOCKED on 6.2 |
+| 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, blocked on 6.2** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
 | 6.6 | Record the 3-minute demo. | BLOCKED |
 | 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment. The UI is being rebuilt separately. |
 
@@ -275,7 +275,10 @@ Phases 1 through 5 are done. What is left is one decision and the work that foll
    into `privacy_invoke`'s parameters the way the escrow helper's example implies. The
    transaction shape itself is no longer a guess: it came from the deployed pool's class.
 3. **Deploy**, list and fund the markets, then open, settle and claim one real position.
-4. **Fill `strk20.json`** with the contract address and three transaction hashes.
+4. **Fill `strk20.json`** with `pnpm submission --network mainnet`. The deploy script
+   records every hash it sends, and the filler verifies each receipt before recording it —
+   a reverted transaction still has a hash, so listing them unchecked would let a failed run
+   look like a successful one.
 5. **Deploy the console** and record the demo.
 
 The risk worth naming, now that the code is done: **the parameter *order* inside the invoke

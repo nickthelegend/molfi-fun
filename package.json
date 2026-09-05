@@ -16,6 +16,7 @@
     "dev:hub": "pnpm --filter @molfi/hub dev",
     "e2e:devnet": "node --experimental-strip-types scripts/e2e.mjs",
     "preflight": "node --experimental-strip-types scripts/preflight.mjs",
+    "submission": "node --experimental-strip-types scripts/fill-submission.mjs",
     "test": "pnpm --filter @molfi/sdk test",
     "test:cairo": "cd cairo && snforge test",
     "typecheck": "pnpm --filter @molfi/sdk exec tsc --noEmit && pnpm --filter @molfi/web exec tsc --noEmit"

@@ -137,9 +137,19 @@ function declare(contract) {
 
 function deploy(classHash, calldata, label) {
   const r = sncast("deploy", "--class-hash", classHash, ...(calldata.length ? ["--constructor-calldata", ...calldata] : []));
+  if (r.transaction_hash) transactions.push({ hash: r.transaction_hash, what: `deploy ${label}` });
   say(`  deployed ${label} → ${r.contract_address}`);
   return r.contract_address;
 }
+
+/**
+ * Every transaction this script sends, in order.
+ *
+ * Recorded so the submission can be filled from what actually happened rather than from
+ * hashes copied out of a terminal by hand — which is how one ends up submitting a hash from
+ * the wrong network, or from a run that was later redeployed over.
+ */
+const transactions = [];
 
 function invoke(address, entrypoint, calldata, label) {
   const r = sncast(
@@ -151,6 +161,7 @@ function invoke(address, entrypoint, calldata, label) {
     "--calldata",
     ...calldata,
   );
+  transactions.push({ hash: r.transaction_hash, what: label });
   say(`  ${label} → ${r.transaction_hash}`);
   return r.transaction_hash;
 }
@@ -302,6 +313,9 @@ const out = {
   owner,
   bankrollPerMarket: bankroll.toString(),
   markets: listed,
+  /** Every transaction, so the submission is filled from what happened rather than by hand. */
+  transactions: transactions.map((t) => t.hash),
+  transactionLog: transactions,
 };
 writeFileSync(`deployments/${network}.json`, JSON.stringify(out, null, 2) + "\n");
 say(`\nwrote deployments/${network}.json`);
