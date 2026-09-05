@@ -175,14 +175,14 @@ Both are now stored.
 | 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
 | 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | **DONE ON SEPOLIA**, blocked on mainnet. `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953` — nine markets listed and funded with 1 STRK each, on a real public chain, through the same script mainnet would use. Mainnet needs a funded account; both configured accounts hold 0 there. |
 | 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | **PARTIAL.** Seven verified Sepolia transactions are in `strk20.json`, which carries a `network` field so they cannot be mistaken for mainnet. They are direct calls to molfi's contract, not calls *through* the pool — driving the pool needs a registered account holding a note, which needs a real deposit. `pnpm pool:probe` confirms the transaction shape is accepted by the deployed pool on both networks. |
-| 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi-production.up.railway.app, verified with `pnpm api:check` against the live URL. Repo Website field set. |
+| 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi.fun on Vercel, verified with `pnpm api:check` against the live domain. Repo Website field set. |
 | 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, and fillable from Sepolia today** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
 | 6.6 | Record the 3-minute demo. | BLOCKED — a person has to narrate it. There is something to record: the console is live on a real public-chain deployment, and `/m/1` recomputes a real market from the chain. |
 | 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` green against the live public site backed by the real Sepolia contract, `pnpm e2e:devnet` green for the full open/settle/claim cycle. The UI is being rebuilt separately. |
 
 **Deployed on Sepolia:** `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953`, nine
 markets funded with 1 STRK each, contract ledger and token balance agreeing exactly. The
-console at https://molfi-production.up.railway.app serves it, and `/api/audit/1` recomputes it.
+console at https://molfi.fun serves it, and `/api/audit/1` recomputes it.
 Those markets can never settle — Pragma Sepolia stopped publishing months ago — so the
 deployment proves the deploy path and the contract, not trading.
 
@@ -290,7 +290,7 @@ Phases 1 through 5 are done. What is left is one decision and the work that foll
    a reverted transaction still has a hash, so listing them unchecked would let a failed run
    look like a successful one.
 5. **Record the demo.** The console is already deployed at
-   https://molfi-production.up.railway.app and `strk20.json` carries it as `demo_url`.
+   https://molfi.fun and `strk20.json` carries it as `demo_url`.
 
 The risk worth naming, now that the code is done: **the parameter *order* inside the invoke
 calldata is still inferred from one documented example.** The transaction shape around it is
