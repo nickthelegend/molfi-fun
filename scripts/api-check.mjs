@@ -85,7 +85,27 @@ if (markets?.deployed && markets.markets.length > 0) {
 
   console.log("\naudit");
   const audit = await get(`/api/audit/${m.id}`);
-  check(Array.isArray(audit?.checks) && audit.checks.length >= 8, "runs the full check list", `${audit?.checks?.length} checks`);
+  // An open market has fewer checks than a settled one, and that is correct rather than a
+  // shortfall — the price checks have no price to run against yet. Asserting a fixed count
+  // made a correct audit of an open market look like a broken one.
+  const settled = m.isSettled;
+  check(
+    Array.isArray(audit?.checks) && audit.checks.length >= (settled ? 10 : 7),
+    `runs the checks a ${settled ? "settled" : "open"} market supports`,
+    `${audit?.checks?.length} checks`,
+  );
+  check(
+    settled
+      ? audit.checks.some((c) => c.key === "price-was-fresh")
+      : audit.checks.find((c) => c.key === "settled")?.verdict === "unchecked",
+    settled
+      ? "including the settlement price checks"
+      : "and reports the unsettled market as unchecked rather than passed",
+  );
+  check(
+    audit.checks.some((c) => c.key === "quote-is-reproducible"),
+    "and reproduces the quote whether or not the market has settled",
+  );
   check(
     audit?.checks?.every((c) => c.claim && c.matters && c.onChain && c.recomputed),
     "every check states what it compared and why it matters",

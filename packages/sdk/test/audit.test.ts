@@ -178,3 +178,27 @@ test("the fingerprint changes when any knot changes", () => {
   table[11] = table[11] + 1n;
   assert.notEqual(fingerprint(table), before);
 });
+
+test("the quote check runs on an open market too", () => {
+  // It used to require a settled price, so it never ran on an open market — which is
+  // precisely when a trader would want to know the odds they are being offered can be
+  // reproduced from what the contract stores. The check is about the table and sigma, not
+  // about the price.
+  const open = honest();
+  open.isSettled = false;
+  open.settledPrice = 0n;
+  const a = auditMarket(open);
+  const q = a.checks.find((c) => c.key === "quote-is-reproducible");
+  assert.ok(q, "the quote check is absent on an open market");
+  assert.equal(q.verdict, "ok");
+  assert.match(q.onChain, /nominal spot/);
+});
+
+test("a market with nonsense sigma cannot reproduce a sellable quote", () => {
+  const broken = honest();
+  broken.sigma1e4 = 1n; // a hundred-millionth of a percent: every band is certain
+  assert.equal(
+    auditMarket(broken).checks.find((c) => c.key === "quote-is-reproducible")?.verdict,
+    "failed",
+  );
+});

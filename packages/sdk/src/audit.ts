@@ -257,26 +257,23 @@ export function auditMarket(m: OnChainMarket): Audit {
   });
 
   // ---- the quote the contract would give -------------------------------------------------
-  if (m.settledPrice > 0n && m.sigma1e4 > 0n) {
-    // A one-sigma band around the settled price, recomputed from the stored table. Not a
-    // claim about any real position — nobody can see those — but a check that the pricing
-    // the contract carries produces the number this library produces from the same inputs.
-    const half = (m.settledPrice * m.sigma1e4) / 100_000_000n;
-    if (half > 0n && half < m.settledPrice) {
-      const q = quote(
-        m.table,
-        m.settledPrice,
-        m.settledPrice - half,
-        m.settledPrice + half,
-        m.sigma1e4,
-        m.houseEdgeBps,
-      );
+  //
+  // Priced at the settled price where there is one, and at a nominal spot where there is
+  // not. The check is about the stored table and sigma, not about the price — tying it to a
+  // settled price meant it never ran on an open market, which is exactly when a trader would
+  // want to know the odds they are being offered can be reproduced.
+  const NOMINAL_SPOT = 100_000_000_000n;
+  const spot = m.settledPrice > 0n ? m.settledPrice : NOMINAL_SPOT;
+  if (m.sigma1e4 > 0n) {
+    const half = (spot * m.sigma1e4) / 100_000_000n;
+    if (half > 0n && half < spot) {
+      const q = quote(m.table, spot, spot - half, spot + half, m.sigma1e4, m.houseEdgeBps);
       const inRange = q.multiplierBps >= MIN_MULTIPLIER_BPS && q.multiplierBps <= MAX_MULTIPLIER_BPS;
       add({
         key: "quote-is-reproducible",
         claim: "A one-sigma band prices to a sellable multiplier under the stored table",
         verdict: inRange ? "ok" : "failed",
-        onChain: `sigma ${m.sigma1e4}, edge ${m.houseEdgeBps} bps`,
+        onChain: `sigma ${m.sigma1e4}, edge ${m.houseEdgeBps} bps${m.settledPrice > 0n ? "" : ", priced at a nominal spot"}`,
         recomputed: `${(Number(q.multiplierBps) / 10_000).toFixed(4)}x at ${(Number(q.prob1e6) / 10_000).toFixed(1)}%`,
         matters:
           "The desk and the contract run mirrored copies of the same integer kernel. This runs the kernel over what the contract stored, so a table and sigma that could only produce nonsense are caught here.",
