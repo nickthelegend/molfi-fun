@@ -65,9 +65,24 @@ export function toLabel(felt: string): string {
  */
 export function reason(e: unknown): string {
   const text = String((e as Error)?.message ?? e);
+
+  // A Cairo revert names itself in a quoted felt. That is the whole answer.
   const named = text.match(/\('([A-Z0-9_]+)'\)/);
   if (named) return named[1];
-  return text.split("\n")[0].slice(0, 200);
+
+  // An RPC rejection does not. starknet.js formats it across several lines with the request
+  // params first, so the first line is `RPC: starknet_addInvokeTransaction with params {` —
+  // which identifies the *method* and says nothing about the failure. Taking it as the
+  // reason made six different problems look like one, and cost a round trip to notice.
+  const rpc = text.match(/"message"\s*:\s*"([^"]+)"/);
+  if (rpc) return rpc[1].slice(0, 160);
+  const bare = text.match(/(Invalid transaction nonce|Account validation failed|insufficient|exceed balance)[^\n"]*/i);
+  if (bare) return bare[0].slice(0, 160);
+
+  // Last resort: the longest line that is not the params echo.
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const useful = lines.find((l) => !/^RPC:/.test(l) && !/^[{}\[\],]/.test(l) && l.length > 12);
+  return (useful ?? lines[0] ?? "unknown").slice(0, 200);
 }
 
 export interface MarketState {
@@ -165,12 +180,45 @@ export async function readRelayed(pair: string) {
  * Waiting matters: the keeper decides what to do next from chain state, and acting on state
  * that predates its own last transaction is how it settles the same market twice or lists a
  * duplicate round.
+ *
+ * The nonce is tracked locally rather than asked for every time. A public RPC's nonce view
+ * lags its own accepted transactions by a moment, so back-to-back sends — which is exactly
+ * what a keeper does — get handed the same nonce and the second is rejected. Locally it is
+ * simply the last one plus one, and any nonce complaint resyncs from the chain and retries.
  */
-export async function send(call: Call, label: string): Promise<string> {
-  const { transaction_hash } = await account.execute(call);
-  await provider.waitForTransaction(transaction_hash, { retryInterval: 2_000 });
-  console.log(`  ${label} → ${transaction_hash}`);
-  return transaction_hash;
+let nextNonce: bigint | null = null;
+
+async function syncNonce(): Promise<bigint> {
+  const n = await account.getNonce();
+  nextNonce = BigInt(n);
+  return nextNonce;
+}
+
+/** Errors worth trying again. A contract refusal is an answer; a dropped socket is not. */
+function transient(why: string): boolean {
+  return /nonce|rate|timeout|fetch failed|ECONN|502|503|504|Gateway|temporarily/i.test(why);
+}
+
+export async function send(call: Call, label: string, attempts = 3): Promise<string> {
+  let last = "";
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      if (nextNonce === null) await syncNonce();
+      const { transaction_hash } = await account.execute(call, { nonce: nextNonce! });
+      nextNonce! += 1n;
+      await provider.waitForTransaction(transaction_hash, { retryInterval: 2_000 });
+      console.log(`  ${label} → ${transaction_hash}`);
+      return transaction_hash;
+    } catch (e) {
+      last = reason(e);
+      if (!transient(last) || i === attempts - 1) throw new Error(last);
+      // Whatever went wrong, the local nonce is now suspect. Ask the chain again.
+      nextNonce = null;
+      console.log(`    ${label}: ${last} — retrying`);
+      await new Promise((r) => setTimeout(r, 1_500 * (i + 1)));
+    }
+  }
+  throw new Error(last);
 }
 
 export const relayCall = (
