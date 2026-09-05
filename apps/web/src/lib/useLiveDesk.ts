@@ -141,7 +141,6 @@ function queued<T>(job: () => Promise<T>): Promise<T> {
   return run;
 }
 
-const u256 = (lo: string, hi: string) => (BigInt(hi) << 128n) | BigInt(lo);
 
 /** felt → the short string it encodes, e.g. 'BTC/USD'. */
 function toLabel(felt: string): string {
@@ -209,42 +208,47 @@ export function useLiveDesk(market: MarketDef, tier: number) {
   const refresh = useCallback(async () => {
     if (!addresses) return;
     try {
-      const [countFelt] = await provider.callContract({
-        contractAddress: addresses.market,
-        entrypoint: "market_count",
-        calldata: [],
-      });
-      const count = Number(BigInt(countFelt));
+      /**
+       * One request for the whole market list, not one per market.
+       *
+       * This used to walk `market_count` and then call `get_market` for every id from the
+       * browser. That is N+1 RPC calls every eight seconds, and N grows forever — the keeper
+       * lists three more markets every quarter of an hour. Measured on the live site it was
+       * ninety calls in eighty seconds and climbing, all of them against a public endpoint
+       * that rate limits.
+       *
+       * `/api/markets` already does exactly this read server-side, from one origin, on the
+       * keyed endpoint, with the decoding in one place. Asking it once is strictly better in
+       * every direction: fewer requests, cached, and no second copy of the struct offsets to
+       * drift out of step.
+       */
+      const res = await fetch("/api/markets", { cache: "no-store" });
+      if (!res.ok) throw new Error(`market list unavailable (${res.status})`);
+      const body = (await res.json()) as {
+        deployed?: boolean;
+        reason?: string;
+        error?: string;
+        markets?: Array<Record<string, string | number | boolean>>;
+      };
+      if (body.error) throw new Error(body.error);
 
-      const markets: LiveMarket[] = await Promise.all(
-        Array.from({ length: count }, (_, i) => i + 1).map(async (id) => {
-          const r = await provider.callContract({
-            contractAddress: addresses.market,
-            entrypoint: "get_market",
-            calldata: CallData.compile([id]),
-          });
-          // Market, in declaration order: pair, cutoff_at, round_seconds, token,
-          // sigma_1e4, house_edge_bps, settled_price, settled_at, settled_block_at,
-          // settled_sources, is_settled, staked, paid. Every u256 is two felts, low first.
-          return {
-            id,
-            pair: toLabel(r[0]),
-            cutoffAt: Number(BigInt(r[1])),
-            roundSeconds: Number(BigInt(r[2])),
-            sigma1e4: u256(r[4], r[5]),
-            houseEdgeBps: Number(u256(r[6], r[7])),
-            settledPrice: u256(r[8], r[9]),
-            settledAt: Number(BigInt(r[10])),
-            settledBlockAt: Number(BigInt(r[11])),
-            settledSources: Number(BigInt(r[12])),
-            isSettled: BigInt(r[13]) === 1n,
-            staked: u256(r[14], r[15]),
-            paid: u256(r[16], r[17]),
-            bankroll: u256(r[18], r[19]),
-            reserved: u256(r[20], r[21]),
-          };
-        }),
-      );
+      const markets: LiveMarket[] = (body.markets ?? []).map((m) => ({
+        id: Number(m.id),
+        pair: String(m.pair),
+        cutoffAt: Number(m.cutoffAt),
+        roundSeconds: Number(m.roundSeconds),
+        sigma1e4: BigInt(String(m.sigma1e4)),
+        houseEdgeBps: Number(m.houseEdgeBps),
+        settledPrice: BigInt(String(m.settledPrice)),
+        settledAt: Number(m.settledAt),
+        settledBlockAt: Number(m.settledBlockAt),
+        settledSources: Number(m.settledSources),
+        isSettled: Boolean(m.isSettled),
+        staked: BigInt(String(m.staked)),
+        paid: BigInt(String(m.paid)),
+        bankroll: BigInt(String(m.bankroll)),
+        reserved: BigInt(String(m.reserved)),
+      }));
 
       const now = Math.floor(Date.now() / 1000);
       const dueMarkets = markets.filter((m) => !m.isSettled && m.cutoffAt <= now);
@@ -257,25 +261,32 @@ export function useLiveDesk(market: MarketDef, tier: number) {
           const m = markets.find((x) => x.id === p.marketId) ?? null;
           let onChain: LivePosition["onChain"] = null;
           try {
-            const r = await provider.callContract({
-              contractAddress: addresses.market,
-              entrypoint: "get_position",
-              calldata: CallData.compile([p.commitment]),
-            });
-            // Position, in declaration order: market_id (u64), band_low (u256),
-            // band_high (u256), stake (u128), multiplier_bps (u256), claimed, exists.
-            // A u256 is two felts and a u128 is one, so the offsets are 0, 1-2, 3-4, 5,
-            // 6-7, 8, 9 — reading them as if every field were one felt made the app report
-            // a stake of 0x742d5b7eda4 and a multiplier of 3.4e43x for a position that had
-            // opened correctly.
-            onChain = {
-              stake: BigInt(r[5]),
-              multiplierBps: u256(r[6], r[7]),
-              claimed: BigInt(r[8]) === 1n,
-              exists: BigInt(r[9]) === 1n,
+            // Through the app's own route, like the market list. It decodes the struct in
+            // one place — a u256 is two felts and a u128 is one, and a second copy of those
+            // offsets is a second thing to get wrong.
+            const r = await fetch(`/api/position/${p.commitment}`, { cache: "no-store" });
+            const body = (await r.json()) as {
+              exists?: boolean;
+              position?: {
+                stake: string;
+                multiplierBps: string;
+                claimed: boolean;
+                exists: boolean;
+              };
             };
+            if (body.exists && body.position) {
+              onChain = {
+                stake: BigInt(body.position.stake),
+                multiplierBps: BigInt(body.position.multiplierBps),
+                claimed: body.position.claimed,
+                exists: body.position.exists,
+              };
+            } else if (body.exists === false) {
+              onChain = { stake: 0n, multiplierBps: 0n, claimed: false, exists: false };
+            }
           } catch {
-            // A position the node cannot answer for is shown as unknown, not as absent.
+            // A position that could not be read is shown as unknown, not as absent. Those
+            // are different facts and only one of them means "this does not exist".
           }
           const won =
             m?.isSettled && m.settledPrice > 0n
@@ -580,7 +591,8 @@ export function useLiveDesk(market: MarketDef, tier: number) {
             high: { low: high & ((1n << 128n) - 1n), high: high >> 128n },
           }),
         });
-        return u256(r[0], r[1]);
+        // The multiplier is a u256: two felts, low limb first.
+        return (BigInt(r[1]) << 128n) | BigInt(r[0]);
       } catch {
         return null;
       }

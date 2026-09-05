@@ -14,6 +14,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { commitmentOf, u256Parts } from "../packages/sdk/src/positions.ts";
+import { CALIBRATED_MARKETS } from "../packages/sdk/src/generated/markets.ts";
 
 const RPC = process.env.RPC ?? "http://127.0.0.1:5050";
 const account = process.env.ACCOUNT ?? "devnet0";
@@ -98,17 +99,64 @@ let OPEN_MARKET = 0;
   const open = [];
   for (let id = 1; id <= MARKET_COUNT; id += 1) {
     const m = await call(d.market, sel("get_market"), [hex(id)]);
-    if (BigInt(m[13]) === 0n && Number(BigInt(m[1])) > now) open.push(id);
+    if (BigInt(m[13]) === 0n && Number(BigInt(m[1])) > now) {
+      open.push({ id, cutoff: Number(BigInt(m[1])) });
+    }
   }
-  if (open.length < 2) {
+  if (open.length === 0) {
     console.error(
-      `\nOnly ${open.length} market(s) are still open on ${d.market}.\n` +
-        "This script settles one and needs a second to test refusals against.\n" +
-        "Redeploy first: pnpm deploy:devnet\n",
+      `\nNo market on ${d.market} is still open. Redeploy first: pnpm deploy:devnet\n`,
     );
     process.exit(1);
   }
-  [MARKET_ID, OPEN_MARKET] = open;
+
+  // Settle the earliest, and test refusals against one that outlives it.
+  open.sort((a, b) => a.cutoff - b.cutoff);
+  MARKET_ID = open[0].id;
+
+  /**
+   * The refusal tests need a market that is still open *after* the settlement.
+   *
+   * Settling advances the devnet clock past a cutoff, and a deployment lists every pair with
+   * the same cutoff — so the obvious choice, "any other open market", is closed by the time
+   * the refusals run and every one of them fails with MARKET_CLOSED instead of the rule
+   * under test. The tests looked like contract failures and were a clock problem.
+   *
+   * So: prefer an existing market with a strictly later cutoff, and list one when there
+   * isn't. Listing is owner-only and this script runs as the owner on devnet.
+   */
+  const later = open.find((m) => m.cutoff > open[0].cutoff);
+  if (later) {
+    OPEN_MARKET = later.id;
+  } else {
+    const round = CALIBRATED_MARKETS[0].rounds[0];
+    const parts = (v) => u256Parts(BigInt(v));
+    const short = (t) => {
+      let o = 0n;
+      for (const c of t) o = (o << 8n) | BigInt(c.charCodeAt(0));
+      return "0x" + o.toString(16);
+    };
+    // Far enough out that settling the first market cannot close it.
+    const cutoffAt = open[0].cutoff + round.seconds * 4;
+    invoke(d.market, "create_market", [
+      short(CALIBRATED_MARKETS[0].label),
+      hex(cutoffAt),
+      hex(round.seconds),
+      d.token,
+      ...parts(round.sigma1e4),
+      ...parts(400n),
+      hex(round.probTable.length),
+      ...round.probTable.flatMap((k) => parts(k)),
+    ]);
+    OPEN_MARKET = Number(BigInt(await call(d.market, sel("market_count")).then((r) => r[0])));
+
+    // It has to be able to cover what it sells, or the open below is refused for the wrong
+    // reason — which is the same class of mistake this whole block exists to remove.
+    const bankroll = 1_000_000_000_000n;
+    invoke(d.token, "mint", [d.market, ...parts(bankroll)]);
+    invoke(d.market, "fund_market", [hex(OPEN_MARKET), ...parts(bankroll)]);
+    say(`  listed #${OPEN_MARKET} to test refusals against, cutoff ${cutoffAt}`);
+  }
 }
 const spot = 7_970_000_000_000n; // matches what the stub oracle will print
 const half = (spot * 171_077n) / 100_000_000n; // one sigma
