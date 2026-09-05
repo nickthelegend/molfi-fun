@@ -53,11 +53,21 @@ export function unshieldActions(
 }
 
 /**
- * Open a position: one invoke, atomic.
+ * Open a position: two actions, one atomic transaction.
  *
- * No open note is created. The helper returns an empty span because the stake stays parked
- * in the contract until the market settles, and asking the pool to open a note for a credit
- * that never arrives would leave the transaction's balance invariant unsatisfiable.
+ * The withdraw leg is not optional and its absence was a real bug. The pool's
+ * `InvokeExternalInput` is `{ contract_address, calldata }` and nothing else — no token, no
+ * amount — so an invoke on its own moves no money at all. The documented swap example omits
+ * the leg because the wallet's own SDK adds it there; reading the pool's ABI is what settles
+ * it, and the ABI says the invoke cannot carry a transfer.
+ *
+ * Phase order makes this legal in one transaction: `Withdraw` is phase 6 and
+ * `InvokeExternal` is phase 7, so the tokens land at the helper before it is called. The
+ * pool's balance invariant closes because the note being spent covers the withdrawal.
+ *
+ * No open note is created. The helper returns an empty span, because the stake parks in the
+ * contract until the market settles — asking the pool to open a note for a credit that never
+ * arrives would leave the invariant unsatisfiable.
  *
  * Calldata order is the contract's `privacy_invoke` signature, in order. The pool
  * deserializes straight into those parameters, so this array *is* the interface — get the
@@ -71,6 +81,14 @@ export function openActions(
   const [lowLo, lowHi] = u256(s.bandLow);
   const [highLo, highHi] = u256(s.bandHigh);
   return [
+    // The stake, out of the pool and into the market contract. A public transfer: observers
+    // see the pool pay the helper, not who asked it to.
+    {
+      type: "withdraw",
+      token: a.token as `0x${string}`,
+      amount: num.toHex(stake),
+      recipient: a.market as `0x${string}`,
+    },
     {
       type: "invoke",
       contract: a.market as `0x${string}`,

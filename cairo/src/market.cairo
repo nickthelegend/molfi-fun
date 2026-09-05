@@ -99,6 +99,7 @@ pub trait IMolfiMarket<T> {
         table: Span<u256>,
     ) -> u64;
     fn get_table(self: @T, market_id: u64) -> Span<u256>;
+    fn accounted_for(self: @T, token: ContractAddress) -> u256;
     fn fund_market(ref self: T, market_id: u64, amount: u256);
     fn settle(ref self: T, market_id: u64);
     fn get_market(self: @T, market_id: u64) -> Market;
@@ -181,6 +182,9 @@ pub mod MolfiMarket {
         pub const OVER_RESERVED: felt252 = 'MARKET_CANNOT_COVER_PAYOUT';
         pub const BAND_TOO_WIDE: felt252 = 'BAND_PAYS_LESS_THAN_STAKE';
         pub const BAND_TOO_TIGHT: felt252 = 'BAND_TOO_TIGHT_TO_PRICE';
+        pub const STAKE_NOT_RECEIVED: felt252 = 'STAKE_NOT_RECEIVED';
+        pub const WRONG_TOKEN: felt252 = 'WRONG_TOKEN_FOR_MARKET';
+        pub const ZERO_AMOUNT: felt252 = 'ZERO_AMOUNT';
     }
 
     #[storage]
@@ -191,6 +195,13 @@ pub mod MolfiMarket {
         market_count: u64,
         markets: Map<u64, Market>,
         positions: Map<felt252, Position>,
+        /// What this contract is accountable for, per token.
+        ///
+        /// Every stake taken and every bankroll funded adds to it; every payout released
+        /// subtracts. It exists so an incoming stake can be *measured* rather than believed:
+        /// the balance the token reports, less what was already accounted for, is exactly
+        /// what just arrived.
+        accounted: Map<ContractAddress, u256>,
         /// The probability table for each market, one knot per slot.
         ///
         /// Stored per market rather than compiled in, because the shape of a fifteen minute
@@ -297,6 +308,25 @@ pub mod MolfiMarket {
             )
         }
 
+        /// Book tokens that have arrived, and refuse if they have not.
+        ///
+        /// `balance_of` less what was already accounted for is exactly what is new. Nothing
+        /// here trusts a number that came in with the call.
+        fn take(ref self: ContractState, token: ContractAddress, amount: u256, err: felt252) {
+            assert(amount != 0, errors::ZERO_AMOUNT);
+            let erc20 = IERC20Dispatcher { contract_address: token };
+            let held = erc20.balance_of(get_contract_address());
+            let booked = self.accounted.read(token);
+            assert(held >= booked + amount, err);
+            self.accounted.write(token, booked + amount);
+        }
+
+        /// Release tokens the contract is no longer accountable for.
+        fn release(ref self: ContractState, token: ContractAddress, amount: u256) {
+            let booked = self.accounted.read(token);
+            self.accounted.write(token, if booked > amount { booked - amount } else { 0 });
+        }
+
         /// Only the pool may drive this contract. Without this anyone could open a position
         /// without paying for it, or claim one they do not hold.
         fn assert_pool(self: @ContractState) {
@@ -372,6 +402,14 @@ pub mod MolfiMarket {
             self.table_of(market_id)
         }
 
+        /// What this contract believes it is holding, per token.
+        ///
+        /// Public so anyone can compare it against the token's own `balance_of`. They should
+        /// agree; a balance below it means the contract cannot honour what it has recorded.
+        fn accounted_for(self: @ContractState, token: ContractAddress) -> u256 {
+            self.accounted.read(token)
+        }
+
         /// Put the house's money behind a market.
         ///
         /// The amount is measured as a balance delta rather than taken on trust: the funder
@@ -387,9 +425,7 @@ pub mod MolfiMarket {
             assert(!m.is_settled, errors::CLOSED);
             assert(amount != 0, errors::ZERO_FUNDING);
 
-            let erc20 = IERC20Dispatcher { contract_address: m.token };
-            let held = erc20.balance_of(get_contract_address());
-            assert(held >= m.staked + m.bankroll + amount, errors::FUNDING_NOT_RECEIVED);
+            self.take(m.token, amount, errors::FUNDING_NOT_RECEIVED);
 
             m.bankroll = m.bankroll + amount;
             self.markets.write(market_id, m);
@@ -487,7 +523,7 @@ pub mod MolfiMarket {
             self.assert_pool();
 
             if operation == OP_OPEN {
-                self.open(market_id, secret, band_low, band_high, amount)
+                self.open(market_id, secret, band_low, band_high, token, amount)
             } else if operation == OP_CLAIM {
                 self.claim(market_id, secret, band_low, band_high, note_id, token)
             } else {
@@ -506,6 +542,7 @@ pub mod MolfiMarket {
             secret: felt252,
             band_low: u256,
             band_high: u256,
+            token: ContractAddress,
             amount: u128,
         ) -> Span<OpenNoteDeposit> {
             let mut m = self.markets.read(market_id);
@@ -513,6 +550,21 @@ pub mod MolfiMarket {
             assert(!m.is_settled, errors::CLOSED);
             assert(get_block_timestamp() < m.cutoff_at, errors::CLOSED);
             assert(band_low < band_high, errors::BAD_BAND);
+            assert(token == m.token, errors::WRONG_TOKEN);
+
+            // The stake is MEASURED, never believed.
+            //
+            // The pool's `InvokeExternalInput` carries a contract address and calldata and
+            // nothing else — no token, no amount — so the tokens arrive by a separate
+            // withdraw action in the same transaction, and this contract has no way to know
+            // from the call itself that they did. Taking `amount` on trust would let anyone
+            // able to reach `privacy_invoke` record a position backed by nothing and later
+            // claim a payout funded by the bankroll and by other people's stakes.
+            //
+            // The docs state the rule plainly for the output side — "measure output by
+            // balance delta" — and it applies at least as hard to the input side, where
+            // getting it wrong is not a wrong number but a free position.
+            self.take(m.token, amount.into(), errors::STAKE_NOT_RECEIVED);
 
             let commitment = self.commitment_of(secret, market_id, band_low, band_high);
             let existing = self.positions.read(commitment);
@@ -619,6 +671,11 @@ pub mod MolfiMarket {
             self.markets.write(market_id, m);
 
             let payout_u128: u128 = payout.try_into().unwrap();
+
+            // The payout stops being ours the moment the pool is allowed to pull it, so it
+            // leaves the ledger here rather than when the transfer lands. Leaving it in
+            // would let the next open count the same tokens as a fresh stake.
+            self.release(token, payout);
 
             // Approve, do not transfer. The pool pulls the tokens itself when it applies the
             // deposit, which is what the pattern requires.

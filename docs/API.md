@@ -259,5 +259,23 @@ which holds the viewing key, discovers the notes, builds the proof, and submits.
 sees a key. Build the action list with `openActions` / `claimActions` / `shieldActions` /
 `unshieldActions` from `@molfi/sdk` and hand it to `strk20InvokeTransaction`.
 
+Opening is two actions, and both are load-bearing:
+
+```ts
+[
+  { type: "withdraw", token, amount: stake, recipient: MARKET },  // the stake, out of the pool
+  { type: "invoke", contract: MARKET, calldata: [ … ] },          // and the position recorded
+]
+```
+
+The withdraw leg is not optional. The pool's `InvokeExternalInput` is
+`{ contract_address, calldata }` and carries no token and no amount, so an invoke on its own
+moves nothing — and the contract measures what actually arrived rather than believing the
+amount in the calldata, so a position with no stake behind it is refused with
+`STAKE_NOT_RECEIVED`.
+
+Always `strk20PrepareInvoke(actions, true)` before submitting. It builds and proves the same
+transaction without sending it, and it is the cheapest way to catch a calldata-shape mistake.
+
 Settling is a plain public call — it reads an oracle and writes a price — and anyone may
 settle any expired market, not only its participants.

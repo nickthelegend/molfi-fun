@@ -42,7 +42,16 @@ function sncast(...a) {
     const named = String(failed.error).match(/\('([A-Z0-9_]+)'\)/);
     throw new Error(named ? `${named[1]} (contract refused)` : String(failed.error).slice(0, 300));
   }
-  return objects.reverse().find((o) => o.command) ?? {};
+  const result = objects.reverse().find((o) => o.command);
+  if (!result) {
+    // sncast reports some failures — a malformed felt, a bad flag — as plain text on stderr
+    // with no JSON at all. Returning an empty object there made a command that never ran
+    // look like one that succeeded, which is how a refusal test passed by not testing
+    // anything. Anything unreadable is a failure.
+    const text = (String(r.stderr ?? "") || String(r.stdout ?? "")).trim();
+    throw new Error(`sncast ${a[0]} did not run: ${text.slice(-300)}`);
+  }
+  return result;
 }
 
 const invoke = (to, fn, calldata) =>
@@ -75,8 +84,32 @@ const check = (ok, what, detail = "") => {
   if (!ok) failures += 1;
 };
 
-// ---------------------------------------------------------------- open
-const MARKET_ID = 1;
+// ---------------------------------------------------------------- pick a market
+//
+// Devnet state persists between runs and this script advances the clock to settle, so
+// market 1 is closed the second time through. Rather than requiring a fresh deploy every
+// run, take the first market that is still open — and say so plainly if none are, because
+// "everything is closed" and "the contract is broken" look identical from a stack trace.
+const MARKET_COUNT = Number(BigInt((await call(d.market, sel("market_count")))[0]));
+let MARKET_ID = 0;
+let OPEN_MARKET = 0;
+{
+  const now = await chainNow();
+  const open = [];
+  for (let id = 1; id <= MARKET_COUNT; id += 1) {
+    const m = await call(d.market, sel("get_market"), [hex(id)]);
+    if (BigInt(m[13]) === 0n && Number(BigInt(m[1])) > now) open.push(id);
+  }
+  if (open.length < 2) {
+    console.error(
+      `\nOnly ${open.length} market(s) are still open on ${d.market}.\n` +
+        "This script settles one and needs a second to test refusals against.\n" +
+        "Redeploy first: pnpm deploy:devnet\n",
+    );
+    process.exit(1);
+  }
+  [MARKET_ID, OPEN_MARKET] = open;
+}
 const spot = 7_970_000_000_000n; // matches what the stub oracle will print
 const half = (spot * 171_077n) / 100_000_000n; // one sigma
 const bandLow = spot - half;
@@ -92,12 +125,19 @@ const secret = {
 const commitment = commitmentOf(secret);
 
 say(`\nmolfi end to end · market ${d.market}`);
+say(`  settling #${MARKET_ID}, testing refusals against #${OPEN_MARKET}`);
 say(`  band ${bandLow} – ${bandHigh}, stake ${stake}`);
 say(`  commitment ${commitment}\n`);
 
 say("open");
 const [lowLo, lowHi] = u256Parts(bandLow);
 const [highLo, highHi] = u256Parts(bandHigh);
+
+// The stake arrives first, as a plain transfer — which is exactly what the pool's withdraw
+// leg does in a real transaction. The contract measures what landed rather than believing
+// the amount in the calldata, so an open with nothing behind it is refused.
+invoke(d.token, "mint", [d.market, ...u256Parts(stake)]);
+
 invoke(d.market, "privacy_invoke", [
   "0x0", // operation: open
   hex(MARKET_ID),
@@ -164,6 +204,13 @@ invoke(d.market, "privacy_invoke", [
 const claimed = await call(d.market, sel("get_position"), [commitment]);
 check(BigInt(claimed[8]) === 1n, "the position is marked claimed");
 
+// The pool pulls what the helper approved. Modelling only the approve leaves the helper
+// still holding every payout it has released, and its balance drifts above its own ledger.
+const payoutApproved = (BigInt(claimed[7]) << 128n) | BigInt(claimed[6]);
+const owed = (BigInt(claimed[5]) * payoutApproved) / 10_000n;
+invoke(d.token, "transfer_from", [d.market, d.pool, ...u256Parts(owed)]);
+check(true, "the pool pulled the approved payout", owed);
+
 market = await call(d.market, sel("get_market"), [hex(MARKET_ID)]);
 const paid = (BigInt(market[17]) << 128n) | BigInt(market[16]);
 const staked = (BigInt(market[15]) << 128n) | BigInt(market[14]);
@@ -188,6 +235,33 @@ try {
   check(false, "a second claim was refused", "it was accepted");
 } catch (e) {
   check(/ALREADY_CLAIMED/.test(e.message), "a second claim was refused", e.message);
+}
+
+// A position backed by nothing must be refused.
+//
+// Against a market that is still open, so the refusal under test is the stake check rather
+// than the closed-market check that would fire first on a settled one.
+try {
+  invoke(d.market, "privacy_invoke", [
+    "0x0", hex(OPEN_MARKET), lowLo, lowHi, highLo, highHi, d.token, hex(stake),
+    "0x00feed1", "0x0",
+  ]);
+  check(false, "a position backed by nothing is refused", "it was accepted");
+} catch (e) {
+  check(/STAKE_NOT_RECEIVED/.test(e.message), "a position backed by nothing is refused", e.message);
+}
+
+// And one that is backed does open, on the same market — so the refusal above is the stake
+// check doing its job rather than the market being unusable for some other reason.
+try {
+  invoke(d.token, "mint", [d.market, ...u256Parts(stake)]);
+  invoke(d.market, "privacy_invoke", [
+    "0x0", hex(OPEN_MARKET), lowLo, lowHi, highLo, highHi, d.token, hex(stake),
+    "0x00feed2", "0x0",
+  ]);
+  check(true, "and a position that is backed opens on the same market");
+} catch (e) {
+  check(false, "and a position that is backed opens on the same market", e.message);
 }
 
 // A wrong secret must find nothing.

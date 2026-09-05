@@ -56,6 +56,10 @@ pub trait IStubToken<T> {
     fn approve(ref self: T, spender: ContractAddress, amount: u256) -> bool;
     fn balance_of(self: @T, account: ContractAddress) -> u256;
     fn transfer(ref self: T, recipient: ContractAddress, amount: u256) -> bool;
+    /// What the pool does when it applies an `OpenNoteDeposit`: pull what was approved.
+    fn transfer_from(
+        ref self: T, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+    ) -> bool;
     /// Test-only: put tokens somewhere without a funded account behind it.
     fn mint(ref self: T, to: ContractAddress, amount: u256);
     fn last_approval(self: @T) -> (ContractAddress, u256);
@@ -100,6 +104,29 @@ pub mod StubToken {
             assert(held >= amount, 'INSUFFICIENT_BALANCE');
             self.balances.write(from, held - amount);
             self.balances.write(recipient, self.balances.read(recipient) + amount);
+            true
+        }
+
+        /// Approve, then pull — the half of the pattern a stub usually forgets.
+        ///
+        /// Without it a local run leaves the helper still physically holding every payout it
+        /// has approved, so its balance drifts above its own ledger and the next open finds
+        /// free money sitting there. That is not what a real pool does, and modelling only
+        /// the approve makes the local run quietly easier than production.
+        fn transfer_from(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256,
+        ) -> bool {
+            let allowed = self.approved_amount.read();
+            assert(self.approved_spender.read() == get_caller_address(), 'NOT_APPROVED_SPENDER');
+            assert(allowed >= amount, 'INSUFFICIENT_ALLOWANCE');
+            let held = self.balances.read(sender);
+            assert(held >= amount, 'INSUFFICIENT_BALANCE');
+            self.balances.write(sender, held - amount);
+            self.balances.write(recipient, self.balances.read(recipient) + amount);
+            self.approved_amount.write(allowed - amount);
             true
         }
 

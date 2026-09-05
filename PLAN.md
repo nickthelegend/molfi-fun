@@ -178,7 +178,7 @@ Both are now stored.
 | 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | NOT STARTED |
 | 6.5 | Fill `contracts` in `strk20.json`. | BLOCKED on 6.2 |
 | 6.6 | Record the 3-minute demo. | BLOCKED |
-| 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for the backend** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment |
+| 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment. The UI is being rebuilt separately. |
 
 **Preflight against mainnet, today:** the node is on `SN_MAIN`, the STRK20 pool is deployed at
 the address in the config, STRK is where it should be, all three Pragma pairs are settleable
@@ -200,7 +200,7 @@ the markets.
 | --- | --- | --- | --- |
 | G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | **STILL TRUE.** A Sepolia deploy would list markets that can never settle, so mainnet is the only place a real settlement happens. |
 | G11 | **`strk20.json` is empty** — no contracts, no transactions, no demo. | 6.3–6.6 | Every field is a deliverable and every one is blocked on a mainnet spend. |
-| G16 | **The pool sandwich has never run against the real pool.** | 6.3 | The contract's side is exercised end to end locally, with the deploying account standing in for the pool. What is untested is the *pool's* deserialization of our calldata. `strk20PrepareInvoke` dry-runs it for free against mainnet, but needs a funded account to connect. |
+| G16 | **The pool sandwich has never run against the real pool.** | 6.3 | Narrowed, not closed. Reading the deployed pool's own class settled the shape: `InvokeExternalInput` is `{contract_address, calldata}` and carries no token or amount, so the stake must arrive by a separate `Withdraw` action in the same transaction — which `openActions` now sends, and which its absence had silently omitted. What remains untested is whether the pool deserializes our calldata into `privacy_invoke`'s parameters in the order the escrow helper implies. `strk20PrepareInvoke` dry-runs that for free; it needs a wallet on a funded account. |
 | G17 | **No mainnet deployer.** | 6.2 | Preflight is otherwise clear. This is the money decision, and it is the user's. |
 
 ### Closed
@@ -224,7 +224,18 @@ the markets.
 ### Found by running it, not by reading it
 
 Each of these was invisible to the test suite and surfaced only by deploying the contract and
-driving it over a real RPC:
+driving it over a real RPC, or by reading the deployed pool rather than the docs about it:
+
+- **A position could be opened backed by nothing.** The contract took the stake `amount` from
+  calldata on trust. The pool's `InvokeExternalInput` carries no token and no amount, so the
+  tokens arrive by a separate action and the contract has no way to know from the call itself
+  that they did — anyone able to reach `privacy_invoke` could record a position backed by
+  nothing and later claim a payout funded by the bankroll and by other people's stakes. The
+  stake is now measured against a per-token ledger: `balance_of` less what was already
+  accounted for is exactly what arrived. Same reason `fund_market` was already written that
+  way; the input side simply had not been.
+- **The open action never moved the stake.** It sent only an invoke. The pool's ABI says an
+  invoke cannot carry a transfer, so a withdraw leg is required and was missing.
 
 - **Conservation made it impossible to pay the first winner in a market.** `paid <= staked`
   means the only money present is the winner's own stake, and any multiplier above 1.00x
@@ -260,13 +271,21 @@ Phases 1 through 5 are done. What is left is one decision and the work that foll
 1. **Fund a mainnet deployer.** Everything below is blocked on it, and it is the only step
    that costs money. `pnpm preflight` is clear otherwise.
 2. **Dry-run the pool sandwich** with `strk20PrepareInvoke` before submitting anything. It
-   costs nothing and it is the only way to settle G16 — whether the pool deserializes our
-   calldata into `privacy_invoke`'s parameters the way the escrow helper's example implies.
+   costs nothing and it is what remains of G16 — whether the pool deserializes our calldata
+   into `privacy_invoke`'s parameters the way the escrow helper's example implies. The
+   transaction shape itself is no longer a guess: it came from the deployed pool's class.
 3. **Deploy**, list and fund the markets, then open, settle and claim one real position.
 4. **Fill `strk20.json`** with the contract address and three transaction hashes.
 5. **Deploy the console** and record the demo.
 
-The risk worth naming, now that the code is done: **the pool's calldata convention is inferred
-from one documented example.** If it is wrong, the dry run says so in seconds and the fix is a
-parameter reorder in one function and one array. If it is right, nothing else stands between
-this and a working mainnet settlement.
+The risk worth naming, now that the code is done: **the parameter *order* inside the invoke
+calldata is still inferred from one documented example.** The transaction shape around it is
+not — that came from reading the pool's own deployed class. If the order is wrong the dry run
+says so in seconds, and the fix is a reorder in one Cairo signature and one array. If it is
+right, nothing else stands between this and a working mainnet settlement.
+
+**Also still true:** Pragma Sepolia is dead, re-verified this pass — BTC's last print is 329
+days old, ETH and STRK have one publisher each. So a Sepolia deploy would list markets that
+can never settle. It would still exercise the pool's *open* leg, which never touches the
+oracle, and that is the cheapest remaining way to close G16 if a funded Sepolia account
+appears before a mainnet one.
