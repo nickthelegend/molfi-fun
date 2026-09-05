@@ -23,7 +23,7 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { RpcProvider } from "starknet";
+import { RpcProvider, hash as snhash } from "starknet";
 import { NETWORKS, STRK_TOKEN } from "../packages/sdk/src/networks.ts";
 
 const args = Object.fromEntries(
@@ -61,6 +61,28 @@ function accountAddress() {
   return m[1];
 }
 
+/**
+ * Is the class already on chain?
+ *
+ * The 60 STRK is the *declare*, and a class is a chain-wide fact: anyone may declare it, and
+ * once anyone has, deploying an instance costs about a tenth of a STRK. So the affordability
+ * gate below only applies while the class is missing. Checking costs one call and turns a
+ * 60 STRK requirement into a 1 STRK one the moment the class exists, whoever put it there.
+ */
+async function declaredClassHash() {
+  for (const dir of ["cairo/target/release", "cairo/target/dev"]) {
+    try {
+      const sierra = JSON.parse(readFileSync(`${dir}/molfi_MolfiMarket.contract_class.json`, "utf8"));
+      const h = snhash.computeContractClassHash(sierra);
+      const onChain = await provider.getClassByHash(h).then(() => true).catch(() => false);
+      return { classHash: h, declared: onChain, from: dir };
+    } catch {
+      /* not built in this profile */
+    }
+  }
+  return { classHash: null, declared: false, from: null };
+}
+
 const address = accountAddress();
 const balance = await provider
   .callContract({ contractAddress: STRK_TOKEN, entrypoint: "balance_of", calldata: [address] })
@@ -70,8 +92,17 @@ say(`\nmolfi go-live · ${network} · ${account}`);
 say(`  ${address}`);
 say(`  balance ${strk(balance)}, declare needs about ${DECLARE_STRK} STRK\n`);
 
-if (balance < NEEDED) {
-  const short = NEEDED - balance;
+const cls = await declaredClassHash();
+if (cls.classHash) {
+  say(`  class ${cls.classHash}`);
+  say(`  ${cls.declared ? "already declared — the declare is not needed" : "not declared yet"} (${cls.from})\n`);
+}
+
+/** Deploying an already-declared class is cheap; declaring it is not. */
+const required = cls.declared ? 3n * 10n ** 18n : NEEDED;
+
+if (balance < required) {
+  const short = required - balance;
   say(`  Short by ${strk(short)}.`);
   say(`\n  Declaring a class is priced on its bytecode, and molfi's is 9,752 Sierra felts —`);
   say(`  about 2.03e9 L2 gas, which at the current 29.8 Gfri is roughly ${DECLARE_STRK} STRK. That is not`);
@@ -79,19 +110,25 @@ if (balance < NEEDED) {
   say(`  bytecode. Shrinking cannot close it — the release profile saves 14%, dropping unused`);
   say(`  derives saves nothing because Sierra already strips them, and avoiding inlining is`);
   say(`  11% worse.`);
+  say(`\n  Or have anyone at all declare the class — it is a chain-wide fact, and once it`);
+  say(`  exists this needs about 3 STRK rather than ${DECLARE_STRK}:`);
+  say(`    cd cairo && sncast --account <funded> declare --contract-name MolfiMarket \\`);
+  say(`      --url ${RPC}`);
   say(`\n  To fund it:`);
   say(`    node --experimental-strip-types scripts/faucet.mjs ${address}`);
   say(`      5 STRK, no sign-in, one per address per 24h.`);
   say(`    https://faucet.starknet.io`);
-  say(`      100 STRK from the form, 3,000 with a GitHub sign-in. Same 24h cooldown.`);
+  say(`      100 STRK from the form — gated by a Cloudflare Turnstile CAPTCHA.`);
+  say(`      3,000 STRK with a GitHub sign-in. Both share the same 24h cooldown.`);
   say(`\n  Then run this again.\n`);
   process.exit(2);
 }
 
-run("Declare, deploy, list and fund", "node", [
+run(cls.declared ? "Deploy the declared class, list and fund" : "Declare, deploy, list and fund", "node", [
   "--experimental-strip-types", "scripts/deploy.mjs",
   "--network", network, "--account", account,
   "--oracle", JSON.parse(readFileSync(`deployments/${network}.json`, "utf8")).oracle,
+  ...(cls.declared ? ["--class-hash", cls.classHash] : []),
 ]);
 
 run("Open a real position, through the console's own calls", "node", [

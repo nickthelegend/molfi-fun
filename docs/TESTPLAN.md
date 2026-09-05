@@ -239,11 +239,21 @@ challenge, find a nonce whose SHA-256 has the required leading zero *bits* — b
 whole hex digits — submit, poll. It worked, and put 5 STRK on the deployer
 ([tx](https://sepolia.voyager.online/tx/0x3786f917ca4fc947fc8c6a4bef5b6c014a27d0ac3e7a1523bc1928b07807c77)).
 
-Five is what the unauthenticated tier drips. The same faucet's web form gives **100 STRK**
-with no sign-in at all, and **3,000 with a GitHub sign-in** — but every tier shares one
-cooldown of 24 hours per address, and the deployer is now inside it. Farming fresh addresses
-would get around that and would be abuse of a shared testnet resource, so `faucet.mjs` asks
-once for the address it is given and reports the remaining cooldown instead of retrying.
+Five is what the unauthenticated tier drips, and it is the only tier a script can reach.
+The same faucet's web form offers **100 STRK** and its bundle calls `window.turnstile.reset()`
+— the button stays disabled until a **Cloudflare Turnstile CAPTCHA** is solved. **3,000 STRK**
+needs a GitHub sign-in. Both are things only the account holder can do.
+
+Every tier also shares one cooldown of 24 hours per address, and the deployer is inside it.
+Farming fresh addresses would get around that and would be abuse of a shared testnet
+resource, so `faucet.mjs` asks once for the address it is given and reports the remaining
+cooldown instead of retrying.
+
+There is one more way through that needs no faucet at all: **a class is a chain-wide fact**.
+The 60 STRK buys the *declare*, and once any account anywhere has declared this class,
+deploying an instance of it costs about a tenth of a STRK. `golive.mjs` computes the class
+hash from the local artifact, checks whether it is already on chain, and drops its own
+requirement from 62 STRK to 3 when it is.
 
 So the gap is 56 STRK and one sign-in nobody but the account holder can perform. That makes
 D11 and D12 a funding dependency rather than a defect — they are recorded as FAIL rather than
