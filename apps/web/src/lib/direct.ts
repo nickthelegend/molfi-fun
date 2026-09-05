@@ -1,9 +1,7 @@
 "use client";
 
-import { CallData, type Call } from "starknet";
-import { commitmentOf, offsetsOf, u256Parts, type PositionSecret } from "@molfi/sdk";
+import type { Call } from "starknet";
 import { errorText } from "./pool";
-import type { PoolAddresses } from "./pool";
 import type { Connection } from "./wallet";
 
 /**
@@ -15,75 +13,28 @@ import type { Connection } from "./wallet";
  * is a market nobody trades, and molfi spent seventeen settled rounds proving exactly that —
  * every one of them with a stake of zero.
  *
- * So this route exists, and the interesting part is that it still hides the band.
- *
- * The price of a position depends only on how far its band reaches from its own midpoint —
- * a pair of ratios, with the absolute price cancelling out — so the chain can charge for a
- * position correctly while being told nothing about what it predicts. What lands in a public
- * block is a commitment, two widths and a stake. The band is revealed to `claim_position`
- * after the market has settled, against the commitment that has bound it since the open.
+ * So this route exists, and the interesting part is that it still hides the band. The price
+ * of a position depends only on how far its band reaches from its own midpoint — a pair of
+ * ratios, with the absolute price cancelling out — so the chain can charge for a position
+ * correctly while being told nothing about what it predicts. What lands in a public block is
+ * a commitment, two widths and a stake.
  *
  * "Your position stays sealed until settlement" is therefore true on this route too. What it
  * does not hide, and the UI says so plainly, is that *you* opened *a* position for *this
  * much*. That is the part the pool is for.
  */
 
-/** The band's reach, exactly as `open_position` will recompute it at claim time. */
-export function reachOf(s: PositionSecret): [bigint, bigint] {
-  return offsetsOf((s.bandLow + s.bandHigh) / 2n, s.bandLow, s.bandHigh);
-}
-
 /**
- * Approve, then open. Two calls, one transaction.
+ * The calls themselves live in the SDK.
  *
- * The approve is exact rather than unlimited. An unlimited allowance to a market contract is
- * a standing invitation, and there is no reason to leave one behind for a position that is
- * opened once.
+ * Re-exported here so the console's imports read the way they always have, but defined
+ * beside `commitmentOf` — the other place the browser and the chain must agree byte for
+ * byte. `scripts/integration.mjs` imports the same functions and runs them against a real
+ * chain, so what that test proves is that *these* calls are accepted, not that a
+ * reimplementation of them is.
  */
-export function openCalls(a: PoolAddresses, s: PositionSecret, stake: bigint): Call[] {
-  const [lowOff, highOff] = reachOf(s);
-  return [
-    {
-      contractAddress: a.token,
-      entrypoint: "approve",
-      calldata: CallData.compile([a.market, ...u256Parts(stake)]),
-    },
-    {
-      contractAddress: a.market,
-      entrypoint: "open_position",
-      calldata: CallData.compile([
-        s.marketId,
-        commitmentOf(s),
-        ...u256Parts(lowOff),
-        ...u256Parts(highOff),
-        ...u256Parts(stake),
-      ]),
-    },
-  ];
-}
-
-/**
- * Claim a settled winning position back to the address that opened it.
- *
- * This is the transaction where the band becomes public, and it is the only one. The
- * contract recomputes the commitment from the preimage, recomputes the reach from the band,
- * and checks both — so a trader can neither claim a band they did not buy nor a width they
- * did not pay for.
- */
-export function claimCalls(a: PoolAddresses, s: PositionSecret): Call[] {
-  return [
-    {
-      contractAddress: a.market,
-      entrypoint: "claim_position",
-      calldata: CallData.compile([
-        s.marketId,
-        s.secret,
-        ...u256Parts(s.bandLow),
-        ...u256Parts(s.bandHigh),
-      ]),
-    },
-  ];
-}
+export { claimCalls, openCalls, reachOf } from "@molfi/sdk";
+export type { TradeAddresses } from "@molfi/sdk";
 
 export interface SubmitResult {
   ok: boolean;

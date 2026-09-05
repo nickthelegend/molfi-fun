@@ -1,10 +1,10 @@
 {
   "network": "devnet",
-  "deployedAt": "2026-09-05T22:04:54.050Z",
+  "deployedAt": "2026-09-05T22:28:54.133Z",
   "classHash": "0x03a954d5957ec4f692f1a465e5e6854398b33dfe5ebf5e6253ca8ec44260fbeb",
-  "market": "0x033c9007088977adf86b3e841ee93a065ce7275a4d71f436d2ee07c43436171a",
-  "oracle": "0x022078cbf8b58f4300b4394ed9803781e9752acae50fba28d9dd0c0e22a04e91",
-  "token": "0x0748eafdaf24d7ad392ff70b0be8ceeda5cfcf496855e3dbc1db2936bdcd39ea",
+  "market": "0x01c36e2a14fea863ba1fbbd3ba05b0c114178a2450da7e71eaab46429b59c443",
+  "oracle": "0x00b3d6f9787aa1a822fdda01842c5fc52ded32eca877abb27e7e3d57765decc9",
+  "token": "0x06e320e282cde8c9f214476bd77572de93e7dbbd8ee8abeee9e3ac7b6a227896",
   "pool": "0x034ba56f92265f0868c57d3fe72ecab144fc96f97954bbbc4252cef8e8a979ba",
   "owner": "0x034ba56f92265f0868c57d3fe72ecab144fc96f97954bbbc4252cef8e8a979ba",
   "bankrollPerMarket": "1000000000000",
@@ -14,205 +14,205 @@
     {
       "pair": "BTC/USD",
       "seconds": 900,
-      "cutoffAt": 1788646792
+      "cutoffAt": 1788648232
     },
     {
       "pair": "BTC/USD",
       "seconds": 3600,
-      "cutoffAt": 1788649492
+      "cutoffAt": 1788650932
     },
     {
       "pair": "BTC/USD",
       "seconds": 14400,
-      "cutoffAt": 1788660292
+      "cutoffAt": 1788661732
     },
     {
       "pair": "ETH/USD",
       "seconds": 900,
-      "cutoffAt": 1788646792
+      "cutoffAt": 1788648232
     },
     {
       "pair": "ETH/USD",
       "seconds": 3600,
-      "cutoffAt": 1788649492
+      "cutoffAt": 1788650932
     },
     {
       "pair": "ETH/USD",
       "seconds": 14400,
-      "cutoffAt": 1788660292
+      "cutoffAt": 1788661732
     },
     {
       "pair": "STRK/USD",
       "seconds": 900,
-      "cutoffAt": 1788646792
+      "cutoffAt": 1788648232
     },
     {
       "pair": "STRK/USD",
       "seconds": 3600,
-      "cutoffAt": 1788649492
+      "cutoffAt": 1788650932
     },
     {
       "pair": "STRK/USD",
       "seconds": 14400,
-      "cutoffAt": 1788660292
+      "cutoffAt": 1788661732
     }
   ],
   "transactions": [
-    "0x06e46867b6e0e29f7e5f517b777f63a9d106e13a2e4b57cd143f66d06b91ea92",
-    "0x07a82feb88716cd4d9366f606b53a65aabf155378a9e2f0edb5d9137edac0fb4",
-    "0x01e70b7202ae541401430ba1af0e08d460578ebad45a29ae9774c9f53abe9db1",
-    "0x07ba409fff0be64a770bfd0b4e64b06244e3060327cf08a02a44d496293a3d88",
-    "0x06219b7a873f261289b335e16e3b96b1a3a1e8e81f40d52ea9b1bcc60b0069ce",
-    "0x00c040a89b966f2999934c52d1625da43803a96dd8837c21bcd5faea76eb0d39",
-    "0x017f8b895d5209086ccc7f66db6afb3da091f0a40b58e30eef386bd05046c82e",
-    "0x012fe1a7dc38fa9b962c48a39177974412e793cd2d4c139565336b2b83751739",
-    "0x07a3df285f2bd435a846718b9cce9947bff1504be9c99a1dae4c463813ef1005",
-    "0x03990a3f07ed45b98d602bbdb948643d065e1bcfc58c8bbbb425bbcf3c9fa611",
-    "0x016d0f85cab698fbbc578d3771a21f4e72953f07ac063a320d7a756bf34e765b",
-    "0x00ec51b237b00c545436a909f599148784a61efe61d001cfded9ee784f1a30cb",
-    "0x05969a18db074a634b6768edc7b3ed8c61f3c8c5e893cb33de092a7bf853eaa2",
-    "0x01e7e080eeaeca2e6256e2edafe35eea55fb7f4947b39ece6e5f396a629c0af1",
-    "0x0201084a2b50b436ef1ef4e9e04e2f86758bfd8aa079f3754cb434cb85d29f06",
-    "0x0486ec895f73f89e324e8d85aacc10c618c1b654ed15e6c3c6bbdad0b52d0f4e",
-    "0x03d0d9b86e476308bc846a0360845514c8c75729bec2085054f6da7bdb1f36f9",
-    "0x00b27e311c1d144f8fa3441fe34de90f3872962eaec7d84e6777d1dfe06d97cd",
-    "0x06f219c8d08bb6ad2e5c6eb0f9d21f115eaaafe77b322198fa41af47dcbd4a43",
-    "0x0239b74c94757dff8d73bc348b0658193fb2725c67d23088e0abe4d2adf3c7d6",
-    "0x0309b7de527ebd3cd83e8482052f21a6f89f6c14112151773ad8676fdf4f149c",
-    "0x00fe947d2d6d43b5618a278f4f44e47e4ab1ae5933b5ef67ca80ca4898c425f8",
-    "0x03df9f3377185232f4d4db2cfbd20c9e118fe91ad7b8f8246ab17b1a0f1a330b",
-    "0x0410bedf2a2a7c73cd6832675cc61eeea07e0ffd5ff9f095f8306e258a83c803",
-    "0x0055b3816d60de7e836ea0ca861984f83b42adda19a4d12a9ab9b5086897969d",
-    "0x0122f4c36b16d6dcb03f14c49e558c25805f8cfd7744f2e175e1846a8f6b5304",
-    "0x0252f3a423f0c7918c7e929dbd5f9b9c7670aa2bd847db3d6dcdc69daa99d261",
-    "0x041586d2a08b107516fdd1f8a36c0f5fb1711692c5b26d6a7cb5c85a4a844858",
-    "0x04ed20299d88ba6281ecc8f95dfeabc2d818fab4b428d7c9353beca2d7fe1cde",
-    "0x066562dd7acd2e8e2b0e7e40d31eeea9f9a55c8103701e2950bc2b2fdd875545",
-    "0x00f824f3c416b7616cdeca89784157372048fd92b438be86d4f77230e1cddf92"
+    "0x0084af66e69938758f46b528697de2ca6d3b1878c94b32d93054e79488ecc239",
+    "0x05c1cc3fb5aafd4ad2f4a77aec523a700d432016b4c3d5b345806291928017b5",
+    "0x011c30f927764156bb2dd7aa3a029494fa7d2a99fb93874c52efe06f5dbf1fb3",
+    "0x02b8bb2b49c8bac129cee0c7395141c8278a99dd879ec48035f371df9f5b5d70",
+    "0x05f3d89b604bcf81788a8254866d0c7ea114fe71026fada8a6c257c27f814911",
+    "0x00b7c46bce98c648bfcba8216496d082d2ae6b8832bad227e34aaf28b494b633",
+    "0x0528f38f52441b50272dccd1ac7b881c025ccd31a4e9df1bc035ee6fe18b348f",
+    "0x0208e9b5bbdaecbc348fc147897f5ad93b4ccffc1eb050d632d458e68b47a0e2",
+    "0x0536f0dd05f24c1116b2aa8e3355fff2e0940ccbc3c23707cca5218a872f9b77",
+    "0x0026eecf867edc802297cff019894f45a9902aca0f1382d104fb450441160e30",
+    "0x07ab5e372203641e23ddad2abbbf092c30dcf8c87caaf49cb10d21c6a1c221dc",
+    "0x055e471f991c77073b98fcbc02f4cbcec59084cb331abbd74c199679693e8242",
+    "0x01978813fa04e24901673d8a2cb41c4437fa087c76dd49a8017668369ebda7e8",
+    "0x0766c02593849b6b6167c772562c5a8539e904fd48e34fb11e665d473f9df449",
+    "0x021c00a61f524615de25369b9fe2ed88f74f671edccfb03a6e9ab5cc5f62f5a1",
+    "0x043535c8d3aefbeabcd50bf1d5976cc9454bef777c4992bce69ca94f06c7bc62",
+    "0x07ecd65e905c8cfa288e638356c256fd92a8a0806ab074681def5f263a7d1c1d",
+    "0x027dd395e3a1289877d26da80316cc3e8a6356917d3e254e26f704de24e109aa",
+    "0x0423f40953fb6bb03f2eb8196f87062e069035ac46f221a0c8ee6c906104c7d2",
+    "0x054672e00f6c8bcb90cacff5e931aab2f9e36bb6d4315614a65153717acf3a3d",
+    "0x028ce1ebdc3abec237032321f603b26be930bd9927fcce53ab84906d9011db34",
+    "0x0557df82a2989bf5a640e591fce4da7138dc038046c67f82fbe9cf3e132eddab",
+    "0x03fda9360e596d9bb20e3aa9653b90c15993d6d96000fffac28c53bb7cb51b43",
+    "0x024b31f123d009f62e0b628bae64bdd415fbeb0a930c934675c44b3a3c53653b",
+    "0x01917f0ada254b903a09d71d80328b767307a543f697545d60e18dfb2737fcf0",
+    "0x07e296e88867c74a9e62e0d9623db7e8cb1ebd55107b390294e70ec76bbdf0ba",
+    "0x04d110f512d69448b514d03257bfb73bde657f8fbefe83ef2066b7a5efcae2e2",
+    "0x03f168105297bae1476a4ece817fdbb77c5e4bccced0858eab12302992762a24",
+    "0x033d854d07feb2565fbf6cb6f5dfbf10b05ea2047ad8bb8d4a9fe32ba2092ae6",
+    "0x0738e17079ee6a1df242bd280b547705ee80957932d44034b9c5e4cabca96a3a",
+    "0x01b986072fb53376c0a12901e598804bf609a997f1efe044197454d03d913cf7"
   ],
   "transactionLog": [
     {
-      "hash": "0x06e46867b6e0e29f7e5f517b777f63a9d106e13a2e4b57cd143f66d06b91ea92",
+      "hash": "0x0084af66e69938758f46b528697de2ca6d3b1878c94b32d93054e79488ecc239",
       "what": "deploy StubOracle"
     },
     {
-      "hash": "0x07a82feb88716cd4d9366f606b53a65aabf155378a9e2f0edb5d9137edac0fb4",
+      "hash": "0x05c1cc3fb5aafd4ad2f4a77aec523a700d432016b4c3d5b345806291928017b5",
       "what": "deploy StubToken"
     },
     {
-      "hash": "0x01e70b7202ae541401430ba1af0e08d460578ebad45a29ae9774c9f53abe9db1",
+      "hash": "0x011c30f927764156bb2dd7aa3a029494fa7d2a99fb93874c52efe06f5dbf1fb3",
       "what": "seeded the stub oracle"
     },
     {
-      "hash": "0x07ba409fff0be64a770bfd0b4e64b06244e3060327cf08a02a44d496293a3d88",
+      "hash": "0x02b8bb2b49c8bac129cee0c7395141c8278a99dd879ec48035f371df9f5b5d70",
       "what": "deploy MolfiMarket"
     },
     {
-      "hash": "0x06219b7a873f261289b335e16e3b96b1a3a1e8e81f40d52ea9b1bcc60b0069ce",
+      "hash": "0x05f3d89b604bcf81788a8254866d0c7ea114fe71026fada8a6c257c27f814911",
       "what": "listed BTC/USD 900s"
     },
     {
-      "hash": "0x00c040a89b966f2999934c52d1625da43803a96dd8837c21bcd5faea76eb0d39",
+      "hash": "0x00b7c46bce98c648bfcba8216496d082d2ae6b8832bad227e34aaf28b494b633",
       "what": "listed BTC/USD 3600s"
     },
     {
-      "hash": "0x017f8b895d5209086ccc7f66db6afb3da091f0a40b58e30eef386bd05046c82e",
+      "hash": "0x0528f38f52441b50272dccd1ac7b881c025ccd31a4e9df1bc035ee6fe18b348f",
       "what": "listed BTC/USD 14400s"
     },
     {
-      "hash": "0x012fe1a7dc38fa9b962c48a39177974412e793cd2d4c139565336b2b83751739",
+      "hash": "0x0208e9b5bbdaecbc348fc147897f5ad93b4ccffc1eb050d632d458e68b47a0e2",
       "what": "listed ETH/USD 900s"
     },
     {
-      "hash": "0x07a3df285f2bd435a846718b9cce9947bff1504be9c99a1dae4c463813ef1005",
+      "hash": "0x0536f0dd05f24c1116b2aa8e3355fff2e0940ccbc3c23707cca5218a872f9b77",
       "what": "listed ETH/USD 3600s"
     },
     {
-      "hash": "0x03990a3f07ed45b98d602bbdb948643d065e1bcfc58c8bbbb425bbcf3c9fa611",
+      "hash": "0x0026eecf867edc802297cff019894f45a9902aca0f1382d104fb450441160e30",
       "what": "listed ETH/USD 14400s"
     },
     {
-      "hash": "0x016d0f85cab698fbbc578d3771a21f4e72953f07ac063a320d7a756bf34e765b",
+      "hash": "0x07ab5e372203641e23ddad2abbbf092c30dcf8c87caaf49cb10d21c6a1c221dc",
       "what": "listed STRK/USD 900s"
     },
     {
-      "hash": "0x00ec51b237b00c545436a909f599148784a61efe61d001cfded9ee784f1a30cb",
+      "hash": "0x055e471f991c77073b98fcbc02f4cbcec59084cb331abbd74c199679693e8242",
       "what": "listed STRK/USD 3600s"
     },
     {
-      "hash": "0x05969a18db074a634b6768edc7b3ed8c61f3c8c5e893cb33de092a7bf853eaa2",
+      "hash": "0x01978813fa04e24901673d8a2cb41c4437fa087c76dd49a8017668369ebda7e8",
       "what": "listed STRK/USD 14400s"
     },
     {
-      "hash": "0x01e7e080eeaeca2e6256e2edafe35eea55fb7f4947b39ece6e5f396a629c0af1",
+      "hash": "0x0766c02593849b6b6167c772562c5a8539e904fd48e34fb11e665d473f9df449",
       "what": "minted bankroll for market 1"
     },
     {
-      "hash": "0x0201084a2b50b436ef1ef4e9e04e2f86758bfd8aa079f3754cb434cb85d29f06",
+      "hash": "0x021c00a61f524615de25369b9fe2ed88f74f671edccfb03a6e9ab5cc5f62f5a1",
       "what": "funded market 1"
     },
     {
-      "hash": "0x0486ec895f73f89e324e8d85aacc10c618c1b654ed15e6c3c6bbdad0b52d0f4e",
+      "hash": "0x043535c8d3aefbeabcd50bf1d5976cc9454bef777c4992bce69ca94f06c7bc62",
       "what": "minted bankroll for market 2"
     },
     {
-      "hash": "0x03d0d9b86e476308bc846a0360845514c8c75729bec2085054f6da7bdb1f36f9",
+      "hash": "0x07ecd65e905c8cfa288e638356c256fd92a8a0806ab074681def5f263a7d1c1d",
       "what": "funded market 2"
     },
     {
-      "hash": "0x00b27e311c1d144f8fa3441fe34de90f3872962eaec7d84e6777d1dfe06d97cd",
+      "hash": "0x027dd395e3a1289877d26da80316cc3e8a6356917d3e254e26f704de24e109aa",
       "what": "minted bankroll for market 3"
     },
     {
-      "hash": "0x06f219c8d08bb6ad2e5c6eb0f9d21f115eaaafe77b322198fa41af47dcbd4a43",
+      "hash": "0x0423f40953fb6bb03f2eb8196f87062e069035ac46f221a0c8ee6c906104c7d2",
       "what": "funded market 3"
     },
     {
-      "hash": "0x0239b74c94757dff8d73bc348b0658193fb2725c67d23088e0abe4d2adf3c7d6",
+      "hash": "0x054672e00f6c8bcb90cacff5e931aab2f9e36bb6d4315614a65153717acf3a3d",
       "what": "minted bankroll for market 4"
     },
     {
-      "hash": "0x0309b7de527ebd3cd83e8482052f21a6f89f6c14112151773ad8676fdf4f149c",
+      "hash": "0x028ce1ebdc3abec237032321f603b26be930bd9927fcce53ab84906d9011db34",
       "what": "funded market 4"
     },
     {
-      "hash": "0x00fe947d2d6d43b5618a278f4f44e47e4ab1ae5933b5ef67ca80ca4898c425f8",
+      "hash": "0x0557df82a2989bf5a640e591fce4da7138dc038046c67f82fbe9cf3e132eddab",
       "what": "minted bankroll for market 5"
     },
     {
-      "hash": "0x03df9f3377185232f4d4db2cfbd20c9e118fe91ad7b8f8246ab17b1a0f1a330b",
+      "hash": "0x03fda9360e596d9bb20e3aa9653b90c15993d6d96000fffac28c53bb7cb51b43",
       "what": "funded market 5"
     },
     {
-      "hash": "0x0410bedf2a2a7c73cd6832675cc61eeea07e0ffd5ff9f095f8306e258a83c803",
+      "hash": "0x024b31f123d009f62e0b628bae64bdd415fbeb0a930c934675c44b3a3c53653b",
       "what": "minted bankroll for market 6"
     },
     {
-      "hash": "0x0055b3816d60de7e836ea0ca861984f83b42adda19a4d12a9ab9b5086897969d",
+      "hash": "0x01917f0ada254b903a09d71d80328b767307a543f697545d60e18dfb2737fcf0",
       "what": "funded market 6"
     },
     {
-      "hash": "0x0122f4c36b16d6dcb03f14c49e558c25805f8cfd7744f2e175e1846a8f6b5304",
+      "hash": "0x07e296e88867c74a9e62e0d9623db7e8cb1ebd55107b390294e70ec76bbdf0ba",
       "what": "minted bankroll for market 7"
     },
     {
-      "hash": "0x0252f3a423f0c7918c7e929dbd5f9b9c7670aa2bd847db3d6dcdc69daa99d261",
+      "hash": "0x04d110f512d69448b514d03257bfb73bde657f8fbefe83ef2066b7a5efcae2e2",
       "what": "funded market 7"
     },
     {
-      "hash": "0x041586d2a08b107516fdd1f8a36c0f5fb1711692c5b26d6a7cb5c85a4a844858",
+      "hash": "0x03f168105297bae1476a4ece817fdbb77c5e4bccced0858eab12302992762a24",
       "what": "minted bankroll for market 8"
     },
     {
-      "hash": "0x04ed20299d88ba6281ecc8f95dfeabc2d818fab4b428d7c9353beca2d7fe1cde",
+      "hash": "0x033d854d07feb2565fbf6cb6f5dfbf10b05ea2047ad8bb8d4a9fe32ba2092ae6",
       "what": "funded market 8"
     },
     {
-      "hash": "0x066562dd7acd2e8e2b0e7e40d31eeea9f9a55c8103701e2950bc2b2fdd875545",
+      "hash": "0x0738e17079ee6a1df242bd280b547705ee80957932d44034b9c5e4cabca96a3a",
       "what": "minted bankroll for market 9"
     },
     {
-      "hash": "0x00f824f3c416b7616cdeca89784157372048fd92b438be86d4f77230e1cddf92",
+      "hash": "0x01b986072fb53376c0a12901e598804bf609a997f1efe044197454d03d913cf7",
       "what": "funded market 9"
     }
   ],

@@ -23,6 +23,7 @@
     "submission": "node --experimental-strip-types scripts/fill-submission.mjs",
     "test": "pnpm --filter @molfi/sdk test",
     "test:cairo": "cd cairo && snforge test",
+    "test:integration": "node --experimental-strip-types scripts/integration.mjs --network devnet",
     "typecheck": "pnpm --filter @molfi/sdk exec tsc --noEmit && pnpm --filter @molfi/web exec tsc --noEmit"
   },
   "pnpm": {
