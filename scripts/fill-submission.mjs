@@ -81,15 +81,73 @@ try {
 //
 // A reverted transaction still has a hash, so listing hashes without checking their receipts
 // would let a failed run look like a successful one.
+/**
+ * Also pull the keeper's settlements, when there is a keeper to ask.
+ *
+ * The deploy script records what *it* sent — declares, listings, funding. The transactions a
+ * reviewer most wants are the ones neither the deploy nor the console produced: a market
+ * actually resolving against a multi-publisher price, sent by a process nobody was watching.
+ * Those live in the keeper's ledger, so they are fetched rather than transcribed.
+ *
+ * Every one of them still goes through the same receipt check below. A hash from our own
+ * database is no more trustworthy than a hash from a terminal scrollback.
+ */
+async function keeperSettlements() {
+  const base = process.env.KEEPER_URL;
+  if (!base) return [];
+  try {
+    const res = await fetch(`${base}/actions?limit=200`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    const body = await res.json();
+    return (body.actions ?? [])
+      .filter((a) => a.kind === "settle" && a.ok && a.tx_hash)
+      .map((a) => a.tx_hash);
+  } catch {
+    // A keeper that cannot be reached costs a few extra hashes, not the submission.
+    return [];
+  }
+}
+
+const settlements = await keeperSettlements();
+if (settlements.length > 0) {
+  console.log(`  found ${settlements.length} settlement(s) in the keeper's ledger`);
+}
+
+// Deduplicated: the same hash arriving from two sources is one transaction.
 const hashes = [
-  ...(deployment.transactions ?? []),
-  ...(args.tx ? [String(args.tx)] : []),
+  ...new Set([
+    ...(deployment.transactions ?? []),
+    ...settlements,
+    ...(args.tx ? [String(args.tx)] : []),
+  ]),
 ];
+
+/**
+ * Read a receipt, retrying a transport failure and never a verdict.
+ *
+ * "The chain says this reverted" and "the node did not answer" are opposite facts, and the
+ * first version treated both as a problem and refused to write the file. A dropped socket on
+ * one of ten receipts is not a reason to withhold a submission — but a revert is, so only the
+ * transport failure is retried.
+ */
+async function receiptOf(h, attempts = 4) {
+  let last;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await rpc("starknet_getTransactionReceipt", [h]);
+    } catch (e) {
+      last = e;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+    }
+  }
+  throw last;
+}
 
 const verified = [];
 for (const h of hashes) {
   try {
-    const receipt = await rpc("starknet_getTransactionReceipt", [h]);
+    const receipt = await receiptOf(h);
     const status = receipt.execution_status ?? receipt.status;
     if (status === "SUCCEEDED" || status === "ACCEPTED_ON_L2" || status === "ACCEPTED_ON_L1") {
       verified.push(h);
@@ -118,7 +176,21 @@ const out = {
   // over-specify and let anyone who wants the bare schema delete one line.
   network,
   transactions: verified,
-  contracts: [deployment.market].filter(Boolean),
+  /**
+   * Every contract molfi deployed on this network, not just the headline one.
+   *
+   * The relay is a deployment too — it is what makes settlement possible here at all, and a
+   * judge reading only the market address would find a contract whose oracle points at
+   * something they were never told about. Listing it is the difference between a submission
+   * that can be followed and one with a hole in the middle.
+   *
+   * Deliberately not the pool or the token: those are StarkWare's and Starknet's, and
+   * claiming somebody else's deployment as your own is the sort of padding that makes a
+   * reviewer discount everything else on the list.
+   */
+  contracts: [deployment.market, deployment.oracleIsRelay ? deployment.oracle : null].filter(
+    Boolean,
+  ),
   demo_video: process.env.DEMO_VIDEO ?? "",
   demo_url: process.env.DEMO_URL ?? "",
 };

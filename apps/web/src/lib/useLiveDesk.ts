@@ -321,6 +321,60 @@ export function useLiveDesk(market: MarketDef, tier: number) {
   }, [addresses, refresh]);
 
   // ---- the mark, from the same route the paper desk uses
+  /**
+   * Seed the chart from real tape before the first poll.
+   *
+   * The live desk built its history from its own polls, which meant arriving at the console
+   * and watching a flat line for several minutes — every sample five seconds apart on a
+   * price that moves in basis points, on the screen that is supposed to be the product. The
+   * paper desk never had this problem because it seeds a backlog and the live one did not.
+   *
+   * Seeded from the same one-minute closes the tables were fitted on, so nothing here is
+   * invented: it is the market's actual recent path, ending where the market actually is.
+   * Cleared and refetched when the market changes, because BTC's history is not ETH's.
+   */
+  useEffect(() => {
+    let stop = false;
+    historyRef.current = [];
+    setState((s) => ({ ...s, history: [] }));
+
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/api/price?market=${encodeURIComponent(market.key)}&history=1`,
+          { cache: "no-store" },
+        );
+        const j = (await r.json()) as { price?: string | null; returns?: number[] };
+        if (stop || !j.price || !j.returns || j.returns.length < 8) return;
+        // Only seed if the live poll has not already filled it — a slow history fetch must
+        // not overwrite fresher points that arrived while it was in flight.
+        if (historyRef.current.length > 1) return;
+
+        // Walk the real returns backwards from the current price, so the backlog leads up to
+        // where the market is rather than away from it.
+        const now = Math.floor(Date.now() / 1000);
+        const start = Number(BigInt(j.price));
+        const back: PricePoint[] = [];
+        let p = start;
+        const take = Math.min(HISTORY, j.returns.length);
+        for (let i = 1; i <= take; i += 1) {
+          p /= Math.exp(j.returns[j.returns.length - i]);
+          back.push({ at: now - i * 60, price: BigInt(Math.max(1, Math.round(p))) });
+        }
+        back.reverse();
+        historyRef.current = back;
+        setState((s) => ({ ...s, history: [...back] }));
+      } catch {
+        // No seed is a flat line for a minute, which is the behaviour this replaces rather
+        // than a new failure. The live poll below is the thing that must not break.
+      }
+    })();
+
+    return () => {
+      stop = true;
+    };
+  }, [market.key]);
+
   useEffect(() => {
     let stop = false;
     const read = async () => {

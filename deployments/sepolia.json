@@ -9,7 +9,11 @@
   "owner": "0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f",
   "bankrollPerMarket": "200000000000000000",
   "settleable": true,
-  "oracleNote": null,
+  "oracleNote": [
+    "Pragma stopped publishing to Sepolia months ago, so this deployment settles against a",
+    "relay that republishes mainnet Pragma's median. One publisher \u2014 us. Every relayed value",
+    "carries the mainnet block it was read at. On mainnet molfi reads Pragma directly."
+  ],
   "markets": [
     {
       "pair": "BTC/USD",
@@ -81,5 +85,6 @@
       "what": "funded market 3"
     }
   ],
-  "complete": true
+  "complete": true,
+  "oracleIsRelay": true
 }

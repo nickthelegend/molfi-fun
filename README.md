@@ -40,29 +40,64 @@ the contract actually paid. You do not need an account, a wallet, or a position 
 
 ---
 
+## Live right now
+
+| | |
+| --- | --- |
+| Console | **[molfi.fun](https://molfi.fun)** |
+| Watch a market resolve | [molfi.fun/live](https://molfi.fun/live) |
+| What leaks, and what does not | [molfi.fun/privacy](https://molfi.fun/privacy) |
+| Who settles these | [molfi.fun/keeper](https://molfi.fun/keeper) |
+| Recompute a settled market | [molfi.fun/m/1](https://molfi.fun/m/1) |
+
+Markets settle on Starknet Sepolia every fifteen minutes, unattended, against a price backed
+by ten to twelve independent publishers. Nothing on those pages needs a wallet.
+
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| [`apps/hub/`](apps/hub) | molfi.fun. The site: the pitch, the markets, and the proof. |
-| [`packages/protocol/`](packages/protocol) | Network wiring. Pool and token addresses as protocol facts rather than app config. |
+| [`cairo/`](cairo) | `MolfiMarket`, the anonymizer the pool invokes, and `PriceRelay`. 68 tests. |
+| [`packages/sdk/`](packages/sdk) | The pricing kernel, mirrored by the Cairo one and pinned to it by generated vectors. Also the oracle adapter, the verifier, and the network wiring. |
+| [`apps/web/`](apps/web) | The console, the verifier pages, and the API. |
+| [`apps/keeper/`](apps/keeper) | Relays the price, settles what is due, opens the next round. |
+| [`scripts/`](scripts) | Deploy, preflight, end-to-end, submission. |
+| [`docs/API.md`](docs/API.md) | Every endpoint, and what each number means. |
 
 ## Run it
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev          # the console on :3400
+pnpm test         # the SDK
+pnpm test:cairo   # the contracts
+pnpm api:check    # every endpoint, including the failure paths
 ```
 
 ## Networks
 
-The contracts are network agnostic; only the pool address changes. Both live STRK20 pools are
-pinned in [`packages/protocol/src/networks.ts`](packages/protocol/src/networks.ts) and checked
-against the chain rather than trusted.
+Contract addresses are protocol facts and live in
+[`packages/sdk/src/networks.ts`](packages/sdk/src/networks.ts) rather than in app config,
+checked against the chain rather than trusted.
 
-| Network | STRK20 privacy pool |
-| --- | --- |
-| Sepolia | `0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91` |
-| Mainnet | `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a` |
+| | Sepolia | Mainnet |
+| --- | --- | --- |
+| STRK20 privacy pool | `0x0254a6b2…cfe0d91` | `0x040337b1…6ffe812a` |
+| molfi market | `0x03b00e6e…a158b068` | not deployed |
+| Price relay | `0x0275a7fd…456dfcbb` | not deployed, and should not be |
+| Settles against | the relay | Pragma directly |
 
-Testnet only for now. Mainnet spends real STRK, so it stays a deliberate, human-run step.
+### Why Sepolia needs a relay
+
+Pragma stopped publishing to Sepolia months ago — BTC's last print there is close to a year
+old — so a market deployed against it can be opened and can never resolve. `PriceRelay`
+republishes **mainnet Pragma's own median** onto Sepolia, presenting the same interface, so
+the identical settlement path runs against a real multi-publisher price.
+
+It is not an oracle. It is a relay with one publisher, us, and every value it serves carries
+the mainnet block it was read at so the number can be checked against the chain it came from.
+It serves Pragma's timestamp rather than its own, because returning the relay time would let
+a stale price pass a freshness check it should fail. On mainnet it is not deployed at all.
+
+Mainnet spends real STRK, so it stays a deliberate, human-run step. `pnpm preflight` checks
+everything that can be checked without spending anything, and currently passes.
