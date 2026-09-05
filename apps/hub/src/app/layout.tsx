@@ -12,14 +12,14 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "sw
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "molfi.fun — staked games settled on Starknet",
+  title: "molfi.fun — prediction markets where your position is private",
   description:
-    "Games where privacy is the mechanic, not a feature. Buy in privately, play, and settle onchain where anyone can check the result afterwards.",
+    "Pick a price range and stake on it. Your range and size stay sealed until the market settles, so nobody can front run you.",
   metadataBase: new URL("https://molfi.fun"),
   openGraph: {
     title: "molfi.fun",
     description:
-      "Games where privacy is the mechanic, not a feature. Settled onchain, checkable afterwards.",
+      "Prediction markets where your position is private until it settles. Settled onchain.",
     url: "https://molfi.fun",
     siteName: "molfi.fun",
     type: "website",
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "molfi.fun",
-    description: "Games where privacy is the mechanic, not a feature.",
+    description: "Prediction markets where your position is private until it settles.",
   },
   icons: { icon: "/favicon.svg" },
 };
@@ -38,10 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geist.variable} ${geistMono.variable} min-h-screen`}>
         {/* Structured data.
 
-            Search and social renderers read this rather than guessing from the prose, and
-            the two games are the thing worth surfacing, so they are described as the
-            products they are rather than the site being described as one page. Kept in the
-            layout so every route carries it. */}
+            Search and social renderers read this rather than guessing from the prose, so the
+            product is described as what it is rather than the site being described as one
+            page. Kept in the layout so every route carries it. */}
         <script
           type="application/ld+json"
           // The value is a literal built here, not user input, so there is nothing to escape
@@ -56,29 +55,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   name: "molfi.fun",
                   url: "https://molfi.fun",
                   description:
-                    "Staked games where privacy is the mechanic, settled on Starknet and checkable afterwards.",
+                    "Prediction markets where your position stays sealed until settlement, settled on Starknet and checkable afterwards.",
                 },
                 {
-                  "@type": "VideoGame",
-                  name: "CrewKill",
-                  url: "https://crewkill.molfi.fun",
-                  genre: "Social deduction",
-                  gamePlatform: "Web",
-                  numberOfPlayers: { "@type": "QuantitativeValue", value: 6 },
+                  "@type": "WebApplication",
+                  name: "molfi",
+                  url: "https://molfi.fun/markets",
+                  applicationCategory: "FinanceApplication",
+                  operatingSystem: "Web",
                   description:
-                    "Six seats, four rounds, one pot. A seat is a commitment rather than an address, and the settlement can be recomputed by anyone.",
+                    "Pick a price range and how long it has to hold. Your range and size are recorded as a commitment rather than an address, so nobody can front run or copy a position, and the settlement can be recomputed by anyone afterwards.",
                   isPartOf: { "@id": "https://molfi.fun/#website" },
-                },
-                {
-                  "@type": "VideoGame",
-                  name: "Poker",
-                  url: "https://poker.molfi.fun",
-                  genre: "Card game",
-                  gamePlatform: "Web",
-                  numberOfPlayers: { "@type": "QuantitativeValue", minValue: 2, maxValue: 9 },
-                  description:
-                    "Texas Hold'em with no dealer. Players shuffle and deal between themselves and each step is proved rather than trusted.",
-                  isPartOf: { "@id": "https://molfi.fun/#website" },
+                  offers: {
+                    "@type": "Offer",
+                    price: "0",
+                    priceCurrency: "USD",
+                    description: "Free on Starknet Sepolia testnet.",
+                  },
                 },
               ],
             }),

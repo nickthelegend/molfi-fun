@@ -1,8 +1,8 @@
 {
-  "name": "crewkill",
+  "name": "molfi",
   "private": true,
   "version": "2.0.0",
-  "description": "Staked social deduction on Starknet, settled through the STRK20 privacy pool",
+  "description": "Prediction markets where your position stays sealed until settlement, on Starknet through the STRK20 privacy pool",
   "license": "MIT",
   "packageManager": "pnpm@10.29.2",
   "engines": {
@@ -11,15 +11,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "cairo:build": "cd cairo && scarb build",
-    "cairo:test": "cd cairo && snforge test",
-    "keeper:dev": "pnpm --filter @crewkill/keeper dev",
-    "web:dev": "pnpm --filter @crewkill/web dev",
-    "devnet:up": "docker compose up -d devnet postgres",
-    "devnet:deploy": "pnpm --filter @crewkill/keeper deploy:devnet",
-    "setup": "scarb --manifest-path cairo/Scarb.toml build && pnpm --filter @crewkill/keeper exec prisma generate",
-    "dev:hub": "pnpm --filter @molfi/hub dev",
-    "dev:crewkill": "pnpm --filter @crewkill/web dev"
+    "dev": "pnpm --filter @molfi/hub dev"
   },
   "pnpm": {
     "overrides": {

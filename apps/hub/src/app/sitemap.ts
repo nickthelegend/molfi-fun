@@ -3,25 +3,17 @@ import type { MetadataRoute } from "next";
 /**
  * Every real route, listed once.
  *
- * Priorities are set by what a first-time visitor should land on, which is the home page and
- * then the two games. The contracts page ranks below those deliberately: it is the proof, and
- * proof is what you read second.
+ * Priorities follow what a first-time visitor should land on: the pitch, then the markets.
+ * Contracts rank below both deliberately — it is the proof, and proof is what you read
+ * second.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = "https://molfi.fun";
   const routes: Array<{ path: string; priority: number; freq: "daily" | "weekly" | "monthly" }> = [
     { path: "/", priority: 1, freq: "weekly" },
-    { path: "/crewkill", priority: 0.9, freq: "weekly" },
-    { path: "/poker", priority: 0.9, freq: "weekly" },
+    { path: "/markets", priority: 0.9, freq: "daily" },
+    { path: "/how-it-works", priority: 0.8, freq: "weekly" },
     { path: "/contracts", priority: 0.7, freq: "daily" },
-    { path: "/deployments", priority: 0.6, freq: "daily" },
-    { path: "/api-docs", priority: 0.5, freq: "monthly" },
-    { path: "/detective-pool", priority: 0.6, freq: "monthly" },
-    { path: "/changelog", priority: 0.4, freq: "weekly" },
-    { path: "/balance", priority: 0.6, freq: "daily" },
-    { path: "/how-privacy-works", priority: 0.8, freq: "monthly" },
-    { path: "/status", priority: 0.5, freq: "daily" },
-    { path: "/press", priority: 0.5, freq: "monthly" },
     { path: "/privacy", priority: 0.3, freq: "monthly" },
     { path: "/terms", priority: 0.3, freq: "monthly" },
   ];

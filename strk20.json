@@ -1,18 +1,6 @@
 {
-  "transactions": [
-    "0x55542510b493effa787e4c2559aa0d245694fb3f4d261813e3df419fc4aa67e",
-    "0x47c89bb978122b999be8180b9e0e506a354b7b4450a8b0f7571361f2a82b487",
-    "0x14a0296edbd71f934b3732ab5e21e8a3fa02aa2b1cb80cc1de39da391c6f8ce",
-    "0xd21900721abc54c8ca1d4e4fe821ad05048703d47f9b64f5c5492ef34a4741"
-  ],
-  "contracts": [
-    "0x55ac4a110992e9ced1f3133a9bff040adaaa6aeee4ed57e9b9cb89cb7586ca",
-    "0x38cea8475ecba6984807bf50eebc2d6174672f567d709d8b74c661904ec3bb8",
-    "0x028fcd7d6937f5a2c1cefd07b6b26faedd0e99383b1f632e9754c4ba0941cbd9",
-    "0x01aa31ac4826ddbdc9bb2a95a6d334e81be7ff32f7bae604c88b7437252781a4",
-    "0x01b5e9a1b0f6550e62e18e3e397b9aded7d7b3dadfeb4f9f3653081c96d9c6c6",
-    "0x06e244442031a6a7f6dca61e3440f4989f6a2ee34bbf32e57bc6ccee8129c885"
-  ],
+  "transactions": [],
+  "contracts": [],
   "demo_video": "",
   "demo_url": ""
 }
