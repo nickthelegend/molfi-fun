@@ -15,6 +15,7 @@
     "dev": "pnpm --filter @molfi/web dev",
     "dev:hub": "pnpm --filter @molfi/hub dev",
     "e2e:devnet": "node --experimental-strip-types scripts/e2e.mjs",
+    "pool:probe": "node --experimental-strip-types scripts/pool-probe.mjs",
     "preflight": "node --experimental-strip-types scripts/preflight.mjs",
     "submission": "node --experimental-strip-types scripts/fill-submission.mjs",
     "test": "pnpm --filter @molfi/sdk test",
