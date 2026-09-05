@@ -22,7 +22,7 @@ export default function NotFound() {
           Back to molfi.fun
         </Link>
         <a
-          href="/markets"
+          href="/how-it-works"
           className="fluid rounded-lg border border-[var(--line-2)] px-3 py-2 text-base font-semibold text-white hover:bg-[var(--surface)]"
         >Open a position</a>
       </div>

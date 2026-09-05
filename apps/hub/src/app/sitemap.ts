@@ -11,9 +11,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const base = "https://molfi.fun";
   const routes: Array<{ path: string; priority: number; freq: "daily" | "weekly" | "monthly" }> = [
     { path: "/", priority: 1, freq: "weekly" },
-    { path: "/markets", priority: 0.9, freq: "daily" },
     { path: "/how-it-works", priority: 0.8, freq: "weekly" },
-    { path: "/contracts", priority: 0.7, freq: "daily" },
     { path: "/privacy", priority: 0.3, freq: "monthly" },
     { path: "/terms", priority: 0.3, freq: "monthly" },
   ];

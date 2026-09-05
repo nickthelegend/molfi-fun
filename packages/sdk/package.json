@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test test/*.test.ts"
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "parity": "node --experimental-strip-types test/parity.ts"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

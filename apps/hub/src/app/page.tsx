@@ -49,7 +49,7 @@ export default async function Home() {
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
-              href="/markets"
+              href="/how-it-works"
               className="fluid rounded-lg bg-white px-4 py-2.5 text-base font-semibold text-black no-underline hover:bg-[var(--accent)]"
             >
               Open a position
@@ -129,7 +129,7 @@ export default async function Home() {
                 Free on Sepolia testnet. Nothing costs you anything until you decide it should.
               </p>
               <a
-                href="/markets"
+                href="/how-it-works"
                 className="fluid mt-8 inline-flex rounded-lg bg-white px-4 py-2.5 text-base font-semibold text-black no-underline hover:bg-[var(--accent)]"
               >
                 Open a position

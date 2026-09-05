@@ -60,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {
                   "@type": "WebApplication",
                   name: "molfi",
-                  url: "https://molfi.fun/markets",
+                  url: "https://molfi.fun",
                   applicationCategory: "FinanceApplication",
                   operatingSystem: "Web",
                   description:

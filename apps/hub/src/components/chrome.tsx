@@ -7,10 +7,15 @@ import Link from "next/link";
  * belong to the same product, and it fails at that the moment two copies disagree.
  */
 
+/**
+ * Only routes that exist.
+ *
+ * The nav shipped pointing at three pages that had not been built, so every link on the site
+ * 404'd. A nav is a promise about what is there; entries get added here as the pages land,
+ * not in anticipation of them.
+ */
 const NAV: Array<{ href: string; label: string }> = [
-  { href: "/markets", label: "Markets" },
   { href: "/how-it-works", label: "How it works" },
-  { href: "/contracts", label: "Contracts" },
 ];
 
 export function SiteHeader({ current }: { current?: string }) {
@@ -62,11 +67,6 @@ export function SiteFooter() {
               </p>
               <ul className="mt-3 space-y-2 text-sm">
                 <li>
-                  <Link href="/markets" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
-                    Open markets
-                  </Link>
-                </li>
-                <li>
                   <Link href="/how-it-works" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
                     How it works
                   </Link>
@@ -79,11 +79,6 @@ export function SiteFooter() {
                 Project
               </p>
               <ul className="mt-3 space-y-2 text-sm">
-                <li>
-                  <Link href="/contracts" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
-                    Contracts
-                  </Link>
-                </li>
                 <li>
                   <Link href="/privacy" className="text-[var(--text-dim)] no-underline hover:text-[var(--text)]">
                     Privacy
