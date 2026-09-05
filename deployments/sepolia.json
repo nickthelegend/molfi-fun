@@ -1,0 +1,27 @@
+{
+  "network": "sepolia",
+  "deployedAt": "2026-09-05T16:20:57.965Z",
+  "classHash": "0x070c273cafaa5a09eaf21d1dea59f7f09eeecce443a2319b3ed59d12eaf6c092",
+  "market": "0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953",
+  "oracle": "0x36031daa264c24520b11d93af622c848b2499b66b41d611bac95e13cfca131a",
+  "token": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  "pool": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
+  "owner": "0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f",
+  "settleable": false,
+  "oracleNote": [
+    "BTC/USD: last print is 474004 minutes old",
+    "ETH/USD: last print is 356893 minutes old",
+    "STRK/USD: last print is 295320 minutes old"
+  ],
+  "markets": [],
+  "transactions": [
+    "0x04c60de7ae5e5a33414331b870c4424e01b8cc9b777b9a21a90dc18381ffa6de"
+  ],
+  "transactionLog": [
+    {
+      "hash": "0x04c60de7ae5e5a33414331b870c4424e01b8cc9b777b9a21a90dc18381ffa6de",
+      "what": "deploy MolfiMarket"
+    }
+  ],
+  "complete": false
+}
