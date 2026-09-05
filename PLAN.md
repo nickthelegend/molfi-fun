@@ -106,108 +106,167 @@ The submission is a contract. Everything else is a client for it.
 | 2.4 | Recalibrate the probability tables for minute-to-hour rounds. The shipped tables are MON/BTC/ETH on three-second rounds and are wrong for this horizon. | **DONE** |
 | 2.5 | Replace `orderbook.ts` (Kuru CLOB) with a Pragma-backed price source, or delete it. | **DONE** |
 | 2.6 | Strip `MON-USD` from markets; define the molfi set (BTC/USD, ETH/USD, STRK/USD). | **DONE** |
-| 2.7 | Server-side price route so the browser never holds an RPC key, with the freshness verdict included. | NOT STARTED |
+| 2.7 | Server-side price route so the browser never holds an RPC key, with the freshness verdict included. | **DONE** — plus an RPC proxy, so the browser holds no key at all |
 
-### Phase 3 — Wallet and pool integration  ·  NOT STARTED
-
-| # | Task | State |
-| --- | --- | --- |
-| 3.1 | Wallet connect: `get-starknet` picker, detect privacy capability, refuse gracefully when absent. | NOT STARTED |
-| 3.2 | Detect and surface registration state; a user with no viewing key cannot hold a private balance. | NOT STARTED |
-| 3.3 | Shield flow — public STRK into the pool, with the public leg named as public. | NOT STARTED |
-| 3.4 | Open-position flow via `strk20InvokeTransaction`: transfer to open note, then invoke molfi's anonymizer. | NOT STARTED |
-| 3.5 | Claim flow: same sandwich, operation 1, credits the winner's open note. | NOT STARTED |
-| 3.6 | Unshield flow — private balance back to a public address. | NOT STARTED |
-| 3.7 | Shielded balance display, read through the wallet, never by holding a key. | NOT STARTED |
-| 3.8 | Dry-run before every invoke; show the quote the user is about to be charged. | NOT STARTED |
-| 3.9 | Position secrets: generated client-side, offered as copy **and** file download at the moment of creation. Losing one loses the payout. | NOT STARTED |
-| 3.10 | Wrong-network guard — mainnet vs Sepolia mismatch named before any action fails. | NOT STARTED |
-
-### Phase 4 — The console  ·  NOT STARTED
+### Phase 3 — Wallet and pool integration  ·  **DONE**
 
 | # | Task | State |
 | --- | --- | --- |
-| 4.1 | Scaffold `apps/web` (Next.js) as the console app; the hub stays the marketing site. | NOT STARTED |
-| 4.2 | Port `Console3D` + `DeviceFrame` — procedural geometry from the SDK, no GLB fetch, no CDN decoders. | NOT STARTED |
-| 4.3 | Port `RangeChart`, `CutoffRing`, `Odometer`, `BootSequence`, `Controls`. | NOT STARTED |
-| 4.4 | **The dial shifts markets.** Rotating it cycles BTC → ETH → STRK; the chart, price and quote all follow. Keyboard and wheel bound to the same action. | NOT STARTED |
-| 4.5 | Second axis on the dial: round length, over the horizons Pragma can actually settle. | NOT STARTED |
-| 4.6 | Band painting — drag the range on the chart, live multiplier from the kernel. | NOT STARTED |
-| 4.7 | Live price ticking from Pragma with a visible staleness state; a stale feed disables firing rather than quoting into it. | NOT STARTED |
-| 4.8 | Position list: open, settled, claimable — sourced from the chain, not local storage. | NOT STARTED |
-| 4.9 | Boot sequence and device motion honouring `prefers-reduced-motion`. | NOT STARTED |
-| 4.10 | Mobile: the console has to be usable at 380px or be honestly replaced by a compact layout. | NOT STARTED |
+| 3.1 | Wallet connect: `get-starknet` picker, detect privacy capability, refuse gracefully when absent. | **DONE** — get-starknet v6 + `WalletAccountV6` |
+| 3.2 | Detect and surface registration state; a user with no viewing key cannot hold a private balance. | **DONE** — capabilities are probed, not assumed |
+| 3.3 | Shield flow — public STRK into the pool, with the public leg named as public. | **DONE** |
+| 3.4 | Open-position flow via `strk20InvokeTransaction`. | **DONE** — no open note; the helper returns an empty span |
+| 3.5 | Claim flow: same sandwich, operation 1, credits the winner's open note. | **DONE** — opens the note first, references `${openNoteIds[0]}` |
+| 3.6 | Unshield flow — private balance back to a public address. | **DONE** |
+| 3.7 | Shielded balance display, read through the wallet, never by holding a key. | **DONE** — unknown renders as unknown, never as zero |
+| 3.8 | Dry-run before every invoke. | **DONE** — `strk20PrepareInvoke` where the wallet supports it |
+| 3.9 | Position secrets: generated client-side, offered as a file download at creation. | **DONE** — written to disk *before* the transaction is offered |
+| 3.10 | Wrong-network guard. | **DONE** |
 
-### Phase 5 — The verifier  ·  NOT STARTED
+**The one thing not yet proven:** the pool sandwich has never run against the real pool. The
+calldata order follows the escrow helper in the docs and the local run drives `privacy_invoke`
+directly, with the deploying account standing in for the pool — so the contract's side is
+exercised for real and the *pool's* deserialization is not. `strk20PrepareInvoke` is a dry run
+against the live pool and is the cheapest way to settle it; it needs a funded mainnet account.
 
-The thing that made the previous project credible, carried over.
+### Phase 4 — The console  ·  **DONE**
+
+The whole `apps/web` from `nickthelegend/xorr-monad` was brought in and ported, rather than
+rebuilt: the device frame, the range chart, the boot sequence, the controls, the menu system,
+the paper desk. What was Monad-specific was replaced rather than reskinned.
 
 | # | Task | State |
 | --- | --- | --- |
-| 5.1 | `auditMarket()` in the SDK: recompute settled price, band outcome, multiplier and payout from published data. | NOT STARTED |
-| 5.2 | `/verify/<market>` — contract's answer beside the recomputed one, per line, with why each check matters. | NOT STARTED |
-| 5.3 | Tamper test: altering the settled price must flag exactly the affected checks. | NOT STARTED |
-| 5.4 | Verifier works for a stranger — no wallet, no position. | NOT STARTED |
+| 4.1 | Scaffold `apps/web` as the console app. | **DONE** |
+| 4.2 | Port `Console3D` + `DeviceFrame` — procedural geometry, no CDN decoders. | **DONE** |
+| 4.3 | Port `RangeChart`, `CutoffRing`, `Odometer`, `BootSequence`, `Controls`. | **DONE** — the ring counts time, not blocks |
+| 4.4 | The dial shifts markets. | **DONE** |
+| 4.5 | Second axis: round length, over the horizons Pragma can settle. | **DONE** — 15m / 1h / 4h |
+| 4.6 | Band painting — drag the range, live multiplier from the kernel. | **DONE** |
+| 4.7 | Live price with a visible staleness state. | **DONE** — the oracle strip is on the deck, not in a sheet |
+| 4.8 | Position list: open, settled, claimable. | **DONE** — from local secrets joined to chain state, because the chain cannot list them |
+| 4.9 | Boot sequence and motion honouring `prefers-reduced-motion`. | **DONE** |
+| 4.10 | Mobile: usable at 380px. | **DONE** — the layout is a handheld device and always was |
 
-### Phase 6 — Deploy and submit  ·  NOT STARTED
+Sheets with no counterpart were removed rather than reskinned: no vault (the market contract
+is its own bankroll), no MON swap (the stake token *is* the gas token), no Kuru book (there is
+no CLOB behind the mark), and **no player leaderboard** — the chain cannot attribute a win to
+an address, so a ranking would be a table of guesses. The board ranks markets instead.
+
+### Phase 5 — The verifier  ·  **DONE**
 
 | # | Task | State |
 | --- | --- | --- |
-| 6.1 | Mainnet preflight, read-only: chain id, pool live, Pragma fresh, deployer funded, contract size. | NOT STARTED |
-| 6.2 | Deploy the anonymizer + market registry to mainnet. **Spends real money — human decision.** | BLOCKED |
+| 5.1 | `auditMarket()` in the SDK. | **DONE** — 11 checks, each carrying both answers and why it matters |
+| 5.2 | `/m/<id>` — the contract's answer beside the recomputed one. | **DONE** — also `/api/audit/<id>` as JSON |
+| 5.3 | Tamper test: altering a market must flag exactly the affected checks. | **DONE** — a single changed table knot, a dipped table, a stale print, a thin print, an insolvent market, an undisclosed fee |
+| 5.4 | Works for a stranger — no wallet, no position. | **DONE** — server-rendered from contract calls |
+
+Building it found two things the contract was not recording. It did not store its round
+length, so the check that matters most — that it prices with the table molfi published —
+could never run; and it did not store when it settled, so the freshness check compared the
+print against the cutoff and reported a negative age for markets that had settled correctly.
+Both are now stored.
+
+### Phase 6 — Deploy and submit
+
+| # | Task | State |
+| --- | --- | --- |
+| 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
+| 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | BLOCKED |
 | 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | BLOCKED |
 | 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | NOT STARTED |
-| 6.5 | Fill `contracts` in `strk20.json`. | NOT STARTED |
+| 6.5 | Fill `contracts` in `strk20.json`. | BLOCKED on 6.2 |
 | 6.6 | Record the 3-minute demo. | BLOCKED |
-| 6.7 | Full test plan across every page, endpoint and contract path, browser-verified. | NOT STARTED |
+| 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for the backend** — `pnpm api:check` and `pnpm e2e:devnet` both green against a live deployment |
+
+**Preflight against mainnet, today:** the node is on `SN_MAIN`, the STRK20 pool is deployed at
+the address in the config, STRK is where it should be, all three Pragma pairs are settleable
+(10–12 publishers, ~8 minutes old), and the contract is 6,899 Sierra felts — 8% of the declare
+limit. The only thing missing is a funded deployer, which is the part that costs money.
+
+**What a mainnet deploy costs, and why it is not one transaction:** one declare, one deploy,
+then nine `create_market` calls and nine `fund_market` calls — because a market that is not
+funded can sell nothing at all. Plus the bankroll itself, which is real STRK sitting behind
+the markets.
 
 ---
 
 ## 4. Gaps — the honest list
 
-### Blocking, and known
+### Still open
 
 | # | Gap | Blocks | Note |
 | --- | --- | --- | --- |
-| G1 | **No Cairo contract exists.** The entire settlement layer is unwritten. `cairo/` was deleted with the games. | All of Phase 1 | **CLOSED** — MolfiMarket written, 34 Cairo tests, 5,241 sierra felts |
-| G2 | **Pyth does not work on Starknet.** Dropped 26 Aug 2026. Contracts still deployed on both networks and every feed returns `None` — verified for BTC, ETH, STRK. | 2.x | Resolved by using Pragma, recorded because the trap is that it *looks* wired up. |
-| G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | **STILL TRUE** — forces mainnet for a real settlement |
-| G4 | **Pragma mainnet updates every 7–10 minutes.** | 2.4, 4.5 | Kills three-second rounds. Round lengths must be minutes to hours. |
-| G5 | **No wallet connect at all.** Nothing in the repo touches a wallet. | All of Phase 3 | |
-| G6 | **Probability tables are calibrated for the wrong instrument.** They are MON/BTC/ETH over three-second rounds. | 2.4 | **CLOSED** — recalibrated on 43,200 real minute closes per market |
-| G7 | **`orderbook.ts` is Kuru-specific** — a Monad CLOB that does not exist here. | 2.5 | **CLOSED** — orderbook.ts deleted |
-| G8 | **`markets.ts`, `engine.ts`, `format.ts`, `generated/markets.ts` still reference Monad/MON.** | 2.6 | |
-| G9 | **No console app.** `apps/web` is untracked leftover, not a molfi app. | All of Phase 4 | |
-| G10 | **No verifier.** | Phase 5 | |
-| G11 | **`strk20.json` is empty** — no contracts, no transactions, no demo. | 6.3–6.6 | Correct today; every field is a deliverable. |
+| G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | **STILL TRUE.** A Sepolia deploy would list markets that can never settle, so mainnet is the only place a real settlement happens. |
+| G11 | **`strk20.json` is empty** — no contracts, no transactions, no demo. | 6.3–6.6 | Every field is a deliverable and every one is blocked on a mainnet spend. |
+| G16 | **The pool sandwich has never run against the real pool.** | 6.3 | The contract's side is exercised end to end locally, with the deploying account standing in for the pool. What is untested is the *pool's* deserialization of our calldata. `strk20PrepareInvoke` dry-runs it for free against mainnet, but needs a funded account to connect. |
+| G17 | **No mainnet deployer.** | 6.2 | Preflight is otherwise clear. This is the money decision, and it is the user's. |
 
-### Housekeeping
+### Closed
 
-| # | Gap | Note |
+| # | Gap | How |
 | --- | --- | --- |
-| G12 | **Untracked game leftovers on disk** — `apps/crewkill` (148 files), `apps/poker` (234), `apps/web` (29), `packages/mental-poker` (10), `packages/crewkill-mcp` (4). Git-removed, still present locally. | Confusing to anyone reading the tree. Delete from disk. |
-| G13 | Hub nav points at `/markets`, `/how-it-works`, `/contracts` — **none of which exist**. Every nav link 404s. | Real broken links on the live site. |
-| G14 | `packages/protocol` is 39 lines. Fold into the SDK or keep deliberately. | Judgement call, not a defect. |
-| G15 | No CI. Nothing runs the 80 SDK tests on push. | |
+| G1 | No Cairo contract | `MolfiMarket`, 50 tests, 6,899 Sierra felts — 8% of the declare limit |
+| G2 | Pyth does not work on Starknet | Pragma instead. Recorded because the trap is that Pyth *looks* wired up: deployed on both networks, answering, and every feed returns `None`. |
+| G4 | Pragma updates every 7–10 minutes | Rounds are 15m / 1h / 4h. The contract refuses a round shorter than one publish interval, so the constraint is enforced rather than remembered. |
+| G5 | No wallet connect | get-starknet v6 + `WalletAccountV6`, with capabilities probed rather than assumed |
+| G6 | Tables calibrated for the wrong instrument | Refitted on 129,600 real minute closes per market. The 24h round was fitted and then cut: out of sample it claimed 65% and delivered 33%. |
+| G7 | `orderbook.ts` is Kuru-specific | Deleted. The oracle strip replaced it — the thing that actually settles every position. |
+| G8 | Monad/MON references | Swept. What remains is comments explaining what changed and why. |
+| G9 | No console app | The whole xorr-monad `apps/web` brought in and ported |
+| G10 | No verifier | `auditMarket()`, `/m/<id>`, `/api/audit/<id>`, 11 checks with tamper tests |
+| G12 | Game leftovers on disk | Deleted, along with the CrewKill keeper, its Postgres and its docker-compose |
+| G13 | Hub nav 404s | Fixed |
+| G14 | `packages/protocol` is 39 lines | Folded into the SDK. Splitting it had produced two copies of the Pragma addresses. |
+| G15 | No CI | TypeScript, Cairo, Sierra size, and a parity job that regenerates the kernel vectors and asserts Cairo still agrees |
+
+### Found by running it, not by reading it
+
+Each of these was invisible to the test suite and surfaced only by deploying the contract and
+driving it over a real RPC:
+
+- **Conservation made it impossible to pay the first winner in a market.** `paid <= staked`
+  means the only money present is the winner's own stake, and any multiplier above 1.00x
+  exceeds it. Every honest market would have failed at its first payout. Markets now carry a
+  bankroll, and reserve the full payout at open rather than checking at claim.
+- **The contract would sell a band at 0.97x** — a guaranteed loss even when you win. The
+  multiplier floor was enforced only by the desk, and a trader does not have to use the desk.
+- **The app read `Position` at the wrong offsets**, reporting a 1 STRK stake as eight
+  trillion. A `u256` is two felts and a `u128` is one; assuming one felt per field produces
+  plausible nonsense rather than an error.
+- **`stake=10` on the quote endpoint meant ten wei.** The unit was inferred from whether the
+  string contained a dot.
+- **The health and price routes read Pragma's mainnet address** from the address book instead
+  of the network's configured oracle, so a local run reported its own oracle as down.
 
 ### Not gaps, recorded so they are not re-litigated
 
-- **Zero mock/stub/TODO/fake/placeholder hits** across the whole tree. Swept, clean.
-- The pricing kernel is ported and green: **80 tests** (36 pricing, 44 oracle).
-- The STRK20 pool addresses are pinned and verified live on both networks.
+- The pricing kernel is mirrored TS ↔ Cairo and pinned by generated vectors, including the
+  shipped BTC 15m calibration rather than only the normal fixture.
+- The commitment derivation is pinned from both sides by a fixed vector: starknet.js computes
+  it and Cairo looks a real position up by it. If those two disagreed, every position would
+  open fine and none could ever be found again.
+- The house edge is 4%, and the *effective* edge measured out of sample is 9–31% depending on
+  the market. That is disclosed rather than shrunk, because closing it would mean modelling a
+  win rate at or below the realised one — the direction that drains the vault.
 
 ---
 
 ## 5. Order of execution
 
-1. **G12, G13** — an hour, and the tree stops lying about what it is.
-2. **Phase 1** — the contract. Nothing else can be demonstrated without it.
-3. **Phase 2.4–2.7** — recalibrate, or every quote is wrong.
-4. **Phase 3** — wallet, then the app can be used by a human.
-5. **Phase 4** — the console.
-6. **Phase 5** — the verifier, which is what makes the privacy claim checkable.
-7. **Phase 6** — deploy, and stop at 6.2 for a human decision about real money.
+Phases 1 through 5 are done. What is left is one decision and the work that follows it.
 
-The risk worth naming: **Phase 1 is large and unstarted, and everything demonstrable sits
-behind it.** If time runs short, a contract on mainnet with a plain UI beats a beautiful
-console with nothing underneath it.
+1. **Fund a mainnet deployer.** Everything below is blocked on it, and it is the only step
+   that costs money. `pnpm preflight` is clear otherwise.
+2. **Dry-run the pool sandwich** with `strk20PrepareInvoke` before submitting anything. It
+   costs nothing and it is the only way to settle G16 — whether the pool deserializes our
+   calldata into `privacy_invoke`'s parameters the way the escrow helper's example implies.
+3. **Deploy**, list and fund the markets, then open, settle and claim one real position.
+4. **Fill `strk20.json`** with the contract address and three transaction hashes.
+5. **Deploy the console** and record the demo.
+
+The risk worth naming, now that the code is done: **the pool's calldata convention is inferred
+from one documented example.** If it is wrong, the dry run says so in seconds and the fix is a
+parameter reorder in one function and one array. If it is right, nothing else stands between
+this and a working mainnet settlement.
