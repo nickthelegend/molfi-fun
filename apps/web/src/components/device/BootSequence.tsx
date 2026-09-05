@@ -17,9 +17,10 @@ import { useEffect, useState } from "react";
  * sequence stops where the loading actually is rather than completing on its own.
  */
 const STEPS = [
-  "XORR CONSOLE",
+  "MOLFI CONSOLE",
   "pricing tables … measured",
   "band solver … ready",
+  "oracle … reading",
 ];
 
 export function BootSequence({ symbol }: { symbol: string }) {

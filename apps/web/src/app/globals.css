@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 /*
- * XORR — handheld console.
+ * molfi — handheld console.
  *
- * Cream body, black screen, one orange accent for the multiplier and the band, green
- * for the live price, red for the fire button. Mobile-first: the device is the app,
- * centred on a dark tiled ground.
+ * Cream body, black screen, one amber accent for the multiplier and the band, green for
+ * the live price, red for the fire key. Mobile-first: the device is the app, centred on a
+ * dark tiled ground.
  */
 
 @theme {
@@ -210,8 +210,8 @@ body {
   animation: shake 260ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
-/* One digit column stepping to its new value. Short: shorter than a block, so the
-   readout is never still catching up when the next price lands. */
+/* One digit column stepping to its new value. Short: shorter than the price poll, so the
+   readout is never still catching up when the next print lands. */
 @keyframes roll {
   0% { transform: translateY(-0.42em); opacity: 0.15; }
   60% { opacity: 1; }

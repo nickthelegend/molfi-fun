@@ -30,3 +30,4 @@ export * from "./format.ts";
 export * from "./console-geometry.ts";
 export * from "./networks.ts";
 export * from "./positions.ts";
+export * from "./audit.ts";

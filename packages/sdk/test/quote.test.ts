@@ -149,7 +149,7 @@ test("every width the painter offers is a width the desk will sell", () => {
 
 test("round labels read as durations, not as decimals", () => {
   assert.equal(roundLabel(0), "15m");
-  assert.equal(roundLabel(1), "60m");
+  assert.equal(roundLabel(1), "1h");
   assert.equal(roundLabel(2), "4h");
   assert.equal(roundLabel(99), "?");
 });

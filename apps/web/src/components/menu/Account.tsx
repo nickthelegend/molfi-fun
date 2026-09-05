@@ -1,98 +1,74 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { fmtUsd } from "@molfi/sdk";
+import { useEffect, useState } from "react";
+import { CallData } from "starknet";
+import { fmtStrk } from "@molfi/sdk";
 import {
   ADDRESSES,
   LIVE_CONFIGURED,
-  activeChain,
-  connectWallet,
-  injected,
-  publicClient,
+  activeNetwork,
+  explorerContract,
+  liveBlockedReason,
+  provider,
+  shortAddress,
 } from "@/lib/chain";
-import type { Address } from "viem";
-
-const ERC20_BALANCE = [
-  {
-    name: "balanceOf",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "a", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
-
-const short = (a: string) => `${a.slice(0, 10)}…${a.slice(-8)}`;
+import type { Connection, StarknetWallet } from "@/lib/wallet";
 
 /**
  * Who you are on this chain, and what the desk is pointed at.
  *
- * Deliberately shows the deployment addresses rather than hiding them. The claim this
- * project makes is that the market is real and on-chain; the least it can do is print
- * the addresses so anyone can go and check.
+ * The addresses are printed rather than hidden. The claim this project makes is that the
+ * market is real and on chain; the least it can do is show where, so anyone can go and
+ * check it themselves.
+ *
+ * Two balances, and the distinction is the product. The **public** balance is what any
+ * observer can already see at this address. The **shielded** balance is inside the pool,
+ * readable only because your own wallet holds the viewing key and chose to answer — molfi
+ * never has one, which is why it can be unknown here and that is shown as unknown.
  */
-export function Account() {
-  const [account, setAccount] = useState<Address | null>(null);
-  const [balance, setBalance] = useState<bigint | null>(null);
-  const [gas, setGas] = useState<bigint | null>(null);
-  const [block, setBlock] = useState<bigint | null>(null);
+export function Account({
+  connection,
+  wallets,
+  shielded,
+  onConnect,
+  onDisconnect,
+}: {
+  connection: Connection | null;
+  wallets: StarknetWallet[];
+  shielded: bigint | null;
+  onConnect: (wallet: StarknetWallet) => Promise<unknown>;
+  onDisconnect: () => void;
+}) {
+  const [publicStrk, setPublicStrk] = useState<bigint | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const refresh = useCallback(async (who: Address | null) => {
-    try {
-      const b = await publicClient.getBlockNumber();
-      setBlock(b);
-      if (!who || !ADDRESSES.ausd) return;
-      const [bal, native] = await Promise.all([
-        publicClient.readContract({
-          address: ADDRESSES.ausd,
-          abi: ERC20_BALANCE,
-          functionName: "balanceOf",
-          args: [who],
-        }),
-        publicClient.getBalance({ address: who }),
-      ]);
-      setBalance(bal as bigint);
-      setGas(native);
-    } catch (e) {
-      setErr((e as Error).message.split("\n")[0]);
-    }
-  }, []);
-
   useEffect(() => {
-    const eth = injected();
-    if (!eth) {
-      void refresh(null);
+    if (!connection || !ADDRESSES.token) {
+      setPublicStrk(null);
       return;
     }
+    let stop = false;
     void (async () => {
       try {
-        // Read whatever is already authorised without prompting for access.
-        const accs = (await eth.request({ method: "eth_accounts" })) as Address[];
-        const who = accs?.[0] ?? null;
-        setAccount(who);
-        await refresh(who);
-      } catch {
-        void refresh(null);
+        const r = await provider.callContract({
+          contractAddress: ADDRESSES.token!,
+          entrypoint: "balance_of",
+          calldata: CallData.compile([connection.address]),
+        });
+        if (!stop) setPublicStrk((BigInt(r[1]) << 128n) | BigInt(r[0]));
+      } catch (e) {
+        if (!stop) {
+          setPublicStrk(null);
+          setErr(String((e as Error).message).split("\n")[0]);
+        }
       }
     })();
-  }, [refresh]);
-
-  const connect = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const who = await connectWallet();
-      setAccount(who);
-      await refresh(who);
-    } catch (e) {
-      setErr((e as Error).message.split("\n")[0]);
-    } finally {
-      setBusy(false);
-    }
-  };
+    return () => {
+      stop = true;
+    };
+  }, [connection]);
 
   const copy = async (label: string, value: string) => {
     try {
@@ -104,60 +80,92 @@ export function Account() {
     }
   };
 
+  const connect = async (wallet: StarknetWallet) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await onConnect(wallet);
+    } catch (e) {
+      setErr(String((e as Error).message).split("\n")[0]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-3 pb-6">
       {/* ---- identity */}
       <div className="rounded-2xl bg-[#141414] p-4">
         <div className="label">Wallet</div>
-        {account ? (
+        {connection ? (
           <>
             <button
-              onClick={() => copy("address", account)}
+              onClick={() => copy("address", connection.address)}
               className="tnum mt-1 block w-full truncate text-left text-[15px] font-semibold text-white"
             >
-              {short(account)}
+              {shortAddress(connection.address, 10, 8)}
             </button>
+            <p className="mt-0.5 text-[12px] text-white/40">
+              {connection.walletName} ·{" "}
+              {connection.network === "unknown" ? "unrecognised chain" : connection.network}
+            </p>
+
             <div className="mt-3 grid grid-cols-2 gap-4">
               <div>
-                <div className="label">AUSD</div>
+                <div className="label">Public STRK</div>
                 <div className="tnum mt-0.5 text-[15px] font-semibold text-white">
-                  {balance === null ? "—" : fmtUsd(balance)}
+                  {publicStrk === null ? "—" : fmtStrk(publicStrk, 3)}
                 </div>
               </div>
               <div>
-                <div className="label">Gas ({activeChain.nativeCurrency.symbol})</div>
+                <div className="label">Shielded STRK</div>
                 <div className="tnum mt-0.5 text-[15px] font-semibold text-white">
-                  {gas === null ? "—" : (Number(gas) / 1e18).toFixed(4)}
+                  {shielded === null ? "—" : fmtStrk(shielded, 3)}
                 </div>
               </div>
             </div>
-            {gas !== null && gas === 0n ? (
+
+            <Capabilities connection={connection} />
+
+            {publicStrk !== null && publicStrk === 0n ? (
               <p className="mt-3 text-[11px] leading-relaxed text-amber">
-                No {activeChain.nativeCurrency.symbol} for gas. Firing will fail until
-                this address can pay for a transaction.
+                No STRK at this address. Starknet charges fees in STRK, so every action —
+                including shielding — will fail until it can pay for one.
               </p>
             ) : null}
+
+            <button
+              onClick={onDisconnect}
+              className="mt-3 w-full rounded-xl bg-[#242424] py-2.5 text-[12px] font-semibold"
+            >
+              DISCONNECT
+            </button>
           </>
         ) : (
           <>
             <p className="mt-1 text-[13px] leading-relaxed text-white/50">
-              {injected()
+              {wallets.length > 0
                 ? "No wallet connected. The demo desk needs none — this is only for live rounds."
-                : "No wallet found in this browser. The demo desk still works without one."}
+                : "No Starknet wallet found in this browser. The demo desk still works without one."}
             </p>
-            {injected() ? (
+            {wallets.map((w) => (
               <button
-                onClick={() => void connect()}
+                key={w.name}
+                onClick={() => void connect(w)}
                 disabled={busy}
-                className="mt-3 w-full rounded-xl bg-amber-2 py-3 text-[13px] font-bold text-black disabled:opacity-60"
+                className="mt-3 flex w-full items-center gap-3 rounded-xl bg-amber-2 px-4 py-3 text-[13px] font-bold text-black disabled:opacity-60"
               >
-                {busy ? "CONNECTING…" : "CONNECT WALLET"}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {w.icon ? <img src={w.icon} alt="" className="h-5 w-5 rounded" /> : null}
+                {busy ? "CONNECTING…" : w.name.toUpperCase()}
               </button>
-            ) : null}
+            ))}
           </>
         )}
         {copied ? (
-          <p className="mono mt-2 text-[10px] tracking-[0.08em] text-green">COPIED {copied.toUpperCase()}</p>
+          <p className="mono mt-2 text-[10px] tracking-[0.08em] text-green">
+            COPIED {copied.toUpperCase()}
+          </p>
         ) : null}
         {err ? <p className="mt-2 text-[11px] leading-relaxed text-red">{err}</p> : null}
       </div>
@@ -165,30 +173,49 @@ export function Account() {
       {/* ---- network */}
       <div className="rounded-2xl bg-[#141414] p-4">
         <div className="label">Network</div>
-        <Line label="Chain" value={`${activeChain.name} · ${activeChain.id}`} />
-        <Line label="Head" value={block === null ? "—" : `block ${block.toString()}`} />
+        <Line label="Chain" value={`Starknet ${activeNetwork.name}`} />
+        <Line label="Chain id" value={activeNetwork.chainId} />
       </div>
 
       {/* ---- what the desk is pointed at */}
       <div className="rounded-2xl bg-[#141414] p-4">
         <div className="label">Deployment</div>
+        <Copyable label="Privacy pool" value={ADDRESSES.pool} onCopy={copy} />
+        <Copyable label="molfi market" value={ADDRESSES.market} onCopy={copy} />
+        <Copyable label="STRK" value={ADDRESSES.token} onCopy={copy} />
+        <Copyable label="Pragma oracle" value={ADDRESSES.oracle} onCopy={copy} />
         {LIVE_CONFIGURED ? (
-          <>
-            <Copyable label="Range market" value={ADDRESSES.rangeMarket} onCopy={copy} />
-            <Copyable label="Vault" value={ADDRESSES.vault} onCopy={copy} />
-            <Copyable label="AUSD" value={ADDRESSES.ausd} onCopy={copy} />
-            <Copyable label="Oracle" value={ADDRESSES.oracle} onCopy={copy} />
-            <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-              Printed so they can be checked. Every quote, fire and settlement the desk
-              shows came from these contracts.
-            </p>
-          </>
-        ) : (
-          <p className="mt-1 text-[13px] leading-relaxed text-white/50">
-            No deployment configured. The desk is running on paper.
+          <p className="mt-3 text-[11px] leading-relaxed text-white/40">
+            Printed so they can be checked. Every quote, position and settlement the desk
+            shows came from these contracts.
           </p>
+        ) : (
+          <p className="mt-3 text-[11px] leading-relaxed text-amber">{liveBlockedReason()}</p>
         )}
       </div>
+    </div>
+  );
+}
+
+/** What this wallet can actually do, asked rather than assumed. */
+function Capabilities({ connection }: { connection: Connection }) {
+  const items = [
+    { label: "private", on: connection.capabilities.privateActions },
+    { label: "dry run", on: connection.capabilities.dryRun },
+    { label: "balance", on: connection.capabilities.balances },
+  ];
+  return (
+    <div className="mt-3 flex gap-1.5">
+      {items.map((i) => (
+        <span
+          key={i.label}
+          className={`mono rounded border px-1.5 py-0.5 text-[9px] uppercase ${
+            i.on ? "border-amber/40 text-amber" : "border-white/10 text-white/25"
+          }`}
+        >
+          {i.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -211,14 +238,36 @@ function Copyable({
   value?: string | null;
   onCopy: (label: string, value: string) => void;
 }) {
-  if (!value) return null;
+  if (!value) {
+    return (
+      <div className="mt-2 flex items-baseline justify-between gap-3">
+        <span className="label shrink-0">{label}</span>
+        <span className="text-[11px] text-white/30">not deployed</span>
+      </div>
+    );
+  }
+  const link = explorerContract(value);
   return (
-    <button
-      onClick={() => onCopy(label, value)}
-      className="mt-2 flex w-full items-baseline justify-between gap-3 text-left"
-    >
+    <div className="mt-2 flex items-baseline justify-between gap-3">
       <span className="label shrink-0">{label}</span>
-      <span className="tnum truncate text-[11px] text-white/60 hover:text-white">{value}</span>
-    </button>
+      <span className="flex min-w-0 items-baseline gap-2">
+        <button
+          onClick={() => onCopy(label, value)}
+          className="tnum truncate text-[11px] text-white/60 hover:text-white"
+        >
+          {value}
+        </button>
+        {link ? (
+          <a
+            href={link}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="shrink-0 text-[11px] text-amber"
+          >
+            ↗
+          </a>
+        ) : null}
+      </span>
+    </div>
   );
 }

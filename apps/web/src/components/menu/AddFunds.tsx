@@ -2,20 +2,20 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { ADDRESSES, activeChain } from "@/lib/chain";
-import { SwapMon } from "./SwapMon";
+import { activeNetwork } from "@/lib/chain";
 
 /**
- * Deposit screen. The QR is a real encoding of the real receiving address — a
- * decorative pattern that does not scan would be worse than no QR at all.
+ * Deposit screen. The QR is a real encoding of the real receiving address — a decorative
+ * pattern that does not scan would be worse than no QR at all.
+ *
+ * The address is the user's own Starknet account, not a contract. STRK arrives there in
+ * public, and shielding it into the pool is a separate, deliberate step in the Pool sheet —
+ * conflating the two would hide the one moment where the amount and the funder are both
+ * visible on chain.
  */
-export function AddFunds() {
+export function AddFunds({ address }: { address: string | null }) {
   const [png, setPng] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  // In demo mode there is no deposit address; show the vault so the screen is honest
-  // about what it is pointing at.
-  const address = ADDRESSES.vault ?? ADDRESSES.rangeMarket ?? null;
 
   useEffect(() => {
     if (!address) return;
@@ -29,26 +29,16 @@ export function AddFunds() {
 
   return (
     <div className="pb-4">
-      {/* Everyone arriving on Monad holds MON and nobody holds AUSD, so the swap comes
-          before the deposit address. */}
-      <SwapMon />
-
-      <div className="mt-4 mb-3 flex items-center gap-3">
-        <span className="h-px flex-1 bg-white/10" />
-        <span className="label">or send AUSD</span>
-        <span className="h-px flex-1 bg-white/10" />
-      </div>
-
-      {/* No chevrons here. The market settles in AUSD on one chain, so a control that
-          looks like a dropdown would be offering a choice that does not exist. */}
+      {/* No chevrons here. molfi settles in STRK on one chain, so a control that looks
+          like a dropdown would be offering a choice that does not exist. */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="label">Currency</div>
           <div className="mt-1.5 flex items-center gap-2 rounded-xl bg-[#161616] px-3 py-3">
             <span className="grid h-6 w-6 place-items-center rounded-full bg-blue text-[11px] font-bold">
-              A
+              S
             </span>
-            <span className="flex-1 text-[14px] font-semibold">AUSD</span>
+            <span className="flex-1 text-[14px] font-semibold">STRK</span>
           </div>
         </div>
         <div>
@@ -57,7 +47,9 @@ export function AddFunds() {
             <span className="grid h-6 w-6 place-items-center rounded-full bg-purple text-[11px] font-bold">
               M
             </span>
-            <span className="flex-1 truncate text-[14px] font-semibold">{activeChain.name}</span>
+            <span className="flex-1 truncate text-[14px] font-semibold">
+              Starknet {activeNetwork.name}
+            </span>
           </div>
         </div>
       </div>
@@ -65,18 +57,18 @@ export function AddFunds() {
       <div className="mt-3 flex gap-3 rounded-xl bg-[#2a2010] px-4 py-3">
         <span className="text-[16px]">⚠</span>
         <p className="text-[12px] leading-relaxed text-amber">
-          Send only <span className="font-bold">AUSD</span> on{" "}
-          <span className="font-bold">{activeChain.name}</span> to this address. Anything
-          else is lost.
+          Send only <span className="font-bold">STRK</span> on{" "}
+          <span className="font-bold">Starknet {activeNetwork.name}</span> to this address.
+          Anything else is lost.
         </p>
       </div>
 
       {address ? (
         <div className="mt-3 rounded-2xl bg-amber p-4">
           <div className="flex items-center justify-between">
-            <span className="text-[15px] font-extrabold tracking-tight text-black">XORR</span>
+            <span className="text-[15px] font-extrabold tracking-tight text-black">molfi</span>
             <span className="mono text-[10px] font-bold tracking-[0.12em] text-black/70">
-              DEPOSIT AUSD
+              YOUR ADDRESS
             </span>
           </div>
 
@@ -105,15 +97,17 @@ export function AddFunds() {
             {copied ? "COPIED" : address}
           </button>
 
-          <p className="mt-2 text-center text-[11px] text-black/55">Minimum $3 recommended</p>
+          <p className="mt-2 text-center text-[11px] text-black/55">
+            Arrives in public. Shield it in the Pool sheet before opening a position.
+          </p>
         </div>
       ) : (
         <div className="mt-3 rounded-2xl bg-[#141414] p-6 text-center">
           <p className="text-[14px] text-white/60">
-            You are on the demo desk — the balance is paper and there is nothing to fund.
+            Connect a wallet and this shows your own receiving address.
           </p>
           <p className="mt-2 text-[12px] text-white/35">
-            Deploy the contracts and set NEXT_PUBLIC_VAULT to take real deposits.
+            On the demo desk the balance is paper, and there is nothing to fund.
           </p>
         </div>
       )}

@@ -13,6 +13,7 @@
     "@starknet-io/get-starknet-core": "^6.0.1",
     "@starknet-io/types-js": "^0.10.3",
     "next": "^15.5.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "starknet": "^10.4.0",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/three": "^0.172.0",
     "tailwindcss": "^4.0.0",

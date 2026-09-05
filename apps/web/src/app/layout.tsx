@@ -20,22 +20,22 @@ const display = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "XORR — built for fun and money",
+  title: "molfi — take a position nobody can see",
   description:
-    "Short-dated range tickets on Monad. Pick a band, stack it, and find out three seconds later.",
-  applicationName: "XORR",
+    "Range positions on Starknet. Pick a band and how long it has to hold. Your band and your size stay sealed until it settles.",
+  applicationName: "molfi",
   // The generated icon.svg / opengraph-image are picked up by convention; naming them
   // here as well would point at files that do not exist as static assets.
   twitter: {
     card: "summary_large_image",
-    title: "XORR — built for fun and money",
-    description: "Short-dated range tickets that die when the block does.",
+    title: "molfi — take a position nobody can see",
+    description: "A prediction market where your order stops being a signal before it is a trade.",
   },
   openGraph: {
     type: "website",
-    siteName: "XORR",
-    title: "XORR — built for fun and money",
-    description: "Short-dated range tickets that die when the block does.",
+    siteName: "molfi",
+    title: "molfi — take a position nobody can see",
+    description: "A prediction market where your order stops being a signal before it is a trade.",
   },
 };
 

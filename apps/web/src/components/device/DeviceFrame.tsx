@@ -3,7 +3,7 @@
 import { RailKey, StakeRail } from "./Controls";
 
 /**
- * The console body. Everything in XORR happens inside this frame, on any screen size:
+ * The console body. Everything in molfi happens inside this frame, on any screen size:
  * the device is the app, not a decoration around a web page.
  */
 export function DeviceFrame({

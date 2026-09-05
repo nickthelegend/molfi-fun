@@ -11,6 +11,7 @@ import {
   DEFAULT_CONFIG,
   payoutFor,
   roundLabel,
+  secondsLabel,
 } from "@molfi/sdk";
 import { usePaperDesk } from "@/lib/usePaperDesk";
 import { useBand } from "@/lib/useBand";
@@ -540,11 +541,11 @@ export function PlayScreen() {
             </div>
 
             <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
-              STACK AS MANY AS YOU LIKE.
+              TOP UP AS OFTEN AS YOU LIKE.
               <br />
               THEY ALL SETTLE AT THE
               <br />
-              CUTOFF · {round.seconds}S ROUND
+              CUTOFF · {secondsLabel(round.seconds).toUpperCase()} ROUND
             </p>
           </div>
 

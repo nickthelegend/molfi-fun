@@ -6,7 +6,7 @@ import { BufferAttribute, BufferGeometry, Color, type Group } from "three";
 import { CONSOLE_MATERIALS, buildConsole } from "@molfi/sdk";
 
 /**
- * The XORR console in WebGL.
+ * The molfi console in WebGL.
  *
  * The geometry is built in-process from the shared definition in @molfi/sdk — the same
  * one tools/model/build-model.mjs serialises to xorr-console.glb. Nothing is fetched

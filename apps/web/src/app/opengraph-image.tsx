@@ -9,7 +9,7 @@ import { ImageResponse } from "next/og";
  * claim, and a screenshot of a dark rectangle would not carry it.
  */
 export const runtime = "edge";
-export const alt = "XORR — a handheld console for trading price ranges on Monad";
+export const alt = "molfi — a handheld console for taking price-range positions nobody can see";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -48,17 +48,17 @@ export default function OpengraphImage() {
             </div>
             <div style={{ width: 36, height: 9, borderRadius: 5, background: "#ff9f0a" }} />
           </div>
-          <div style={{ color: "#ff9f0a", fontSize: 46, letterSpacing: 10, fontWeight: 700 }}>
-            XORR
+          <div style={{ color: "#ff9f0a", fontSize: 40, letterSpacing: 8, fontWeight: 700 }}>
+            MOLFI
           </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
           <div style={{ color: "#ffffff", fontSize: 68, lineHeight: 1.1, fontWeight: 700 }}>
-            Built for fun and money.
+            Take a position nobody can see.
           </div>
           <div style={{ color: "#8a8a8a", fontSize: 31, lineHeight: 1.45 }}>
-            Paint a band around the price. If it prints inside at the cutoff block,
+            Paint a band around the price. If it prints inside at the cutoff,
             you get paid the multiplier.
           </div>
         </div>
@@ -74,10 +74,10 @@ export default function OpengraphImage() {
               padding: "10px 22px",
             }}
           >
-            the MON price is Kuru&apos;s order book, read on-chain
+            your band and your size stay hidden until you claim
           </div>
           <div style={{ display: "flex", color: "#5c5c5c", fontSize: 23 }}>
-            300ms blocks · Monad
+            STRK20 privacy pool · Starknet
           </div>
         </div>
       </div>

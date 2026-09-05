@@ -3,17 +3,32 @@
 import { useState } from "react";
 import { fmtUsd, type PaperTicket } from "@molfi/sdk";
 import { Row, Sheet, Tile } from "./Sheet";
+import type { Connection, StarknetWallet } from "@/lib/wallet";
+import type { LivePosition } from "@/lib/useLiveDesk";
 import { Leaderboard } from "./Leaderboard";
 import { AddFunds } from "./AddFunds";
 import { History } from "./History";
 import { HowToBody } from "./HowToSheet";
-import { OrderBook } from "./OrderBook";
+import { Oracle } from "./Oracle";
 import { Settings } from "./Settings";
 import { Customize } from "./Customize";
 import { Account } from "./Account";
 import { Achievements } from "./Achievements";
-import { Rooms } from "./Rooms";
-import { Vault } from "./Vault";
+import { Pool } from "./Pool";
+
+/** What the menu needs from the live desk. Absent on the demo desk, which owns no chain. */
+export interface LiveMenu {
+  connection: Connection | null;
+  wallets: StarknetWallet[];
+  shielded: bigint | null;
+  positions: LivePosition[];
+  pending: string | null;
+  connect: (wallet: StarknetWallet) => Promise<unknown>;
+  disconnect: () => void;
+  shield: (amount: bigint) => Promise<string>;
+  unshield: (amount: bigint, to: string) => Promise<string>;
+  claim: (p: LivePosition) => Promise<string>;
+}
 
 type View =
   | "menu"
@@ -22,13 +37,12 @@ type View =
   | "history"
   | "howto"
   | "about"
-  | "book"
+  | "oracle"
   | "settings"
   | "customize"
   | "account"
   | "awards"
-  | "vault"
-  | "rooms";
+  | "pool";
 
 export function MenuSheet({
   onClose,
@@ -37,6 +51,7 @@ export function MenuSheet({
   pnl,
   onReset,
   onAttract,
+  live,
 }: {
   onClose: () => void;
   balance: bigint;
@@ -45,6 +60,13 @@ export function MenuSheet({
   onReset: () => void;
   /** Start attract mode: the desk plays itself until someone touches it. */
   onAttract?: () => void;
+  /**
+   * The chain, when there is one to talk to.
+   *
+   * Optional because the demo desk is a complete product on its own and must not require
+   * a wallet, a node, or a deployment to open its own menu.
+   */
+  live?: LiveMenu;
 }) {
   const [view, setView] = useState<View>("menu");
   const back = () => setView("menu");
@@ -59,7 +81,7 @@ export function MenuSheet({
   if (view === "funds")
     return (
       <Sheet onClose={onClose} onBack={back} title="Add funds">
-        <AddFunds />
+        <AddFunds address={live?.connection?.address ?? null} />
       </Sheet>
     );
 
@@ -70,10 +92,10 @@ export function MenuSheet({
       </Sheet>
     );
 
-  if (view === "book")
+  if (view === "oracle")
     return (
-      <Sheet onClose={onClose} onBack={back} title="Kuru book">
-        <OrderBook />
+      <Sheet onClose={onClose} onBack={back} title="The oracle">
+        <Oracle />
       </Sheet>
     );
 
@@ -94,21 +116,35 @@ export function MenuSheet({
   if (view === "account")
     return (
       <Sheet onClose={onClose} onBack={back} title="Account">
-        <Account />
+        <Account
+          connection={live?.connection ?? null}
+          wallets={live?.wallets ?? []}
+          shielded={live?.shielded ?? null}
+          onConnect={live?.connect ?? (async () => undefined)}
+          onDisconnect={live?.disconnect ?? (() => undefined)}
+        />
       </Sheet>
     );
 
-  if (view === "vault")
+  if (view === "pool")
     return (
-      <Sheet onClose={onClose} onBack={back} title="The vault">
-        <Vault />
-      </Sheet>
-    );
-
-  if (view === "rooms")
-    return (
-      <Sheet onClose={onClose} onBack={back} title="Rooms">
-        <Rooms />
+      <Sheet onClose={onClose} onBack={back} title="The pool">
+        {live ? (
+          <Pool
+            shielded={live.shielded}
+            positions={live.positions}
+            pending={live.pending}
+            address={live.connection?.address ?? null}
+            onShield={live.shield}
+            onUnshield={live.unshield}
+            onClaim={live.claim}
+          />
+        ) : (
+          <p className="text-[14px] leading-relaxed text-white/55">
+            You are on the demo desk. The balance here is paper, so there is no pool to
+            shield into and nothing to withdraw. Switch to live to use real STRK.
+          </p>
+        )}
       </Sheet>
     );
 
@@ -128,24 +164,30 @@ export function MenuSheet({
 
   if (view === "about")
     return (
-      <Sheet onClose={onClose} onBack={back} title="About XORR">
+      <Sheet onClose={onClose} onBack={back} title="About molfi">
         <div className="space-y-4 text-[14px] leading-relaxed text-white/70">
           <p>
-            XORR is a range console on Monad. You pick a band around the price. If the
+            molfi is a range console on Starknet. You pick a band around the price. If the
             price prints inside your band at the cutoff, you get paid the multiplier.
           </p>
           <p>
-            The cutoff is a <span className="text-white">block number</span>, not a clock.
-            Monad settles a block roughly every 300 milliseconds, so a ten-block round is
-            about three seconds — the round is over before a countdown would have finished
-            animating.
+            Nobody can see which band you picked, or how much you staked, until you claim.
+            The contract stores a <span className="text-white">hash</span> of your position
+            and the pool never tells it who called — so on a public chain your order stops
+            being a signal before it is a trade.
           </p>
           <p>
-            Stakes are AUSD. Settlement is a public transaction anyone can verify, and
-            anyone can poke an expired ticket to settle it.
+            The cutoff is a <span className="text-white">time</span>, not a block. What
+            limits a round here is how often the oracle republishes, and Pragma publishes
+            every few minutes — so the shortest round molfi can settle honestly is fifteen
+            minutes, not three seconds.
+          </p>
+          <p>
+            Stakes are STRK. Settlement is a public transaction anyone can verify, and
+            anyone can settle an expired market — not just whoever opened a position in it.
           </p>
           <p className="text-white/45">
-            Built for the Monad Metropolis hackathon. Chain 143.
+            Built for the STRK20 Private Sprint, on the Starknet privacy pool.
           </p>
         </div>
       </Sheet>
@@ -180,10 +222,10 @@ export function MenuSheet({
 
       {/* ------------------------------------------------------------- banner */}
       <div className="mt-3 flex items-center gap-3 rounded-xl bg-amber px-4 py-3">
-        <span className="text-[22px]">⭐</span>
+        <span className="text-[22px]">🕶️</span>
         <p className="mono text-[10px] font-semibold leading-[1.5] tracking-[0.04em] text-black">
-          WE THINK THIS IS SOMETHING MONAD WOULD BE{" "}
-          <span className="bg-black px-1 text-amber">PROUD</span> TO HAVE IN THE ECOSYSTEM.
+          YOUR BAND AND YOUR SIZE ARE A{" "}
+          <span className="bg-black px-1 text-amber">COMMITMENT</span>, NEVER AN ADDRESS.
         </p>
       </div>
 
@@ -213,9 +255,9 @@ export function MenuSheet({
             ↓ DEPOSIT
           </button>
           <button
-            onClick={() => setView("vault")}
+            onClick={() => setView("pool")}
             aria-label="withdraw"
-            title="The vault"
+            title="The pool"
             className="grid h-9 w-9 place-items-center rounded-lg bg-[#242424] transition-colors hover:bg-[#2e2e2e]"
           >
             ↑
@@ -227,7 +269,7 @@ export function MenuSheet({
       <div className="mt-3 grid grid-cols-3 gap-3">
         <Tile icon="🕘" label="History" onClick={() => setView("history")} />
         <Tile icon="🏆" label="Leaderboard" onClick={() => setView("leaderboard")} />
-        <Tile icon="📖" label="Kuru book" onClick={() => setView("book")} />
+        <Tile icon="📡" label="Oracle" onClick={() => setView("oracle")} />
         <Tile icon="🎨" label="Customize" onClick={() => setView("customize")} />
         <Tile icon="⚙️" label="Settings" onClick={() => setView("settings")} />
         <Tile icon="🔑" label="Account" onClick={() => setView("account")} />
@@ -245,10 +287,9 @@ export function MenuSheet({
             }}
           />
         ) : null}
-        <Row icon="🎯" label="Rooms · play against other people" onClick={() => setView("rooms")} />
-        <Row icon="🏦" label="The vault · take the house side" onClick={() => setView("vault")} />
+        <Row icon="🛡️" label="The pool · shield, withdraw, your positions" onClick={() => setView("pool")} />
         <Row icon="🧭" label="How it works" onClick={() => setView("howto")} />
-        <Row icon="ℹ️" label="About XORR" onClick={() => setView("about")} />
+        <Row icon="ℹ️" label="About molfi" onClick={() => setView("about")} />
       </div>
 
       <button
@@ -260,25 +301,25 @@ export function MenuSheet({
 
       <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-5">
         <a
-          href="https://x.com/monad"
+          href="https://strk20-by-example.org"
           target="_blank"
           rel="noreferrer noopener"
           className="flex items-center gap-2 rounded-full bg-[#161616] px-4 py-2.5 text-[13px] font-semibold"
         >
-          𝕏 Follow
+          STRK20 docs
         </a>
         <div className="text-right">
           <div className="label">Powered by</div>
           <div className="mt-0.5 flex items-center justify-end gap-1.5">
             <span className="h-3 w-5 rounded-sm bg-purple" />
-            <span className="text-[15px] font-bold">Monad</span>
+            <span className="text-[15px] font-bold">Starknet</span>
           </div>
         </div>
       </div>
 
       <p className="mt-4 text-center text-[12px] leading-relaxed text-white/45">
-        <span className="font-semibold text-white/70">XORR has no token.</span> Any coin
-        claiming to be XORR is a scam.
+        <span className="font-semibold text-white/70">molfi has no token.</span> Any coin
+        claiming to be molfi is a scam.
       </p>
     </Sheet>
   );

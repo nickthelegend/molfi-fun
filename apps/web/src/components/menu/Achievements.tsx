@@ -50,7 +50,7 @@ function longestLossStreak(settled: PaperTicket[]): number {
 
 export function buildAwards(tickets: PaperTicket[]): Award[] {
   // Oldest first, so a streak means what the word means.
-  const ordered = [...tickets].sort((a, b) => a.openBlock - b.openBlock);
+  const ordered = [...tickets].sort((a, b) => a.openedAt - b.openedAt);
   const settled = ordered.filter((t) => t.status === "won" || t.status === "lost");
   const wins = settled.filter((t) => t.status === "won");
 

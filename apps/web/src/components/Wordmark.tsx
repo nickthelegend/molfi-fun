@@ -1,12 +1,14 @@
 /**
- * XORR as a block wordmark — drawn from a 5x5 bitmap grid rather than hand-placed
- * rectangles, so the glyphs are guaranteed symmetric and an R can never come out
- * mirrored. Reads as hardware rather than a font choice, and holds up at any size.
+ * molfi as a block wordmark — drawn from a 5x5 bitmap grid rather than hand-placed
+ * rectangles, so the glyphs are guaranteed symmetric and an f can never come out mirrored.
+ * Reads as hardware rather than a font choice, and holds up at any size.
  */
 const GLYPHS: Record<string, string[]> = {
-  X: ["10001", "01010", "00100", "01010", "10001"],
+  M: ["10001", "11011", "10101", "10001", "10001"],
   O: ["01110", "10001", "10001", "10001", "01110"],
-  R: ["11110", "10001", "11110", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "11111"],
+  F: ["11111", "10000", "11110", "10000", "10000"],
+  I: ["11111", "00100", "00100", "00100", "11111"],
 };
 
 const UNIT = 6;
@@ -15,7 +17,7 @@ const GAP = 1; // blank columns between letters, in units
 export function Wordmark({
   className = "",
   height = 34,
-  word = "XORR",
+  word = "MOLFI",
 }: {
   className?: string;
   height?: number;

@@ -30,12 +30,12 @@ export default function Home() {
           </div>
 
           <h1 className="mt-2 text-center text-[27px] font-extrabold leading-tight tracking-tight">
-            Built for fun and money.
+            Take a position nobody can see.
           </h1>
           <p className="mt-2 text-center text-[14px] leading-relaxed text-white/50">
-            Fun enough you forget it&apos;s trading.
+            Pick a price range and how long it holds.
             <br />
-            Real enough to matter.
+            Your band and your size stay sealed until it settles.
           </p>
 
           <Link
@@ -56,7 +56,9 @@ export default function Home() {
             <div className="label">Powered by</div>
             <div className="mt-1.5 flex items-center justify-center gap-2">
               <span className="h-3.5 w-6 rounded-sm bg-purple" />
-              <span className="text-[16px] font-bold tracking-tight">Monad</span>
+              <span className="text-[16px] font-bold tracking-tight">
+                Starknet privacy pool
+              </span>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { MARKETS, ROUND_BLOCKS, roundLabel } from "@molfi/sdk";
+import { MARKETS, ROUND_SECONDS, roundLabel } from "@molfi/sdk";
 import { usePrefs, usePrefersReducedMotion, type Prefs } from "@/lib/usePrefs";
 
 /**
@@ -38,10 +38,10 @@ export function Settings({ onSound }: { onSound?: (on: boolean) => void }) {
           onChange={(v) => set("reducedMotion", v)}
         />
         <Toggle
-          label="Show the Kuru book"
-          hint="Puts live order-book depth beside the chart."
-          value={prefs.showBook}
-          onChange={(v) => set("showBook", v)}
+          label="Show the oracle strip"
+          hint="Puts the settling median's age, publisher count and drift on the deck."
+          value={prefs.showOracle}
+          onChange={(v) => set("showOracle", v)}
         />
       </Group>
 
@@ -55,7 +55,7 @@ export function Settings({ onSound }: { onSound?: (on: boolean) => void }) {
         <Choice
           label="Round"
           value={String(prefs.tier)}
-          options={ROUND_BLOCKS.map((_, i) => ({ value: String(i), label: roundLabel(i) }))}
+          options={ROUND_SECONDS.map((_: number, i: number) => ({ value: String(i), label: roundLabel(i) }))}
           onChange={(v) => set("tier", Number(v) as Prefs["tier"])}
         />
       </Group>

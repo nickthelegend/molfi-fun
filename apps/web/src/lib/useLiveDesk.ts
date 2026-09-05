@@ -1,98 +1,137 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Address, Hex } from "viem";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CallData } from "starknet";
+import { MARKETS, ROUND_SECONDS, newSecret, type MarketDef, type PositionSecret } from "@molfi/sdk";
+import { ADDRESSES, LIVE_CONFIGURED, liveBlockedReason, provider } from "./chain";
 import {
-  MARKETS,
-  RangeMarketAbi,
-  TestAUSDAbi,
-  XorrVaultAbi,
-  type MarketDef,
-} from "@molfi/sdk";
-import { ADDRESSES, connectWallet, explorerTx, publicClient, walletClientFor } from "./chain";
+  blockingReason,
+  connectTo,
+  reconnect,
+  shieldedBalances,
+  type Connection,
+  type StarknetWallet,
+} from "./wallet";
+import {
+  claimActions,
+  errorText,
+  openActions,
+  shieldActions,
+  submit,
+  unshieldActions,
+  type PoolAddresses,
+} from "./pool";
+import {
+  allPositions,
+  exportPosition,
+  markClaimed,
+  remember,
+  subscribe,
+  type StoredPosition,
+} from "./positions";
 import type { PricePoint } from "./usePaperDesk";
 
-const HISTORY = 160;
-const READ_EVERY_MS = 900; // block number ticks at 300ms; contract reads are heavier
+/**
+ * The live desk.
+ *
+ * Everything on screen is read from the chain or from the user's own wallet. Nothing here
+ * is simulated: if the node is down the desk says so rather than falling back to invented
+ * numbers.
+ *
+ * The shape is different from the Monad build in one way that matters. There, the desk read
+ * `ticketsOf(account)` and the chain told it what the player owned. Here the chain stores a
+ * commitment and nothing that links it to anyone — so positions come from the local store,
+ * and the chain is asked only to confirm what it already holds under a commitment the
+ * browser derived. That is not a limitation working around privacy; it *is* the privacy.
+ */
 
-export interface LiveTicket {
-  id: bigint;
-  low: bigint;
-  high: bigint;
-  stake: bigint;
-  payout: bigint;
-  multiplierBps: number;
-  prob1e6: number;
-  /** uint48 on-chain, which viem decodes as a JS number. */
-  openBlock: number;
-  expiryBlock: number;
+const HISTORY = 160;
+const READ_EVERY_MS = 8_000;
+
+export interface LiveMarket {
+  id: number;
+  pair: string;
+  cutoffAt: number;
+  isSettled: boolean;
   settledPrice: bigint;
-  status: number;
+  settledAt: number;
+  settledSources: number;
+  staked: bigint;
+  paid: bigint;
+  sigma1e4: bigint;
+  houseEdgeBps: number;
+}
+
+/** A stored position, joined with whatever the chain says about it. */
+export interface LivePosition extends StoredPosition {
+  onChain: {
+    exists: boolean;
+    claimed: boolean;
+    stake: bigint;
+    multiplierBps: bigint;
+  } | null;
+  market: LiveMarket | null;
+  /** True when the market has settled and the settled price landed inside the band. */
+  won: boolean | null;
 }
 
 export interface LiveState {
   ready: boolean;
+  /** Why the live desk cannot be used at all, or null. Not an error — a configuration fact. */
+  unavailable: string | null;
   error: string | null;
-  account: Address | null;
-  block: bigint;
+  connection: Connection | null;
+  /** Why the connected wallet cannot act, or null. */
+  blocked: string | null;
+  wallets: StarknetWallet[];
+  /** Shielded STRK, as the wallet reports it. molfi never holds a key to check. */
+  shielded: bigint | null;
+  markets: LiveMarket[];
+  positions: LivePosition[];
+  /**
+   * Every market past its cutoff that nobody has settled.
+   *
+   * Settlement is permissionless on purpose — a market whose resolution depends on the
+   * operator showing up is not one you should take the other side of — so the desk shows
+   * the whole queue and lets anyone clear it.
+   */
+  dueMarkets: LiveMarket[];
   spot: bigint;
   history: PricePoint[];
-  balance: bigint;
-  allowance: bigint;
-  utilisationBps: bigint;
-  roundBlocks: number[];
-  tickets: LiveTicket[];
-  /**
-   * Every open ticket past its cutoff, whoever opened it.
-   *
-   * Settlement is permissionless — the contract lets anyone poke an expired ticket, and
-   * the keeper exists only to make sure somebody does. A console that settles only its
-   * own tickets quietly implies otherwise, so the desk surfaces the whole queue and
-   * lets a player clear it.
-   */
-  dueTickets: LiveTicket[];
   pending: string | null;
-  lastTx: { hash: Hex; label: string } | null;
+  lastTx: { hash: string; label: string } | null;
 }
 
-/**
- * The live desk. Everything on screen is read from the chain: the block height, the
- * oracle print, the quote, the vault's utilisation, and the player's own tickets.
- * Nothing here is simulated — if the RPC is down, the desk says so rather than
- * quietly falling back to made-up numbers.
- */
-/**
- * The most informative sentence available from a chain error.
- *
- * viem maps JSON-RPC error codes onto canned messages, so a node that is simply not
- * answering surfaces as "Missing or invalid parameters" — which sends whoever is
- * debugging at the request rather than at the dead node. The original text survives on
- * `details`/`shortMessage`, so prefer those.
- */
-function chainErrorText(e: unknown): string {
-  const err = e as { details?: string; shortMessage?: string; message?: string };
-  const pick = err?.details || err?.shortMessage || err?.message || String(e);
-  return pick.split("\n")[0].slice(0, 120);
-}
+const EMPTY: LiveState = {
+  ready: false,
+  unavailable: null,
+  error: null,
+  connection: null,
+  blocked: null,
+  wallets: [],
+  shielded: null,
+  markets: [],
+  positions: [],
+  dueMarkets: [],
+  spot: 0n,
+  history: [],
+  pending: null,
+  lastTx: null,
+};
 
 /**
  * One transaction at a time, per session.
  *
- * Two fires in flight from the same account collide on a nonce: the wallet hands both
- * the same one, the second is rejected as a replacement, and the desk shows a failure
- * for a ticket the user did open. On a 300ms chain that is not a rare race — it is what
- * happens when someone hits the key twice, which the product actively encourages by
- * telling them to stack.
- *
- * A queue rather than a lock, because refusing the second press would be worse than
- * sequencing it: the band is sent as a shape and centred at execution, so a fire that
- * waits its turn is still the band the player painted.
+ * Two in flight from the same account collide on a nonce: the wallet hands both the same
+ * one, the second is rejected as a replacement, and the desk reports a failure for a
+ * position the user did open. A queue rather than a lock, because refusing the second press
+ * would be worse than sequencing it.
  */
 let txQueue: Promise<unknown> = Promise.resolve();
 
 function queued<T>(job: () => Promise<T>): Promise<T> {
   const run = txQueue.then(job, job);
-  // Keep the chain alive after a rejection; a failed fire must not wedge every later one.
+  // Keep the chain alive after a rejection; one failure must not wedge every later call.
   txQueue = run.then(
     () => undefined,
     () => undefined,
@@ -100,189 +139,153 @@ function queued<T>(job: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/**
- * Retry a read that failed for a transport reason, and never one that failed for a
- * contract reason.
- *
- * A reverted simulation is an answer — the band is too tight, the price is stale — and
- * retrying it just repeats the same answer more slowly. A dropped connection is not an
- * answer, and on a node that is briefly busy the difference between surfacing it and
- * retrying once is the difference between a demo that stutters and one that fails.
- */
-async function withBackoff<T>(what: string, job: () => Promise<T>, attempts = 3): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await job();
-    } catch (e) {
-      const msg = String((e as Error)?.message ?? e);
-      // Anything the contract or the user decided is final.
-      if (
-        /revert|rejected|denied|insufficient|Stale|Band|Tier|Market|execution reverted|User/i.test(
-          msg,
-        )
-      ) {
-        throw e;
-      }
-      lastErr = e;
-      if (i < attempts - 1) {
-        // 200ms, then 600ms. Short: the round these serve is three seconds long.
-        await new Promise((r) => setTimeout(r, 200 * 3 ** i));
-      }
-    }
+const u256 = (lo: string, hi: string) => (BigInt(hi) << 128n) | BigInt(lo);
+
+/** felt → the short string it encodes, e.g. 'BTC/USD'. */
+function toLabel(felt: string): string {
+  let n = BigInt(felt);
+  const bytes: number[] = [];
+  while (n > 0n) {
+    bytes.unshift(Number(n & 0xffn));
+    n >>= 8n;
   }
-  throw new Error(
-    `${what} failed after ${attempts} attempts: ${String((lastErr as Error)?.message ?? lastErr).slice(0, 160)}`,
-  );
+  return String.fromCharCode(...bytes);
 }
 
 export function useLiveDesk(market: MarketDef, tier: number) {
   const [state, setState] = useState<LiveState>({
-    ready: false,
-    error: null,
-    account: null,
-    block: 0n,
-    spot: 0n,
-    history: [],
-    balance: 0n,
-    allowance: 0n,
-    utilisationBps: 0n,
-    roundBlocks: [],
-    tickets: [],
-    dueTickets: [],
-    pending: null,
-    lastTx: null,
+    ...EMPTY,
+    unavailable: liveBlockedReason(),
   });
-
+  const connectionRef = useRef<Connection | null>(null);
   const historyRef = useRef<PricePoint[]>([]);
-  const accountRef = useRef<Address | null>(null);
+  const [stored, setStored] = useState<StoredPosition[]>([]);
 
-  const range = ADDRESSES.rangeMarket;
-  const vault = ADDRESSES.vault;
-  const ausd = ADDRESSES.ausd;
+  const addresses: PoolAddresses | null = useMemo(
+    () =>
+      ADDRESSES.pool && ADDRESSES.token && ADDRESSES.market
+        ? { pool: ADDRESSES.pool, token: ADDRESSES.token, market: ADDRESSES.market }
+        : null,
+    [],
+  );
 
-  // ---- block height, straight off the chain, as fast as it moves
+  // ---- the local position store, which is the only index of what this browser owns
   useEffect(() => {
-    if (!range) return;
-    const unwatch = publicClient.watchBlockNumber({
-      emitOnBegin: true,
-      onBlockNumber: (block) => setState((s) => ({ ...s, block })),
-      onError: (e) => setState((s) => ({ ...s, error: chainErrorText(e) })),
-    });
-    return () => unwatch();
-  }, [range]);
+    setStored(allPositions());
+    return subscribe(setStored);
+  }, []);
 
-  // ---- contract reads
+  // ---- the wallets the browser is offering, and any already-authorised one
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let stop = false;
+    void (async () => {
+      const { walletStore } = await import("./wallet");
+      const store = walletStore();
+      const publish = () => {
+        if (!stop) setState((s) => ({ ...s, wallets: [...store.getWallets()] }));
+      };
+      publish();
+      const unsubscribe = store.subscribe(publish);
+
+      for (const w of store.getWallets()) {
+        const c = await reconnect(w);
+        if (c && !stop) {
+          connectionRef.current = c;
+          setState((s) => ({ ...s, connection: c, blocked: blockingReason(c) }));
+          break;
+        }
+      }
+      if (stop) unsubscribe();
+    })();
+    return () => {
+      stop = true;
+    };
+  }, []);
+
+  // ---- the markets the contract holds
   const refresh = useCallback(async () => {
-    if (!range || !vault || !ausd) return;
+    if (!addresses) return;
     try {
-      const account = accountRef.current;
+      const [countFelt] = await provider.callContract({
+        contractAddress: addresses.market,
+        entrypoint: "market_count",
+        calldata: [],
+      });
+      const count = Number(BigInt(countFelt));
 
-      // Explicit parallel reads rather than one mixed multicall: viem cannot infer a
-      // heterogeneous contracts array built with a conditional spread, and losing the
-      // ABI types here would mean losing the compile-time check that the desk and the
-      // contract still agree on every signature.
-      const [limits, utilisationBps, roundsRaw] = await Promise.all([
-        publicClient.readContract({
-          address: range,
-          abi: RangeMarketAbi,
-          functionName: "bandLimits",
-          args: [market.marketId as Hex, tier],
+      const markets: LiveMarket[] = await Promise.all(
+        Array.from({ length: count }, (_, i) => i + 1).map(async (id) => {
+          const r = await provider.callContract({
+            contractAddress: addresses.market,
+            entrypoint: "get_market",
+            calldata: CallData.compile([id]),
+          });
+          // Market, in declaration order: pair, cutoff_at, token, sigma_1e4,
+          // house_edge_bps, settled_price, settled_at, settled_sources, is_settled,
+          // staked, paid. Every u256 is two felts, low limb first.
+          return {
+            id,
+            pair: toLabel(r[0]),
+            cutoffAt: Number(BigInt(r[1])),
+            sigma1e4: u256(r[3], r[4]),
+            houseEdgeBps: Number(u256(r[5], r[6])),
+            settledPrice: u256(r[7], r[8]),
+            settledAt: Number(BigInt(r[9])),
+            settledSources: Number(BigInt(r[10])),
+            isSettled: BigInt(r[11]) === 1n,
+            staked: u256(r[12], r[13]),
+            paid: u256(r[14], r[15]),
+          };
         }),
-        publicClient.readContract({
-          address: vault,
-          abi: XorrVaultAbi,
-          functionName: "utilisationBps",
+      );
+
+      const now = Math.floor(Date.now() / 1000);
+      const dueMarkets = markets.filter((m) => !m.isSettled && m.cutoffAt <= now);
+
+      // Positions are looked up by commitment, which is public and says nothing about who
+      // is asking. This is the only read that could ever link a viewer to a position, and
+      // it is a plain `starknet_call` from whatever node the browser is using.
+      const positions: LivePosition[] = await Promise.all(
+        allPositions().map(async (p) => {
+          const m = markets.find((x) => x.id === p.marketId) ?? null;
+          let onChain: LivePosition["onChain"] = null;
+          try {
+            const r = await provider.callContract({
+              contractAddress: addresses.market,
+              entrypoint: "get_position",
+              calldata: CallData.compile([p.commitment]),
+            });
+            // Position: market_id, band_low, band_high, stake, multiplier_bps, claimed,
+            // exists.
+            onChain = {
+              stake: BigInt(r[3]),
+              multiplierBps: u256(r[4], r[5]),
+              claimed: BigInt(r[6]) === 1n,
+              exists: BigInt(r[7]) === 1n,
+            };
+          } catch {
+            // A position the node cannot answer for is shown as unknown, not as absent.
+          }
+          const won =
+            m?.isSettled && m.settledPrice > 0n
+              ? m.settledPrice > p.bandLow && m.settledPrice < p.bandHigh
+              : null;
+          return { ...p, onChain, market: m, won };
         }),
-        publicClient.readContract({ address: range, abi: RangeMarketAbi, functionName: "rounds" }),
-      ]);
+      );
 
-      const spot = (limits as readonly bigint[])[0];
-      const roundBlocks = (roundsRaw as readonly number[]).map(Number);
-
-      let balance = 0n;
-      let allowance = 0n;
-      let tickets: LiveTicket[] = [];
-
-      if (account) {
-        const [bal, allow, ids] = await Promise.all([
-          publicClient.readContract({
-            address: ausd,
-            abi: TestAUSDAbi,
-            functionName: "balanceOf",
-            args: [account],
-          }),
-          publicClient.readContract({
-            address: ausd,
-            abi: TestAUSDAbi,
-            functionName: "allowance",
-            args: [account, range],
-          }),
-          publicClient.readContract({
-            address: range,
-            abi: RangeMarketAbi,
-            functionName: "ticketsOf",
-            args: [account],
-          }),
-        ]);
-        balance = bal as bigint;
-        allowance = allow as bigint;
-
-        // Only the most recent handful; the tape does not need a full history.
-        const recent = (ids as readonly bigint[]).slice(-12);
-        const raw = await Promise.all(
-          recent.map((id) =>
-            publicClient.readContract({
-              address: range,
-              abi: RangeMarketAbi,
-              functionName: "getTicket",
-              args: [id],
-            }),
-          ),
-        );
-        tickets = raw.map((t, i) => ({ ...(t as Omit<LiveTicket, "id">), id: recent[i] }));
-      }
-
-      /**
-       * The market-wide settle queue, scanned from the newest ticket backwards.
-       *
-       * Bounded on purpose: a full scan from id 1 grows without limit and this runs on
-       * a four-second poll. The tail is where anything unsettled actually is, because
-       * everything older has either been poked already or is past its window.
-       */
-      let dueTickets: LiveTicket[] = [];
-      try {
-        const head = await publicClient.getBlockNumber();
-        const next = (await publicClient.readContract({
-          address: range,
-          abi: RangeMarketAbi,
-          functionName: "nextTicketId",
-        })) as bigint;
-        const ids: bigint[] = [];
-        for (let id = next - 1n; id >= 1n && ids.length < 24; id--) ids.push(id);
-        const rows = await Promise.all(
-          ids.map((id) =>
-            publicClient.readContract({
-              address: range,
-              abi: RangeMarketAbi,
-              functionName: "getTicket",
-              args: [id],
-            }),
-          ),
-        );
-        dueTickets = rows
-          .map((t, i) => ({ ...(t as Omit<LiveTicket, "id">), id: ids[i] }))
-          .filter((t) => t.status === 0 && head >= BigInt(t.expiryBlock));
-      } catch {
-        // The queue is a convenience; the desk works without it.
-      }
-
-      if (spot > 0n) {
-        const h = historyRef.current;
-        const last = h[h.length - 1];
-        if (!last || last.price !== spot) {
-          h.push({ block: Number(state.block), price: spot });
-          if (h.length > HISTORY) h.shift();
+      let shielded: bigint | null = null;
+      const c = connectionRef.current;
+      if (c?.capabilities.balances && addresses.token) {
+        try {
+          const balances = await shieldedBalances(c, [addresses.token]);
+          const entry = balances.find((b) => BigInt(b.token) === BigInt(addresses.token));
+          shielded = entry ? BigInt(entry.balance) : 0n;
+        } catch {
+          // A wallet that will not answer leaves the balance unknown rather than zero.
+          // Rendering an unknown balance as "0.000 STRK" is a lie with a decimal point.
+          shielded = null;
         }
       }
 
@@ -290,210 +293,243 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         ...s,
         ready: true,
         error: null,
-        spot,
-        history: [...historyRef.current],
-        balance,
-        allowance,
-        utilisationBps: utilisationBps as bigint,
-        roundBlocks,
-        tickets,
-        dueTickets,
+        markets,
+        dueMarkets,
+        positions,
+        shielded,
       }));
     } catch (e) {
-      setState((s) => ({ ...s, error: chainErrorText(e) }));
+      setState((s) => ({ ...s, error: errorText(e) }));
     }
-  }, [range, vault, ausd, market.marketId, tier, state.block]);
+  }, [addresses, stored]);
 
   useEffect(() => {
-    if (!range) return;
+    if (!addresses) return;
     void refresh();
     const id = setInterval(() => void refresh(), READ_EVERY_MS);
     return () => clearInterval(id);
-    // refresh changes with every block; the interval only needs the latest closure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, market.marketId, tier]);
+  }, [addresses, refresh]);
 
-  const connect = useCallback(async () => {
+  // ---- the mark, from the same route the paper desk uses
+  useEffect(() => {
+    let stop = false;
+    const read = async () => {
+      try {
+        const r = await fetch(`/api/price?market=${encodeURIComponent(market.key)}`, {
+          cache: "no-store",
+        });
+        const j = (await r.json()) as { price?: string; error?: string };
+        if (stop) return;
+        if (!r.ok || !j.price) throw new Error(j.error ?? `price service ${r.status}`);
+        const price = BigInt(j.price);
+        const h = historyRef.current;
+        if (h.length === 0 || h[h.length - 1].price !== price) {
+          h.push({ at: Math.floor(Date.now() / 1000), price });
+          if (h.length > HISTORY) h.shift();
+        }
+        setState((s) => ({ ...s, spot: price, history: [...h] }));
+      } catch (e) {
+        if (!stop) setState((s) => ({ ...s, error: errorText(e) }));
+      }
+    };
+    void read();
+    const id = setInterval(read, 5_000);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [market.key]);
+
+  const connect = useCallback(async (wallet: StarknetWallet) => {
     try {
-      const account = await connectWallet();
-      accountRef.current = account;
-      setState((s) => ({ ...s, account, error: null }));
+      const c = await connectTo(wallet);
+      connectionRef.current = c;
+      setState((s) => ({ ...s, connection: c, blocked: blockingReason(c), error: null }));
       void refresh();
+      return c;
     } catch (e) {
-      setState((s) => ({ ...s, error: chainErrorText(e) }));
+      setState((s) => ({ ...s, error: errorText(e) }));
+      throw e;
     }
   }, [refresh]);
 
+  const disconnect = useCallback(() => {
+    connectionRef.current = null;
+    setState((s) => ({ ...s, connection: null, blocked: null, shielded: null }));
+  }, []);
+
+  /** Public STRK into the pool. The public leg names you; nothing after it does. */
+  const shield = useCallback(
+    (amount: bigint) =>
+      queued(async () => {
+        const c = connectionRef.current;
+        if (!c || !addresses) throw new Error("connect a wallet first");
+        setState((s) => ({ ...s, pending: "shielding" }));
+        const r = await submit(c, shieldActions(addresses, amount));
+        setState((s) => ({
+          ...s,
+          pending: null,
+          lastTx: r.ok ? { hash: r.txHash!, label: "shielded" } : s.lastTx,
+        }));
+        if (!r.ok) throw new Error(r.error);
+        void refresh();
+        return r.txHash!;
+      }),
+    [addresses, refresh],
+  );
+
+  /** Private balance back out to a public address. Public again, and by design. */
+  const unshield = useCallback(
+    (amount: bigint, to: string) =>
+      queued(async () => {
+        const c = connectionRef.current;
+        if (!c || !addresses) throw new Error("connect a wallet first");
+        setState((s) => ({ ...s, pending: "withdrawing" }));
+        const r = await submit(c, unshieldActions(addresses, amount, to));
+        setState((s) => ({
+          ...s,
+          pending: null,
+          lastTx: r.ok ? { hash: r.txHash!, label: "withdrawn" } : s.lastTx,
+        }));
+        if (!r.ok) throw new Error(r.error);
+        void refresh();
+        return r.txHash!;
+      }),
+    [addresses, refresh],
+  );
+
+  /**
+   * Open a position.
+   *
+   * The secret is generated and written to disk *before* the transaction is offered, not
+   * after it lands. A file saved on success is a file that does not exist when the tab is
+   * closed at the wrong moment, and the position it would have claimed is then unreachable
+   * by anyone.
+   */
+  const fire = useCallback(
+    (marketId: number, bandLow: bigint, bandHigh: bigint, stake: bigint) =>
+      queued(async () => {
+        const c = connectionRef.current;
+        if (!c || !addresses) throw new Error("connect a wallet first");
+
+        const secret: PositionSecret = {
+          secret: newSecret(),
+          marketId,
+          bandLow,
+          bandHigh,
+        };
+        const entry = remember(secret, {
+          pair: market.label,
+          seconds: ROUND_SECONDS[tier] ?? 0,
+          stake,
+        });
+        exportPosition(entry, { network: ADDRESSES.market, contract: addresses.market });
+
+        setState((s) => ({ ...s, pending: "opening" }));
+        const r = await submit(c, openActions(addresses, secret, stake));
+        setState((s) => ({
+          ...s,
+          pending: null,
+          lastTx: r.ok ? { hash: r.txHash!, label: "opened" } : s.lastTx,
+        }));
+        if (!r.ok) throw new Error(r.error);
+        void refresh();
+        return r.txHash!;
+      }),
+    [addresses, market.label, tier, refresh],
+  );
+
+  /** Claim a settled winning position into an open note the wallet then owns. */
+  const claim = useCallback(
+    (p: LivePosition) =>
+      queued(async () => {
+        const c = connectionRef.current;
+        if (!c || !addresses) throw new Error("connect a wallet first");
+        setState((s) => ({ ...s, pending: "claiming" }));
+        const r = await submit(c, claimActions(addresses, p, c.address));
+        setState((s) => ({
+          ...s,
+          pending: null,
+          lastTx: r.ok ? { hash: r.txHash!, label: "claimed" } : s.lastTx,
+        }));
+        if (!r.ok) throw new Error(r.error);
+        markClaimed(p.commitment, r.txHash!);
+        void refresh();
+        return r.txHash!;
+      }),
+    [addresses, refresh],
+  );
+
+  /**
+   * Settle a market. Permissionless, and a plain public call.
+   *
+   * Nothing about settlement is private — it reads an oracle and writes a price — so it
+   * runs through the ordinary account path rather than the pool. Routing it through the
+   * pool would spend an anonymity set on a transaction that reveals nothing.
+   */
+  const settle = useCallback(
+    (marketId: number) =>
+      queued(async () => {
+        const c = connectionRef.current;
+        if (!c || !addresses) throw new Error("connect a wallet first");
+        setState((s) => ({ ...s, pending: "settling" }));
+        try {
+          const { transaction_hash } = await c.account.execute({
+            contractAddress: addresses.market,
+            entrypoint: "settle",
+            calldata: CallData.compile([marketId]),
+          });
+          await provider.waitForTransaction(transaction_hash);
+          setState((s) => ({
+            ...s,
+            pending: null,
+            lastTx: { hash: transaction_hash, label: "settled" },
+          }));
+          void refresh();
+          return transaction_hash;
+        } catch (e) {
+          setState((s) => ({ ...s, pending: null }));
+          throw new Error(errorText(e));
+        }
+      }),
+    [addresses, refresh],
+  );
+
   /** Quote a band against the deployed contract, not a local guess. */
   const quoteOnChain = useCallback(
-    async (low: bigint, high: bigint) => {
-      if (!range) return null;
+    async (marketId: number, low: bigint, high: bigint, spot: bigint) => {
+      if (!addresses) return null;
       try {
-        const r = (await publicClient.readContract({
-          address: range,
-          abi: RangeMarketAbi,
-          functionName: "quote",
-          args: [market.marketId as Hex, low, high, tier],
-        })) as readonly [bigint, bigint, bigint];
-        return { multiplierBps: r[0], prob1e6: r[1], spot: r[2] };
+        const r = await provider.callContract({
+          contractAddress: addresses.market,
+          entrypoint: "quote_band",
+          calldata: CallData.compile({
+            market_id: marketId,
+            spot: { low: spot & ((1n << 128n) - 1n), high: spot >> 128n },
+            low: { low: low & ((1n << 128n) - 1n), high: low >> 128n },
+            high: { low: high & ((1n << 128n) - 1n), high: high >> 128n },
+          }),
+        });
+        return u256(r[0], r[1]);
       } catch {
         return null;
       }
     },
-    [range, market.marketId, tier],
+    [addresses],
   );
 
-  /**
-   * Wait for a receipt and insist it succeeded.
-   *
-   * A reverted transaction still produces a receipt, so awaiting one proves only that
-   * the chain saw it. Without this check the desk reported "fired" and printed a hash
-   * for a transaction that had reverted and opened no ticket.
-   */
-  const confirm = useCallback(async (hash: Hex, what: string) => {
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") {
-      setState((s) => ({ ...s, pending: null }));
-      throw new Error(`${what} reverted on chain (${hash.slice(0, 12)}…)`);
-    }
-    return receipt;
-  }, []);
-
-  /**
-   * @param lowHalf1e4  distance below the print, in 1e4-scaled bps
-   * @param highHalf1e4 distance above the print, in 1e4-scaled bps
-   *
-   * The band is sent as a shape, not as two prices. Absolute endpoints race the
-   * market: a band a few basis points wide, painted around the spot the desk last
-   * read, is often already off-centre by the time the transaction lands, and the open
-   * reverts. Sending the shape lets the contract centre it on the print at execution.
-   */
-  const fire = useCallback(
-    (lowHalf1e4: bigint, highHalf1e4: bigint, stake: bigint) =>
-      queued(async () => {
-      const account = accountRef.current;
-      if (!account || !range || !ausd) throw new Error("connect a wallet first");
-      const wallet = walletClientFor(account);
-
-      setState((s) => ({ ...s, pending: "approving" }));
-      if (state.allowance < stake) {
-        const approveHash = await wallet.writeContract({
-          address: ausd,
-          abi: TestAUSDAbi,
-          functionName: "approve",
-          args: [range, 2n ** 255n],
-        });
-        await confirm(approveHash, "approve");
-      }
-
-      setState((s) => ({ ...s, pending: "firing" }));
-
-      // Simulate first. The market refuses bands for specific, nameable reasons —
-      // too wide, too tight, spot outside, a stale print — and simulating turns those
-      // into a decoded custom error instead of an opaque failed transaction.
-      const { request } = await withBackoff("quoting the band", () =>
-        publicClient.simulateContract({
-          account,
-          address: range,
-          abi: RangeMarketAbi,
-          functionName: "fireBand",
-          args: [
-            market.marketId as Hex,
-            Number(lowHalf1e4),
-            Number(highHalf1e4),
-            stake,
-            tier,
-          ],
-        }),
-      );
-
-      const hash = await wallet.writeContract(request);
-      await confirm(hash, "fire");
-
-      setState((s) => ({ ...s, pending: null, lastTx: { hash, label: "fired" } }));
-      void refresh();
-      return hash;
-      }),
-    [range, ausd, market.marketId, tier, state.allowance, refresh, confirm],
-  );
-
-  /** Anyone can poke a ticket once its cutoff block has passed. */
-  const settle = useCallback(
-    (id: bigint) =>
-      queued(async () => {
-      const account = accountRef.current;
-      if (!account || !range) throw new Error("connect a wallet first");
-      const wallet = walletClientFor(account);
-
-      setState((s) => ({ ...s, pending: "settling" }));
-      const { request } = await withBackoff("preparing the settle", () =>
-        publicClient.simulateContract({
-          account,
-          address: range,
-          abi: RangeMarketAbi,
-          functionName: "settle",
-          args: [id],
-        }),
-      );
-      const hash = await wallet.writeContract(request);
-      await confirm(hash, "settle");
-
-      setState((s) => ({ ...s, pending: null, lastTx: { hash, label: "settled" } }));
-      void refresh();
-      return hash;
-      }),
-    [range, refresh, confirm],
-  );
-
-  /**
-   * Clear the whole due queue in one transaction.
-   *
-   * `settleBatch` exists on the contract and had no way into the product, so a player
-   * looking at eight expired tickets could only poke them one at a time — eight
-   * signatures for something the contract was built to do in one. The contract caps the
-   * batch, so this sends at most that many and leaves the rest for the next press
-   * rather than reverting the lot.
-   */
-  const settleAllDue = useCallback(
-    (ids: bigint[]) =>
-      queued(async () => {
-        const account = accountRef.current;
-        if (!account || !range) throw new Error("connect a wallet first");
-        if (ids.length === 0) throw new Error("nothing is due");
-        const wallet = walletClientFor(account);
-
-        const maxBatch = Number(
-          (await publicClient.readContract({
-            address: range,
-            abi: RangeMarketAbi,
-            functionName: "maxBatch",
-          })) as number | bigint,
-        );
-        const batch = ids.slice(0, Math.max(1, maxBatch));
-
-        setState((s) => ({ ...s, pending: "settling" }));
-        const { request } = await withBackoff("preparing the batch", () =>
-          publicClient.simulateContract({
-            account,
-            address: range,
-            abi: RangeMarketAbi,
-            functionName: "settleBatch",
-            args: [batch],
-          }),
-        );
-        const hash = await wallet.writeContract(request);
-        await confirm(hash, "settle batch");
-
-        setState((s) => ({
-          ...s,
-          pending: null,
-          lastTx: { hash, label: `settled ${batch.length}` },
-        }));
-        void refresh();
-        return hash;
-      }),
-    [range, refresh, confirm],
-  );
-
-  return { state, connect, fire, settle, settleAllDue, quoteOnChain, refresh, explorerTx };
+  return {
+    state,
+    connect,
+    disconnect,
+    shield,
+    unshield,
+    fire,
+    claim,
+    settle,
+    quoteOnChain,
+    refresh,
+    configured: LIVE_CONFIGURED,
+  };
 }
+

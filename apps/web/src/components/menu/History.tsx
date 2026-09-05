@@ -1,6 +1,13 @@
 "use client";
 
-import { fmtMultiplier, fmtPrice, fmtUsd, marketByKey, type PaperTicket } from "@molfi/sdk";
+import {
+  fmtCountdown,
+  fmtMultiplier,
+  fmtPrice,
+  fmtUsd,
+  marketByKey,
+  type PaperTicket,
+} from "@molfi/sdk";
 
 export function History({ tickets }: { tickets: PaperTicket[] }) {
   if (tickets.length === 0) {
@@ -52,12 +59,13 @@ export function History({ tickets }: { tickets: PaperTicket[] }) {
               * Where the settling price came from, on the row that shows it.
               *
               * "printed 77,523.42" is a number with no provenance, and this project's
-              * whole claim is about where the number comes from. MON settles on Kuru's
-              * book; BTC and ETH settle on measured exchange tape. Saying which, per
-              * ticket, is the difference between a receipt and an assertion.
+              * whole claim is about where the number comes from. Every molfi market
+              * settles on Pragma's on-chain median; the demo desk replays measured
+              * exchange tape. Saying which, per position, is the difference between a
+              * receipt and an assertion.
               */}
             <div className="mono mt-1 text-[10px] leading-relaxed tracking-wide text-white/25">
-              cutoff block {t.expiryBlock.toLocaleString()}
+              cutoff {fmtCountdown(Math.max(0, t.expiresAt - t.openedAt))} after opening
               {t.settledPrice !== null ? (
                 <>
                   {" · settled on "}
@@ -81,8 +89,10 @@ export function History({ tickets }: { tickets: PaperTicket[] }) {
  * calibration needs it; a history row does not, and the venue is the part that matters.
  */
 function settleSource(source: string | undefined): string {
+  // The demo desk replays exchange tape, so that is what a paper position settled on. A
+  // real position settles on Pragma's on-chain median and nothing else; saying "Binance"
+  // about one of those would be false in the one place it matters.
   if (!source) return "an unknown source";
-  if (source.startsWith("kuru:")) return "Kuru's book";
   const venue = source.split(":")[0];
-  return venue.charAt(0).toUpperCase() + venue.slice(1);
+  return `${venue.charAt(0).toUpperCase()}${venue.slice(1)} tape`;
 }

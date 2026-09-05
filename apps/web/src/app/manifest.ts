@@ -10,12 +10,12 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "XORR — built for fun and money",
-    short_name: "XORR",
+    name: "molfi — take a position nobody can see",
+    short_name: "molfi",
     description:
-      "Paint a band around the price, pick a cutoff a few blocks out, and get paid the " +
-      "multiplier if the price prints inside it. The MON price is Kuru's order book, " +
-      "read on-chain.",
+      "Paint a band around the price, pick how long it has to hold, and get paid the " +
+      "multiplier if the price prints inside it. Your band and your size stay hidden " +
+      "until you claim.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",

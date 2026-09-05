@@ -3,11 +3,11 @@
 import { useEffect } from "react";
 
 /**
- * Evict any service worker on this origin, because XORR installs none.
+ * Evict any service worker on this origin, because molfi installs none.
  *
  * A service worker is scoped to an origin, not to a project, and `localhost:3000` is
  * the most contended origin in existence. Anything else the viewer has ever run on that
- * port can leave one behind, and it then intercepts XORR's requests forever — including
+ * port can leave one behind, and it then intercepts molfi's requests forever — including
  * `/_next/static/*`, which means the chunks never arrive, React never hydrates, and the
  * console renders its server-side markup with every control dead. The failure is
  * completely silent: the page looks like it is loading a price, and no error appears

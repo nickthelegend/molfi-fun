@@ -85,7 +85,7 @@ export function FireKey({
           : "linear-gradient(180deg,#f2564c,#c8362e)",
       }}
     >
-      {/* Domino face: two pips over a bar, the XORR mark. */}
+      {/* Domino face: two pips over a bar, the molfi mark. */}
       <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
         <rect x="6" y="4" width="32" height="36" rx="8" fill="rgba(0,0,0,0.22)" />
         <rect x="12" y="12" width="8" height="8" rx="2.5" fill="rgba(255,255,255,0.9)" />

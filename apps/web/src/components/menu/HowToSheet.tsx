@@ -47,16 +47,34 @@ export function HowToBody() {
           not a forecast.
         </p>
         <p className="mt-2 text-[13px] leading-relaxed text-white/55">
-          The keeper re-marks volatility on-chain as it moves, which narrows that spread
-          toward the fee.
+          Each market carries the seventeen-knot table it was listed with, so the spread it
+          charges can be recomputed by anyone from the published calibration — see the
+          verify link on any market.
         </p>
       </div>
 
       <div className="rounded-2xl bg-[#141414] p-4">
         <div className="label">The cutoff</div>
         <p className="mt-1 text-[13px] leading-relaxed text-white/55">
-          A block number, not a clock. Monad produces a block about every 300ms, so a
-          ten-block round is roughly three seconds.
+          A time, not a block. What limits a round here is how often the oracle republishes:
+          Pragma posts a new median every few minutes, so the shortest round molfi can settle
+          honestly is fifteen minutes. A shorter one would resolve against a price that was
+          already public when it opened.
+        </p>
+      </div>
+
+      <div className="rounded-2xl bg-[#141414] p-4">
+        <div className="label">What stays hidden</div>
+        <p className="mt-1 text-[13px] leading-relaxed text-white/55">
+          The contract stores a hash of your position — the secret, the market, and the two
+          band edges — and the pool never tells it who called. So nobody can see which band
+          you bought, how much you staked, or whether a settled position was yours.
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-white/55">
+          What is public: that a position was opened, in which market, and each market&apos;s
+          total staked and paid. Those last two have to be, because conservation is only a
+          promise if somebody can check it. Shielding into the pool and withdrawing out of it
+          are public legs too — the privacy is in what happens between them.
         </p>
       </div>
     </div>

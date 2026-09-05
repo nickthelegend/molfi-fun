@@ -74,19 +74,19 @@ export const marketByPair = (pair: string): MarketDef | undefined =>
 /**
  * Human label for a round tier, e.g. "15m" or "4h".
  *
- * Minutes up to two hours, then whole hours — a 90-minute round reads as "90m", not
- * "1.5000000000000002h".
+ * Whole units only where they are whole — a 90-minute round reads as "90m", not
+ * "1.5000000000000002h", and an hour reads as "1h" rather than "60m".
  */
 export function roundLabel(tier: number): string {
-  const s = ROUND_SECONDS[tier];
+  return secondsLabel(ROUND_SECONDS[tier]);
+}
+
+export function secondsLabel(s: number | undefined): string {
   if (s === undefined) return "?";
   if (s < 120) return `${s}s`;
-  if (s < 7_200) {
-    const m = s / 60;
-    return Number.isInteger(m) ? `${m}m` : `${m.toFixed(1)}m`;
-  }
+  if (s < 3_600) return `${s / 60}m`;
   const h = s / 3_600;
-  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
+  return Number.isInteger(h) ? `${h}h` : `${(s / 60).toFixed(0)}m`;
 }
 
 export const ROUND_LABELS = ROUND_SECONDS.map((_, i) => roundLabel(i));

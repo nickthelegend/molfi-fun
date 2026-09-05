@@ -21,12 +21,11 @@ export const activeNetwork = NETWORKS[NETWORK];
 /**
  * The browser's RPC endpoint.
  *
- * Public by necessity — a browser cannot keep a secret — so it is deliberately *not* the
- * keyed endpoint the server routes use. Prices and market state come from `/api/*`, which
- * holds the key; this client is only for reads a wallet-connected user makes on their own
- * behalf.
+ * Defaults to this app's own proxy, which forwards to the configured node and keeps any API
+ * key on it server-side. A browser cannot keep a secret, so it is never handed one — and the
+ * proxy allows reads only, so nothing that reaches it can do more than the page already can.
  */
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? activeNetwork.rpcUrl;
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "/api/rpc";
 
 export const provider = new RpcProvider({ nodeUrl: RPC_URL });
 

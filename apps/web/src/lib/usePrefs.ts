@@ -19,17 +19,17 @@ export interface Prefs {
   tier: number;
   /** Console shell colour. */
   theme: "cream" | "charcoal" | "mint" | "rose";
-  /** Show the Kuru book panel alongside the chart. */
-  showBook: boolean;
+  /** Show the oracle strip alongside the chart. */
+  showOracle: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   sound: false,
   reducedMotion: false,
   market: "BTC",
-  tier: 2,
+  tier: 0,
   theme: "cream",
-  showBook: false,
+  showOracle: false,
 };
 
 const KEY = "xorr.prefs.v1";
