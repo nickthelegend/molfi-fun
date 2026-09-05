@@ -11,9 +11,11 @@
   "scripts": {
     "build": "tsc --noEmit",
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "parity": "node --experimental-strip-types test/parity.ts"
+    "parity": "node --experimental-strip-types test/parity.ts",
+    "calibrate": "node --experimental-strip-types src/run-calibrate.ts"
   },
   "devDependencies": {
+    "@types/node": "^26.4.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {

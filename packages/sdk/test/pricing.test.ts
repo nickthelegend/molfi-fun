@@ -12,7 +12,6 @@ import {
   validateTable,
   zForProb,
 } from "../src/pricing.ts";
-import { CALIBRATED_MARKETS, ROUND_BLOCKS } from "../src/generated/markets.ts";
 
 const SPOT = 100_000_00000000n;
 
@@ -60,22 +59,9 @@ test("zForProb inverts halfProb", () => {
   }
 });
 
-test("band limits bracket a sellable window", () => {
-  const round = CALIBRATED_MARKETS[0].rounds[2];
-  const l = bandLimits(round.probTable, SPOT, round.sigma1e4, 400n, 12_000n, round.minProb1e6);
-  assert.ok(l.maxHalfWidth1e4 > l.minHalfWidth1e4);
-  assert.ok(l.minHalfWidth1e4 > 0n);
-});
-
 test("probInside rejects a spot outside the band", () => {
   assert.throws(() => probInside(NORMAL_TABLE, SPOT, SPOT + 1n, SPOT + 2n, 120_000n));
   assert.throws(() => probInside(NORMAL_TABLE, SPOT, SPOT - 2n, SPOT - 1n, 120_000n));
-});
-
-test("every calibrated table is a valid CDF", () => {
-  for (const m of CALIBRATED_MARKETS) {
-    for (const r of m.rounds) validateTable(r.probTable);
-  }
 });
 
 test("validateTable rejects a table that dips or exceeds one", () => {
@@ -86,50 +72,4 @@ test("validateTable rejects a table that dips or exceeds one", () => {
   const over = [...NORMAL_TABLE];
   over[16] = 2_000_000n;
   assert.throws(() => validateTable(over), /TableNotMonotonic/);
-});
-
-test("sigmaForBlocks interpolates between measured rounds and clamps outside them", () => {
-  const sigmas = CALIBRATED_MARKETS[0].rounds.map((r) => r.sigma1e4);
-
-  const below = sigmaForBlocks(ROUND_BLOCKS, sigmas, 1);
-  assert.equal(below.sigma1e4, sigmas[0]);
-
-  const above = sigmaForBlocks(ROUND_BLOCKS, sigmas, 99_999);
-  assert.equal(above.sigma1e4, sigmas[sigmas.length - 1]);
-
-  const mid = sigmaForBlocks(ROUND_BLOCKS, sigmas, 66); // between 33 and 100
-  assert.ok(mid.sigma1e4 > sigmas[1] && mid.sigma1e4 < sigmas[2]);
-  assert.equal(mid.tableTier, 1, "shape comes from the lower, more conservative round");
-});
-
-/**
- * The measured tables have a real point mass at zero — the price often does not move
- * at all over a short round. If the probability floor sat below that mass, a
- * zero-width band would clear every gate and pay several times the stake on an event
- * that happens a quarter of the time. The floor must sit above it, which is what makes
- * the painter's minimum half-width positive.
- */
-test("no round can sell a band tighter than the price standing still", () => {
-  for (const m of CALIBRATED_MARKETS) {
-    m.rounds.forEach((r, tier) => {
-      assert.ok(
-        r.minProb1e6 > r.probTable[0],
-        `${m.key} tier ${tier}: floor ${r.minProb1e6} must exceed point mass ${r.probTable[0]}`,
-      );
-      const l = bandLimits(r.probTable, SPOT, r.sigma1e4, 400n, 12_000n, r.minProb1e6);
-      assert.ok(
-        l.minHalfWidth1e4 > 0n,
-        `${m.key} tier ${tier}: minimum half-width collapsed to zero`,
-      );
-      assert.ok(l.maxHalfWidth1e4 > l.minHalfWidth1e4, `${m.key} tier ${tier}: empty band window`);
-    });
-  }
-});
-
-test("the measured short round carries mass a normal cannot", () => {
-  // Over three seconds the price often does not move at all. T(0) captures that;
-  // a normal is identically zero there and would misprice every tight band.
-  const shortRound = CALIBRATED_MARKETS[0].rounds[0];
-  assert.equal(halfProb(NORMAL_TABLE, 0n), 0n);
-  assert.ok(shortRound.probTable[0] > 100_000n, "measured T(0) should be substantial");
 });

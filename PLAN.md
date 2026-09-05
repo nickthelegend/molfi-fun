@@ -77,35 +77,35 @@ anyway would be a demo that cannot settle.
 
 ## 3. Phases
 
-### Phase 1 — Cairo: the market contract  ·  NOT STARTED
+### Phase 1 — Cairo: the market contract  ·  **DONE**
 
 The submission is a contract. Everything else is a client for it.
 
 | # | Task | State |
 | --- | --- | --- |
-| 1.1 | Scaffold `cairo/` with Scarb + snforge; depend on the `privacy` package for `OpenNoteDeposit` and `INVOKE_SELECTOR`. | NOT STARTED |
-| 1.2 | Port `Pricing.sol` to `pricing.cairo` — integer only, same truncating division, so the TS kernel mirrors it exactly. | NOT STARTED |
-| 1.3 | Parity harness: run `packages/sdk/src/pricing.ts` and the Cairo library over thousands of inputs, assert identical output. XORR's `test/parity.ts` is the template. | NOT STARTED |
-| 1.4 | `MarketRegistry`: create a market (pair id, band, open block, cutoff block, oracle), list open markets, freeze at cutoff. | NOT STARTED |
-| 1.5 | `MolfiAnonymizer.privacy_invoke` — **operation 0, open**: store `poseidon(POSITION_TAG, secret, market_id, band_lo, band_hi)`, park the stake, **return an empty span**. | NOT STARTED |
-| 1.6 | `privacy_invoke` — **operation 1, claim**: recompute the commitment from the preimage, check the market settled and the band contains the settled price, mark claimed, approve the pool, return one `OpenNoteDeposit`. | NOT STARTED |
-| 1.7 | Assert the caller is the pool on every `privacy_invoke` path. | NOT STARTED |
-| 1.8 | Double-claim protection: the `claimed` flag flips exactly once. | NOT STARTED |
-| 1.9 | `settle(market_id)` — permissionless. Read Pragma `get_data_median`, reject a print older than `MAX_PRICE_AGE` or with fewer than 3 publishers, store price + timestamp + sources. | NOT STARTED |
-| 1.10 | Payout maths: multiplier from the pricing library, protocol fee in bps, conservation assert (paid ≤ staked). | NOT STARTED |
-| 1.11 | snforge suite: open, settle inside band, settle outside band, claim, double claim, claim before settle, stale oracle, single-source oracle, non-pool caller. | NOT STARTED |
-| 1.12 | Measure Sierra size and declare cost before any mainnet spend. | NOT STARTED |
+| 1.1 | Scaffold `cairo/` with Scarb + snforge; depend on the `privacy` package for `OpenNoteDeposit` and `INVOKE_SELECTOR`. | **DONE** |
+| 1.2 | Port `Pricing.sol` to `pricing.cairo` — integer only, same truncating division, so the TS kernel mirrors it exactly. | **DONE** |
+| 1.3 | Parity harness: run `packages/sdk/src/pricing.ts` and the Cairo library over thousands of inputs, assert identical output. XORR's `test/parity.ts` is the template. | **DONE** |
+| 1.4 | `MarketRegistry`: create a market (pair id, band, open block, cutoff block, oracle), list open markets, freeze at cutoff. | **DONE** |
+| 1.5 | `MolfiAnonymizer.privacy_invoke` — **operation 0, open**: store `poseidon(POSITION_TAG, secret, market_id, band_lo, band_hi)`, park the stake, **return an empty span**. | **DONE** |
+| 1.6 | `privacy_invoke` — **operation 1, claim**: recompute the commitment from the preimage, check the market settled and the band contains the settled price, mark claimed, approve the pool, return one `OpenNoteDeposit`. | **DONE** |
+| 1.7 | Assert the caller is the pool on every `privacy_invoke` path. | **DONE** |
+| 1.8 | Double-claim protection: the `claimed` flag flips exactly once. | **DONE** |
+| 1.9 | `settle(market_id)` — permissionless. Read Pragma `get_data_median`, reject a print older than `MAX_PRICE_AGE` or with fewer than 3 publishers, store price + timestamp + sources. | **DONE** |
+| 1.10 | Payout maths: multiplier from the pricing library, protocol fee in bps, conservation assert (paid ≤ staked). | **DONE** |
+| 1.11 | snforge suite: open, settle inside band, settle outside band, claim, double claim, claim before settle, stale oracle, single-source oracle, non-pool caller. | **DONE** |
+| 1.12 | Measure Sierra size and declare cost before any mainnet spend. | **DONE** |
 
-### Phase 2 — Oracle and market data  ·  IN PROGRESS
+### Phase 2 — Oracle and market data  ·  **DONE** except the server route
 
 | # | Task | State |
 | --- | --- | --- |
 | 2.1 | Pragma adapter: addresses, pair-id encoding, response decode, freshness rules. | **DONE** |
 | 2.2 | Adapter tests including the Sepolia failure (recent print, one publisher). | **DONE** — 44 tests |
 | 2.3 | Live read verified against mainnet and Sepolia. | **DONE** |
-| 2.4 | Recalibrate the probability tables for minute-to-hour rounds. The shipped tables are MON/BTC/ETH on three-second rounds and are wrong for this horizon. | NOT STARTED |
-| 2.5 | Replace `orderbook.ts` (Kuru CLOB) with a Pragma-backed price source, or delete it. | NOT STARTED |
-| 2.6 | Strip `MON-USD` from markets; define the molfi set (BTC/USD, ETH/USD, STRK/USD). | NOT STARTED |
+| 2.4 | Recalibrate the probability tables for minute-to-hour rounds. The shipped tables are MON/BTC/ETH on three-second rounds and are wrong for this horizon. | **DONE** |
+| 2.5 | Replace `orderbook.ts` (Kuru CLOB) with a Pragma-backed price source, or delete it. | **DONE** |
+| 2.6 | Strip `MON-USD` from markets; define the molfi set (BTC/USD, ETH/USD, STRK/USD). | **DONE** |
 | 2.7 | Server-side price route so the browser never holds an RPC key, with the freshness verdict included. | NOT STARTED |
 
 ### Phase 3 — Wallet and pool integration  ·  NOT STARTED
@@ -169,13 +169,13 @@ The thing that made the previous project credible, carried over.
 
 | # | Gap | Blocks | Note |
 | --- | --- | --- | --- |
-| G1 | **No Cairo contract exists.** The entire settlement layer is unwritten. `cairo/` was deleted with the games. | All of Phase 1 | The single largest gap. Without it there is no submission. |
+| G1 | **No Cairo contract exists.** The entire settlement layer is unwritten. `cairo/` was deleted with the games. | All of Phase 1 | **CLOSED** — MolfiMarket written, 34 Cairo tests, 5,241 sierra felts |
 | G2 | **Pyth does not work on Starknet.** Dropped 26 Aug 2026. Contracts still deployed on both networks and every feed returns `None` — verified for BTC, ETH, STRK. | 2.x | Resolved by using Pragma, recorded because the trap is that it *looks* wired up. |
-| G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | Forces mainnet, which forces spending real money. |
+| G3 | **Pragma Sepolia is dead.** BTC's last print is ~329 days old; ETH and STRK have one publisher. | 6.2 | **STILL TRUE** — forces mainnet for a real settlement |
 | G4 | **Pragma mainnet updates every 7–10 minutes.** | 2.4, 4.5 | Kills three-second rounds. Round lengths must be minutes to hours. |
 | G5 | **No wallet connect at all.** Nothing in the repo touches a wallet. | All of Phase 3 | |
-| G6 | **Probability tables are calibrated for the wrong instrument.** They are MON/BTC/ETH over three-second rounds. | 2.4 | Using them at hour horizons would misprice every band. |
-| G7 | **`orderbook.ts` is Kuru-specific** — a Monad CLOB that does not exist here. | 2.5 | Dead code that currently ships in the SDK. |
+| G6 | **Probability tables are calibrated for the wrong instrument.** They are MON/BTC/ETH over three-second rounds. | 2.4 | **CLOSED** — recalibrated on 43,200 real minute closes per market |
+| G7 | **`orderbook.ts` is Kuru-specific** — a Monad CLOB that does not exist here. | 2.5 | **CLOSED** — orderbook.ts deleted |
 | G8 | **`markets.ts`, `engine.ts`, `format.ts`, `generated/markets.ts` still reference Monad/MON.** | 2.6 | |
 | G9 | **No console app.** `apps/web` is untracked leftover, not a molfi app. | All of Phase 4 | |
 | G10 | **No verifier.** | Phase 5 | |

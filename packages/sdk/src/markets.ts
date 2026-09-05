@@ -1,54 +1,56 @@
-import {
-  CALIBRATED_MARKETS,
-  HOUSE_EDGE_BPS,
-  ROUND_BLOCKS,
-  ROUND_SECONDS,
-  type CalibratedMarket,
-  type CalibratedRound,
-} from "./generated/markets.ts";
+/**
+ * The markets molfi runs, keyed the way Starknet and Pragma key them.
+ *
+ * The ported version of this file was Monad-shaped: rounds counted in 300ms blocks, a MON
+ * market, and a Kuru order book behind the price. None of that exists here. Rounds are
+ * measured in seconds because Starknet's block time is neither fixed nor the constraint —
+ * the constraint is how often Pragma publishes, and a round shorter than that cannot be
+ * settled against a price that means anything.
+ */
 
-export { CALIBRATED_MARKETS, HOUSE_EDGE_BPS, ROUND_BLOCKS, ROUND_SECONDS };
-export type { CalibratedMarket, CalibratedRound };
+import { HORIZONS } from "./calibrate.ts";
+import { pairId } from "./pragma.ts";
 
-export const PRICE_DECIMALS = 8;
-export const MIN_MULTIPLIER_BPS = 12_000n; // 1.20x floor: wider bands are not sellable
-export const MAX_MULTIPLIER_BPS = 80_000n; // 8.00x hard ceiling, backstop only
+/** Below this a band is not worth selling; the fee eats the whole edge. */
+export const MIN_MULTIPLIER_BPS = 10_500n;
 
-/** ~300ms blocks on Monad mainnet. A 10-block round is about three seconds. */
-export const BLOCK_MS = 300;
+/** Backstop only. A quote above this means the model has lost its footing, not found value. */
+export const MAX_MULTIPLIER_BPS = 80_000n;
 
-export interface MarketDef extends CalibratedMarket {
-  symbol: string;
-  /** display decimals for the price */
-  dp: number;
-  /** Where the desk's live mark comes from. Settlement is always the on-chain oracle. */
-  markSource: "chainlink" | "pyth" | "kuru";
+export interface Horizon {
+  key: string;
+  seconds: number;
+  label: string;
 }
 
-const DISPLAY: Record<string, Pick<MarketDef, "symbol" | "dp" | "markSource">> = {
-  BTC: { symbol: "BTC", dp: 2, markSource: "chainlink" },
-  ETH: { symbol: "ETH", dp: 2, markSource: "chainlink" },
-  MON: { symbol: "MON", dp: 5, markSource: "kuru" },
-};
-
-export const MARKETS: MarketDef[] = CALIBRATED_MARKETS.map((m) => ({
-  ...m,
-  ...(DISPLAY[m.key] ?? { symbol: m.key, dp: 2, markSource: "chainlink" as const }),
-}));
-
-export const marketByKey = (k: string): MarketDef | undefined => MARKETS.find((m) => m.key === k);
+export interface MarketDef {
+  key: string;
+  label: string;
+  /** Pragma pair label, and the short string the oracle is keyed by. */
+  pair: string;
+  /** The same label as the felt the contract stores. */
+  pairId: bigint;
+  /** Binance symbol used to calibrate, and only to calibrate. */
+  tape: string;
+  horizons: readonly Horizon[];
+}
 
 /**
- * Human label for a round tier, e.g. "3s" or "15m".
- * Seconds up to two minutes, then whole minutes — a 100-second round reads as "100s",
- * not "1.6666666666666667m".
+ * Three markets, chosen because Pragma actually aggregates them from enough publishers to
+ * settle against. A pair with one publisher is a pair molfi will not list, however much
+ * anyone would like to trade it.
  */
-export function roundLabel(tier: number): string {
-  const s = ROUND_SECONDS[tier];
-  if (s === undefined) return "?";
-  if (s < 120) return `${s}s`;
-  const m = s / 60;
-  return Number.isInteger(m) ? `${m}m` : `${m.toFixed(1)}m`;
-}
+export const MARKETS: MarketDef[] = [
+  { key: "btc", label: "Bitcoin", pair: "BTC/USD", pairId: pairId("BTC/USD"), tape: "BTCUSDT", horizons: HORIZONS },
+  { key: "eth", label: "Ether", pair: "ETH/USD", pairId: pairId("ETH/USD"), tape: "ETHUSDT", horizons: HORIZONS },
+  { key: "strk", label: "Starknet", pair: "STRK/USD", pairId: pairId("STRK/USD"), tape: "STRKUSDT", horizons: HORIZONS },
+];
 
-export const ROUND_LABELS = ROUND_BLOCKS.map((_, i) => roundLabel(i));
+export const marketByKey = (key: string): MarketDef | undefined =>
+  MARKETS.find((m) => m.key === key);
+
+export const marketByPair = (pair: string): MarketDef | undefined =>
+  MARKETS.find((m) => m.pair === pair);
+
+/** The horizon labels, in the order the dial cycles them. */
+export const HORIZON_LABELS = HORIZONS.map((h) => h.label);
