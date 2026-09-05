@@ -49,7 +49,7 @@ dialog, not molfi's use of it.
 | # | Item | Correct means |
 | --- | --- | --- |
 | C1 | `GET /api/config` | 200; ≥ 3 markets; ≥ 3 rounds; `units.stakeDecimals` 18; every round a 17-knot table; `contracts.market` non-null. |
-| C2 | `GET /api/price?market=BTC` | 200; `price` a decimal string; `oracle.sources` ≥ 3; `oracle.quotable` true; `markError` null. |
+| C2 | `GET /api/price?market=BTC` | 200; `price` a decimal string; `oracle.sources` ≥ 3; `markError` null; and `oracle.quotable` **agrees with the print it describes** — true exactly when the print is under 600s old and carries ≥ 3 publishers. Asserting it is always true fails whenever Pragma's cadence stretches, which is correct behaviour. |
 | C3 | `…&history=1` | 200; ≥ 100 returns; `returnsInterval` `1m`. |
 | C4 | `?market=NOPE` | 404 naming the pair. |
 | C5 | `GET /api/quote` one-sigma band | 200; `ok:true`; multiplier > 10000 bps; `stakeUnits` = 10 × 1e18 for `stake=10`; window min < max. |
