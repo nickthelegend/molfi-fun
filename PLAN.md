@@ -83,7 +83,23 @@ Probed against the live ABI. The deployed class has `privacy_invoke`, `settle`, 
 pass against it. Fixing this needs a declare: **9,752 Sierra felts ≈ 57 STRK on mainnet, ~60 on
 Sepolia.** No change to this repository can clear it.
 
-**B-2 · The keeper is out of STRK.**
+**B-2 · The keeper is out of STRK, by 0.013.**
+
+Measured against the chain rather than estimated: **one relay costs 0.09319 STRK and the
+keeper holds 0.08084.** Not a padding problem — the bare fee is unaffordable, and no bound
+can close it. It is short by about 0.013 STRK to make a single price republish.
+
+Funding avenues, all checked this run rather than assumed:
+
+| Source | State |
+| --- | --- |
+| Starknet Foundation agent API (`scripts/faucet.mjs`) | `ADDRESS_COOLDOWN`, 16.5h remaining. 5 STRK per address per 24h. |
+| `starknet-faucet.vercel.app` | The **same** faucet — same Foundation backend, same tiers, same per-address cooldown. Not a second source. |
+| Blast, Alchemy | Both have discontinued Starknet Sepolia faucets. |
+| Any other account in this repo | `account-1` 0 STRK, `e2e-stranger` 0 STRK. Nothing else holds any. |
+| Draining a second address to dodge the cooldown | Abuse of a shared testnet. The faucet script says so in its own header, and it was not done. |
+| 100 STRK form / 3,000 STRK with GitHub | Both need a person at a browser. |
+
 Balance `0.0808 STRK` against a `0.8 STRK` listing floor. It stops listing before it can strand
 an unfunded market (correct), but it also cannot pay for a relay, so the on-chain print is
 5,871–15,882s stale, `settle` refuses with `STALE_PRICE`, and one market sits past its cutoff
@@ -233,7 +249,7 @@ Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 | --- | --- | --- |
 | **The deployed Sepolia contract has no trading route.** `open_position`, `claim_position`, `quote_offsets`, `owner`, `set_oracle` are absent from the live class. | Probed the deployed ABI directly; `pnpm verify` D11/D12 UNTESTED | 1.3, 2.1–2.6, 5.1–5.3 |
 | **Nobody has ever opened a position.** `staked` is 0 across all 49 markets. The core claim is unproven on chain. | `/api/markets`, total staked 0 | 2.1, 5.1, 5.2, 5.3 |
-| **The keeper cannot pay for gas.** 0.0808 STRK; relay stale by up to 15,882s; one market past cutoff unsettled; listing stopped. | `pnpm verify` E1 FAIL; `/api/keeper` | 0.1–0.5 |
+| **The keeper cannot pay for gas, and is short by 0.013 STRK.** One relay estimates at 0.09319 against a 0.08084 balance, so the relay is stale, market 49 sits past its cutoff, and listing is stopped. | Estimated against Sepolia; `pnpm verify` E1 FAIL | 0.1–0.5 |
 | **The deployed class stores the band in the clear.** `Position` carries `band_low`/`band_high`; commitments are indexed event keys. The core privacy claim does not hold on the contract the site links to. | Read from the deployed ABI; `pnpm verify` D13 FAIL | B-1, 1.3 — the same declare fixes it |
 | **Nothing is deployed to mainnet**, and the prize requires three mainnet pool transactions. | `networks.ts` `MOLFI_MARKET.mainnet = null`; preflight confirms no contract there | 3.1–3.8 |
 | **`strk20.json.demo_video` is empty**, and it names `"network": "sepolia"` rather than mainnet. | The file itself | 4.1, 4.3, 3.7 |
@@ -257,6 +273,8 @@ Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 | **A stored position vanished from the list whenever `/api/markets` was slow.** The read cycle threw before it ever built the position list, so the local store — the only index of what a browser owns — went invisible during a node outage. | A payout looked lost because a node was busy. The market data is enrichment for a row; it now degrades the row to "not found on chain" rather than removing it. | 5.6 |
 | **`/privacy` asserted that the band never reaches the chain**, while the deployed class stores `band_low` and `band_high` in every position and commitments are indexed event keys. | The page whose whole purpose is stating what leaks was overstating the single claim the product is named for. It now reads the deployed ABI at render time and prints a red banner instead, retracting itself automatically once a class without the band is live. `pnpm verify` D13 pins it. | B-1, 5.1 |
 | **`/api/keeper` was undocumented** while the README claims `docs/API.md` covers every endpoint, and **`/api/markets` was documented as returning every market** when it returns the newest sixty. | `pnpm verify` G4 checks that every path the docs name exists, not that every path that exists is named, so neither could be caught automatically. | 7.10 |
+| **A permanent failure was retried three times because a balance contained "502".** `transient` matched the HTTP status codes as bare substrings, and `…80843186574050224` contains `502`. Almost every Starknet error quotes a token amount. | Not a rare collision: permanent failures were being retried on most of the occasions it mattered, three estimates and three round trips at a time. Codes are now matched as their own token, pinned with the real message. | 6.5, 0.4 |
+| **Fee bounds were not capped to what the account can pay.** The chain validates against the bound, not the fee, so an account can be refused a transaction it could afford. | Built expecting it to unblock the keeper; measuring showed the shortfall is on the bare fee, so it does not. Kept because it now refuses before signing and names both numbers, where the node answers with two hundred characters of gas dictionaries after spending a nonce. | 0.1 |
 | **The count-up would have shown `$0.00` in a tab that is not painting.** `requestAnimationFrame` does not fire there, and the initial value was zero. | Introduced and caught in the same run: the animation is decoration, the number is not. A timeout now guarantees the landing. | 5.5 |
 | **The site reported "the keeper did not answer" about a keeper that answered.** 6.5 made the keeper return 503 when stalled; `/api/keeper` mirrored the status; `fetchJson` throws on non-2xx; the badge concluded unreachable. | A regression this run introduced and this run caught, by re-running the checks after the change rather than at the end. `/api/keeper` now answers 200 with the verdict in the body; `/api/health` stays the 503 surface. | 6.5, 7.8 |
 
