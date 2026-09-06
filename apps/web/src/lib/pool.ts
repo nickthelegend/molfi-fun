@@ -204,7 +204,25 @@ export async function submit(
  * down and the top-level message is a generic one that sends whoever is debugging in the
  * wrong direction.
  */
+/**
+ * Did the user simply say no?
+ *
+ * SNIP-9 gives rejection its own code, 113, and wallets word it differently on top of that —
+ * "User abort", "User rejected request", "Reject". Worth detecting for two reasons: the
+ * wording is the wallet's internal vocabulary rather than anything a person should read, and
+ * more importantly a cancellation is not a failure. Showing it in the same red as a revert
+ * tells someone who deliberately backed out that something went wrong.
+ */
+export function isUserRejection(e: unknown): boolean {
+  const err = e as { code?: number | string; message?: string; data?: { message?: string } };
+  if (err?.code === 113 || String(err?.code) === "113") return true;
+  const text = `${err?.message ?? ""} ${err?.data?.message ?? ""}`;
+  return /user (abort|reject|denied|cancel)|rejected by user|request rejected|user closed/i.test(text);
+}
+
 export function errorText(e: unknown): string {
+  if (isUserRejection(e)) return "cancelled — nothing was sent";
+
   const err = e as { message?: string; data?: { message?: string }; shortMessage?: string };
   const text =
     err?.data?.message || err?.shortMessage || err?.message || String(e) || "unknown error";
