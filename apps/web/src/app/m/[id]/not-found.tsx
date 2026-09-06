@@ -38,10 +38,10 @@ export default function MarketNotFound() {
             EVERY MARKET
           </Link>
           <Link
-            href="/play"
+            href="/verify"
             className="flex-1 rounded-full bg-[#181818] py-3 text-[13px] font-semibold"
           >
-            THE CONSOLE
+            A POSITION
           </Link>
         </div>
       </div>

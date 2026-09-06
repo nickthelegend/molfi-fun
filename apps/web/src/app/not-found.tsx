@@ -16,7 +16,7 @@ const DOORS = [
   { href: "/", label: "HOME", sub: "the console" },
   { href: "/live", label: "LIVE", sub: "every market" },
   { href: "/privacy", label: "PRIVATE", sub: "what leaks" },
-  { href: "/keeper", label: "KEEPER", sub: "who settles" },
+  { href: "/verify", label: "VERIFY", sub: "check a position" },
 ];
 
 export default function NotFound() {

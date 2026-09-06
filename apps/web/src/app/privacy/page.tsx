@@ -233,7 +233,11 @@ export default async function PrivacyPage() {
             <p className="mt-2 text-[13px] leading-relaxed text-white/55">
               This box is drawn from the deployed class&rsquo;s own ABI, read when you loaded the
               page. It disappears on its own when a class without the band is live — the page is
-              not asserting this from a config file, and neither should you take it from one.
+              not asserting this from a config file, and neither should you take it from one.{" "}
+              <Link href="/verify" className="text-amber underline">
+                Check any position yourself
+              </Link>
+              .
             </p>
           </section>
         ) : null}
