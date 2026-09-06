@@ -31,14 +31,19 @@ sealed until settlement; that is the part molfi will not trade away for reach.
 | That it was you | hidden | **public** |
 | Wallet needed | one that speaks STRK20 | any Starknet account |
 
-> **The class deployed on Sepolia today does not keep the band row.** Its `Position` struct
-> stores `band_low` and `band_high` outright, so anyone can list a market's positions and read
-> what each one bought. The contract in this repository replaced both fields with reach ratios
-> and never stores the band — it has not been declared, because that costs about 60 STRK and
-> the deployer does not have it. [molfi.fun/privacy](https://molfi.fun/privacy) and
-> [molfi.fun/verify](https://molfi.fun/verify) both say so on the page, drawn from the deployed
-> ABI rather than from a config file, so they retract themselves the moment a class without the
-> band goes live. This note is here for the same reason.
+> **This is now true on the deployed class, and it was not until 2026-09-06.**
+> The contract molfi ran on for its first fifty-two markets stored `band_low` and `band_high`
+> outright, so anyone could list a market's positions and read what each one bought. The class
+> now live — `0x053b1721…` — stores `low_off_1e8` and `high_off_1e8` instead: how far the band
+> reaches from its own midpoint, with the price divided out. That prices a position exactly and
+> says nothing about what it predicts.
+>
+> The first position opened on it reads, on chain, as
+> `lowOff1e8 300000, highOff1e8 300000, stake 2e18` — and the band it was bought at appears
+> nowhere. [molfi.fun/privacy](https://molfi.fun/privacy) and
+> [molfi.fun/verify](https://molfi.fun/verify) both carried a red banner about the old leak,
+> drawn from the deployed ABI rather than a config flag, and both retracted it by themselves
+> the moment this class went live.
 
 The pool route is the better one and it is the default wherever the wallet supports it. The
 direct route exists because for most of a year most wallets have not, and a market only one
@@ -80,8 +85,9 @@ the contract actually paid. You do not need an account, a wallet, or a position 
 | Who settles these | [molfi.fun/keeper](https://molfi.fun/keeper) |
 | Recompute a settled market | [molfi.fun/m/1](https://molfi.fun/m/1) |
 
-Markets settle on Starknet Sepolia unattended, against a price backed by ten to twelve
-independent publishers — 48 of them so far. Nothing on those pages needs a wallet.
+Markets settle on Starknet Sepolia unattended, against a price backed by eight to twelve
+independent publishers. Four markets — BTC, ETH, STRK and WBTC — chosen because those are the
+pairs Pragma aggregates from enough publishers to settle against. Nothing on those pages needs a wallet.
 
 Rounds are currently listed at one hour (`KEEPER_TIER=1`), which is what a 5 STRK daily drip
 from the Foundation faucet can keep settleable to its own cutoff; the console still offers 15m,
@@ -118,7 +124,8 @@ checked against the chain rather than trusted.
 | | Sepolia | Mainnet |
 | --- | --- | --- |
 | STRK20 privacy pool | `0x0254a6b2…cfe0d91` | `0x040337b1…6ffe812a` |
-| molfi market | `0x03b00e6e…a158b068` | not deployed |
+| molfi market | `0x053b1721…d3298f1f` | not deployed |
+| molfi up/down | `0x07881b0c…45c17ce9` | not deployed |
 | Price relay | `0x0275a7fd…456dfcbb` | not deployed, and should not be |
 | Settles against | the relay | Pragma directly |
 
