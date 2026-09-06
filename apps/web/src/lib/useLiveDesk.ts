@@ -596,17 +596,39 @@ export function useLiveDesk(market: MarketDef, tier: number) {
           chosen === "pool"
             ? await submit(c, openActions(addresses, secret, stake))
             : await submitDirect(c, openCalls(addresses, secret, stake));
-        if (r.ok && chosen === "direct") await provider.waitForTransaction(r.txHash!);
+        // A confirmation that times out says nothing about whether the transaction landed,
+        // so it must not be allowed to throw past the point where the secret is safe.
+        if (r.ok && chosen === "direct") {
+          await provider.waitForTransaction(r.txHash!).catch(() => undefined);
+        }
         setState((s) => ({
           ...s,
           pending: null,
           lastTx: r.ok ? { hash: r.txHash!, label: "opened" } : s.lastTx,
         }));
         if (!r.ok) {
-          // A position whose transaction never landed is not a position, and leaving it in
-          // the list would offer a claim button that can only ever fail.
-          forget(entry.commitment);
-          throw new Error(r.error);
+          /**
+           * Only discard the secret when nothing can have been sent.
+           *
+           * This used to forget unconditionally, and that was the worst bug in the app. A
+           * reload, a closed tab or a dropped connection between the wallet accepting the
+           * request and the response coming back makes `submitDirect` report failure for a
+           * transaction that lands perfectly well — and the secret it deleted was the only
+           * thing that could ever have claimed the stake sitting in the contract. Verified
+           * in a browser: the position opened on chain and its preimage was erased 1.6
+           * seconds later.
+           *
+           * A refusal before the signature is certain, so that secret is worth nothing and
+           * goes. Everything else is kept. A stored secret for a position that never opened
+           * costs one row and shows as absent against the chain; a discarded one for a
+           * position that did costs the whole stake, permanently, for everyone.
+           */
+          if (r.maybeSubmitted === false) forget(entry.commitment);
+          throw new Error(
+            r.maybeSubmitted === false
+              ? r.error
+              : `${r.error} — your position may still have opened; it is saved and will appear if it did`,
+          );
         }
         void refresh();
         return r.txHash!;
@@ -633,7 +655,9 @@ export function useLiveDesk(market: MarketDef, tier: number) {
           p.route === "direct"
             ? await submitDirect(c, claimCalls(addresses, p))
             : await submit(c, claimActions(addresses, p, c.address));
-        if (r.ok && p.route === "direct") await provider.waitForTransaction(r.txHash!);
+        if (r.ok && p.route === "direct") {
+          await provider.waitForTransaction(r.txHash!).catch(() => undefined);
+        }
         setState((s) => ({
           ...s,
           pending: null,

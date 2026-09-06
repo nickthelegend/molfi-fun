@@ -160,6 +160,8 @@ export interface SubmitResult {
   ok: boolean;
   txHash?: string;
   error?: string;
+  /** See the note on the direct route's result: false only when nothing can have been sent. */
+  maybeSubmitted?: boolean;
 }
 
 /**
@@ -175,7 +177,11 @@ export async function submit(
   { dryRun = true }: { dryRun?: boolean } = {},
 ): Promise<SubmitResult> {
   if (!connection.capabilities.privateActions) {
-    return { ok: false, error: `${connection.walletName} does not expose STRK20 actions.` };
+    return {
+      ok: false,
+      error: `${connection.walletName} does not expose STRK20 actions.`,
+      maybeSubmitted: false,
+    };
   }
 
   if (dryRun && connection.capabilities.dryRun) {
@@ -185,6 +191,7 @@ export async function submit(
       return {
         ok: false,
         error: `The wallet refused this before signing: ${errorText(err)}`,
+        maybeSubmitted: false,
       };
     }
   }
@@ -193,7 +200,7 @@ export async function submit(
     const { transaction_hash } = await connection.account.strk20InvokeTransaction(actions);
     return { ok: true, txHash: transaction_hash };
   } catch (err) {
-    return { ok: false, error: errorText(err) };
+    return { ok: false, error: errorText(err), maybeSubmitted: !isUserRejection(err) };
   }
 }
 

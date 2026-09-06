@@ -1,7 +1,7 @@
 "use client";
 
 import type { Call } from "starknet";
-import { errorText } from "./pool";
+import { errorText, isUserRejection } from "./pool";
 import type { Connection } from "./wallet";
 
 /**
@@ -40,6 +40,16 @@ export interface SubmitResult {
   ok: boolean;
   txHash?: string;
   error?: string;
+  /**
+   * Whether the transaction might already be on chain despite the failure.
+   *
+   * The distinction is the difference between discarding a position secret and destroying
+   * someone's stake. A refusal before the signature — a simulation that reverts, a user who
+   * cancels — is certain: nothing was sent. Anything after the wallet accepts the request is
+   * not: the response can be lost to a dropped connection, a closed tab or a reload while
+   * the transaction lands perfectly well.
+   */
+  maybeSubmitted?: boolean;
 }
 
 /**
@@ -75,7 +85,8 @@ export async function submitDirect(
     if (/simulation timed out/i.test(text)) {
       // Not an answer about the call. Fall through and submit.
     } else if (/execution|revert|entry ?point|argent|failed to deserialize/i.test(text)) {
-      return { ok: false, error: `This would fail on chain: ${text}` };
+      // Pre-signature: certain that nothing was sent.
+      return { ok: false, error: `This would fail on chain: ${text}`, maybeSubmitted: false };
     }
   }
 
@@ -83,6 +94,8 @@ export async function submitDirect(
     const { transaction_hash } = await connection.account.execute(calls);
     return { ok: true, txHash: transaction_hash };
   } catch (err) {
-    return { ok: false, error: errorText(err) };
+    // A user who cancelled is certain; every other failure here happened at or after the
+    // point the wallet took the request, and cannot be assumed not to have landed.
+    return { ok: false, error: errorText(err), maybeSubmitted: !isUserRejection(err) };
   }
 }
