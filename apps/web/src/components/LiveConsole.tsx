@@ -11,6 +11,7 @@ import {
   HOUSE_EDGE_BPS,
   fmtStrk,
   maxStakeFor,
+  outcomeOf,
   parseStrk,
   payoutFor,
   roundLabel,
@@ -21,6 +22,8 @@ import type { Route } from "@/lib/wallet";
 import type { Wallet } from "@/components/PrivyGate";
 import type { PrivySigner } from "@/lib/privy-signer";
 import { useBand } from "@/lib/useBand";
+import { useRounds } from "@/lib/useRounds";
+import { GameSwitch, type Game } from "./device/GameSwitch";
 import { usePrefs } from "@/lib/usePrefs";
 import { MenuSheet } from "./menu/MenuSheet";
 import { useSound } from "@/lib/useSound";
@@ -134,6 +137,8 @@ export function LiveConsole({
   const router = useRouter();
   const [marketKey, setMarketKey] = useState("BTC");
   const [tier, setTier] = useState(0);
+  const [game, setGame] = useState<Game>("range");
+  const [picked, setPicked] = useState<"up" | "down">("up");
   const [stakeStep, setStakeStep] = useState(3);
   const { prefs, set: setPref } = usePrefs();
   /**
@@ -174,6 +179,12 @@ export function LiveConsole({
   // placeholder to avoid a divide-by-zero produces a legal-looking but nonsense band
   // window, and the band then sticks at maximum width once the real price arrives.
   const band = useBand(market, tier, state.spot);
+
+  /**
+   * The direction game's rounds. Read here, beside the band, because the deck quotes from
+   * whichever of the two the switch is on and both have to be in hand before it can.
+   */
+  const rounds = useRounds(market.label);
 
 
   const say = useCallback((m: string) => {
@@ -219,6 +230,80 @@ export function LiveConsole({
     [target, band.ready, band.multiplierBps],
   );
   const ladder = useMemo(() => stakeLadder(capacity), [capacity]);
+
+  /**
+   * A direction ticket's round, by id.
+   *
+   * `useLiveDesk` deliberately leaves `market` null on a direction position — the ticket
+   * belongs to a round on the other contract, and guessing a market for it would attach the
+   * wrong settlement price to somebody's trade. The console is where the two meet, because
+   * this is the only place that has both the stored positions and the round list.
+   */
+  const roundOf = useCallback(
+    (id: number) => rounds.rounds.find((r) => r.id === id) ?? null,
+    [rounds.rounds],
+  );
+
+  /**
+   * Positions still riding, on either game.
+   *
+   * This used to be `p.market && !p.market.isSettled`, which cannot ever count a direction
+   * ticket: a direction position has no market by construction, so the condition is false for
+   * every one of them. A trader who had just opened one watched the desk report `0 RIDING`
+   * with their stake on chain and a transaction hash on screen — the one number on the
+   * chassis that says "you have something at stake" reading zero while they did.
+   */
+  const riding = useMemo(
+    () =>
+      state.positions.filter((p) => {
+        /**
+         * A ticket the chain says does not exist is not riding, whatever the store thinks.
+         *
+         * A trade that fails after the wallet has taken it is saved deliberately — it may
+         * have landed, and a stake with no local secret is unclaimable — so the store holds
+         * attempts as well as trades. That is the right thing to store and the wrong thing to
+         * count: three failed presses left three saved tickets on a round that never sold
+         * one, and every one of them would show as riding.
+         *
+         * `false` is the chain's answer and is trusted. `null` is "not read yet", which is
+         * not the same claim — an unread position stays counted rather than blinking out of
+         * existence every time a read is slow.
+         */
+        if (p.onChain?.exists === false) return false;
+        if (isDirection(p)) {
+          const r = roundOf(p.roundId);
+          return r ? !r.isSettled : false;
+        }
+        return p.market ? !p.market.isSettled : false;
+      }).length,
+    [state.positions, roundOf],
+  );
+
+  /**
+   * The one quote the deck prints, whichever game is selected.
+   *
+   * The Pays panel used to read `band` unconditionally. On the direction game that meant the
+   * header said "EITHER WAY 1.92x" from the round while the number under it said 1.25x from
+   * a band nobody had chosen — two different prices for the same key, on the same screen,
+   * three centimetres apart. Whichever a trader believed, one of them was wrong.
+   *
+   * Both games really do quote the same shape — a multiplier in basis points and whether it
+   * is known yet — so this is a swap rather than a second panel. The direction multiplier is
+   * the round's own `multiplier_bps`, read from the contract that will pay it out; there is
+   * nothing to compute in the browser and nothing that can drift from what settles.
+   */
+  const quote = useMemo(() => {
+    if (game === "direction") {
+      const r = rounds.open;
+      return {
+        ready: r !== null,
+        multiplierBps: r ? BigInt(r.multiplierBps) : 0n,
+        /** No band is chosen on this game, so nothing here binds on band width. */
+        capacityAtQuote: r ? BigInt(r.bankroll) - BigInt(r.reserved) : null,
+      };
+    }
+    return { ready: band.ready, multiplierBps: band.multiplierBps, capacityAtQuote: null };
+  }, [game, rounds.open, band.ready, band.multiplierBps]);
 
   /** Where the band sits inside the window the market will sell, and its reach in words. */
   const bandSpan = band.limits
@@ -279,7 +364,12 @@ export function LiveConsole({
        */
       if (privyWallet && signer) {
         await live
-          .connectWithPrivy(privyWallet.publicKey, signer)
+          .connectWithPrivy(
+            privyWallet.publicKey,
+            signer,
+            // Only for an account that already exists; a Privy wallet's address is derived.
+            privyWallet.deployed ? privyWallet.address : undefined,
+          )
           .catch((e) => say(errorFlash(e)));
         return false;
       }
@@ -299,6 +389,39 @@ export function LiveConsole({
     }
     return true;
   }, [state.connection, state.wallets, state.blocked, live, say]);
+
+  /**
+   * Firing a direction ticket, against the round the chain is actually offering.
+   *
+   * Split from `doFire` rather than branched inside it: almost nothing is shared. There is no
+   * band to validate, no route to choose, and the target is a round on the other contract
+   * rather than a market on this one — so the checks that matter are different checks.
+   */
+  const doFireDirection = useCallback(async () => {
+    if (!(await readyToAct())) return;
+    const round = rounds.open;
+    if (!round) {
+      say(rounds.ready ? "NO OPEN ROUND" : "READING ROUNDS…");
+      return;
+    }
+    if (BigInt(round.bankroll) === 0n) {
+      // The contract refuses this by name; saying so first costs nobody a signature.
+      say("ROUND HAS NO BANKROLL YET");
+      return;
+    }
+    if (stake <= 0n) {
+      say("NO SIZE");
+      return;
+    }
+    try {
+      const hash = await live.fireDirection(round.id, picked, stake);
+      play("fire");
+      say(`OPENED ${picked.toUpperCase()} ${hash.slice(0, 10)}…`);
+    } catch (e) {
+      play("reject");
+      say(errorFlash(e));
+    }
+  }, [readyToAct, rounds.open, rounds.ready, live, picked, stake, say]);
 
   const doFire = useCallback(async () => {
     if (!(await readyToAct())) return;
@@ -342,7 +465,7 @@ export function LiveConsole({
 
       if (e.key === "a" || e.key === "A" || e.key === "Enter") {
         e.preventDefault();
-        void doFire();
+        void (game === "direction" ? doFireDirection() : doFire());
       } else if (e.key === "[") {
         band.nudge(-0.08);
       } else if (e.key === "]") {
@@ -351,7 +474,7 @@ export function LiveConsole({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [doFire, band]);
+  }, [doFire, doFireDirection, game, band]);
 
   if (state.unavailable) {
     return (
@@ -388,7 +511,7 @@ export function LiveConsole({
             <StatusBar
               network={`STARKNET ${activeNetwork.name.toUpperCase()}`}
               connected={!state.error && state.spot > 0n}
-              riding={state.positions.filter((p) => p.market && !p.market.isSettled).length}
+              riding={riding}
             />
 
             {/* One fixed height, the same one the paper desk uses: switching between them
@@ -471,19 +594,61 @@ export function LiveConsole({
             ) : null}
           </div>
 
-              <BandControl
-                widthPct={widthPct}
-                onNudge={(d) => band.nudge(d)}
-                label={reachLabel}
-                disabled={!band.ready}
-                atMin={atMinBand}
-                atMax={atMaxBand}
-                asymmetric={Boolean(halves && halves[0] !== halves[1])}
-              />
+              <div className="mb-2">
+                <GameSwitch game={game} onChange={setGame} />
+              </div>
+
+              {game === "range" ? (
+                <BandControl
+                  widthPct={widthPct}
+                  onNudge={(d) => band.nudge(d)}
+                  label={reachLabel}
+                  disabled={!band.ready}
+                  atMin={atMinBand}
+                  atMax={atMaxBand}
+                  asymmetric={Boolean(halves && halves[0] !== halves[1])}
+                />
+              ) : (
+                <div className="flex items-center gap-2">
+                  {(["up", "down"] as const).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setPicked(d)}
+                      aria-pressed={picked === d}
+                      className={`key flex-1 rounded-lg py-2 text-[12px] font-extrabold tracking-tight ${
+                        picked === d
+                          ? d === "up"
+                            ? "bg-green text-black"
+                            : "bg-red text-white"
+                          : "bg-[#161616] text-dim"
+                      }`}
+                    >
+                      {d === "up" ? "▲ UP" : "▼ DOWN"}
+                    </button>
+                  ))}
+                  <span className="mono ml-1 text-[9px] tracking-[0.12em] text-dim">
+                    {/*
+                      One price for both sides, which is the point: a different multiplier per
+                      side would make the public reserve disclose which way a ticket went.
+                    */}
+                    {rounds.open
+                      ? `EITHER WAY ${fmtMultiplier(BigInt(rounds.open.multiplierBps))}`
+                      : rounds.ready
+                        ? "NO OPEN ROUND"
+                        : "READING…"}
+                  </span>
+                </div>
+              )}
 
               <div className="mt-2 flex items-center justify-between border-t border-[#161616] pt-2">
                 <span className="mono tnum text-[9px] tracking-[0.15em] text-dim">
-                  {target ? `CLOSES IN ${fmtCountdown(target.cutoffAt - now)}` : "NO OPEN MARKET"}
+                  {game === "direction"
+                    ? rounds.open
+                      ? `CLOSES IN ${fmtCountdown(rounds.open.cutoffAt - now)}`
+                      : "NO OPEN ROUND"
+                    : target
+                      ? `CLOSES IN ${fmtCountdown(target.cutoffAt - now)}`
+                      : "NO OPEN MARKET"}
                 </span>
                 <div className="flex gap-1">
                   {ROUND_SECONDS.map((seconds, i) => (
@@ -510,7 +675,16 @@ export function LiveConsole({
                 * data and stays readable without a wallet; this says what is missing, what
                 * fixes it, and offers the desk that needs nothing.
                 */}
-              {state.wallets.length === 0 && !state.connection ? (
+              {/*
+                * Not shown to somebody who already has a wallet.
+                *
+                * The condition only asked about browser *extensions*, which was the whole
+                * story before Privy. Now a visitor who signed in with an email has a real,
+                * funded, deployed Starknet account — and was being told, on the same screen
+                * that had just spent their money, that there was no wallet in this browser.
+                * True of extensions, and completely wrong as a statement about them.
+                */}
+              {state.wallets.length === 0 && !state.connection && !privyWallet ? (
                 <div className="mt-2 rounded-[9px] border border-[#171717] bg-screen-2 px-[9px] py-2">
                   <p className="mono text-[9px] leading-[1.5] tracking-[0.08em] text-dim">
                     <span className="text-amber">NO STARKNET WALLET IN THIS BROWSER.</span>
@@ -556,15 +730,35 @@ export function LiveConsole({
                   * connection this states what the deployment offers instead of what "your"
                   * trade will do.
                   */}
+                {/*
+                  * "Band" is the wrong noun on the direction game and the right one on the
+                  * range game, and this line is the app's central promise — so it names what
+                  * is actually sealed on the game the switch is on. A ticket commits to a
+                  * side; the chain is told a hash and a stake and never which side, which is
+                  * a different sentence from the one about a band, not a rewording of it.
+                  */}
                 {!route
                   ? state.directRoute === false
-                    ? "POOL ONLY HERE · A STRK20 WALLET HIDES YOU, THE SIZE AND THE BAND."
+                    ? game === "direction"
+                      ? "POOL ONLY HERE · A STRK20 WALLET HIDES YOU, THE SIZE AND THE SIDE."
+                      : "POOL ONLY HERE · A STRK20 WALLET HIDES YOU, THE SIZE AND THE BAND."
                     : "CONNECT A WALLET TO SEE WHICH ROUTE YOU GET."
-                  : route === "direct"
-                    ? "YOUR BAND STAYS HIDDEN."
-                    : "YOUR BAND AND SIZE STAY HIDDEN."}
+                  : game === "direction"
+                    ? route === "direct"
+                      ? "YOUR SIDE STAYS HIDDEN."
+                      : "YOUR SIDE AND SIZE STAY HIDDEN."
+                    : route === "direct"
+                      ? "YOUR BAND STAYS HIDDEN."
+                      : "YOUR BAND AND SIZE STAY HIDDEN."}
                 <br />
-                {roundLabel(tier).toUpperCase()} ROUND ·{" "}
+                {/* The direction game's rounds are the contract's own, not the tier keys —
+                    quoting the tier here would name a length this ticket does not have. */}
+                {game === "direction"
+                  ? rounds.open
+                    ? `${Math.round(rounds.open.roundSeconds / 60)}M ROUND`
+                    : "NO OPEN ROUND"
+                  : `${roundLabel(tier).toUpperCase()} ROUND`}{" "}
+                ·{" "}
                 {state.connection ? shortAddress(state.connection.address, 6, 4) : "NOT CONNECTED"}
               </p>
 
@@ -600,8 +794,12 @@ export function LiveConsole({
                   title={live.routeNote(route, state.connection)}
                 >
                   {route === "pool"
-                    ? "VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE BAND"
-                    : "DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND"}
+                    ? game === "direction"
+                      ? "VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE SIDE"
+                      : "VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE BAND"
+                    : game === "direction"
+                      ? "DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE SIDE"
+                      : "DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND"}
                 </p>
               ) : null}
 
@@ -654,7 +852,16 @@ export function LiveConsole({
                   disabled={Boolean(state.pending)}
                   className="mono mt-2 w-full rounded-lg bg-green/15 py-1.5 text-[9px] tracking-[0.08em] text-green disabled:opacity-40"
                 >
-                  CLAIM {claimable.length} WINNING POSITION{claimable.length > 1 ? "S" : ""}
+                  {/*
+                    * "Claimable", not "winning".
+                    *
+                    * On the direction game a tie refunds the stake, so it is something to
+                    * claim without being something that won — and the button is offered for
+                    * it, because a refund nobody claims is a refund nobody gets. Calling that
+                    * a win would be the desk telling a trader they were right when the round
+                    * did not move.
+                    */}
+                  CLAIM {claimable.length} POSITION{claimable.length > 1 ? "S" : ""}
                 </button>
               ) : null}
               </div>
@@ -672,17 +879,34 @@ export function LiveConsole({
                     <span className="tnum text-[13px] text-white">
                       {fmtStake(stake)} <span className="text-dim">→</span>{" "}
                       <span className="text-green">
-                        {band.ready ? fmtStrk(payoutFor(stake, band.multiplierBps), 2) : "—"}
+                        {quote.ready ? fmtStrk(payoutFor(stake, quote.multiplierBps), 2) : "—"}
                       </span>
                     </span>
                   </div>
                   <div className="tnum glow-amber mt-1 text-[34px] font-bold leading-none text-amber">
-                    {band.ready ? fmtMultiplier(band.multiplierBps) : "—"}
+                    {quote.ready ? fmtMultiplier(quote.multiplierBps) : "—"}
                   </div>
                   {/* The desk's own limit, shown only when it actually binds. A market that can
                       cover the whole rail has nothing to say here, and a permanent line reading
                       "capacity: plenty" is furniture. */}
-                  {band.ready
+                  {game === "direction" ? (
+                    /**
+                     * Why this number, on the direction game.
+                     *
+                     * The band explanation cannot be reused: it is a sentence about how much
+                     * of a move a band covers, and there is no band here. What a trader needs
+                     * to know instead is that the price is the same on both sides — which is
+                     * not a courtesy, it is what stops the public `reserved` figure on the
+                     * contract from revealing which way a ticket went.
+                     */
+                    rounds.open ? (
+                      <p className="mono mt-1.5 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
+                        {`SAME PRICE BOTH WAYS · ${(Number(rounds.open.multiplierBps) / 10_000).toFixed(2)}× UP OR DOWN · A TIE REFUNDS · LESS ${
+                          Math.round((20_000 - Number(rounds.open.multiplierBps)) / 2 / 100 * 100) / 100
+                        }% EDGE`}
+                      </p>
+                    ) : null
+                  ) : band.ready
                     ? (() => {
                         const why = whyThisBand(
                           band.band,
@@ -739,10 +963,13 @@ export function LiveConsole({
                 }}
               >
                 <FireKey
-                  onClick={() => void doFire()}
+                  onClick={() => void (game === "direction" ? doFireDirection() : doFire())}
                   disabled={
                     Boolean(state.pending) ||
-                    (Boolean(state.connection) && (!band.ready || !target))
+                    (Boolean(state.connection) &&
+                      (game === "direction"
+                        ? !rounds.open
+                        : !band.ready || !target))
                   }
                   armed={state.positions.some((p) => p.market && !p.market.isSettled)}
                 />
@@ -823,7 +1050,21 @@ export function LiveConsole({
             * shareable artifact — a screenshot of a result is a claim, and this is the
             * chain answering for itself.
             */}
-          {target ? (
+          {game === "direction" ? (
+            /*
+             * Named, not linked. `/m/:id` recomputes a **range** market, and pointing a
+             * direction ticket at it would send someone to a page about a different trade
+             * on a different contract that happens to share a number — worse than no link,
+             * because it looks like verification. The round is named so it can be looked up
+             * on the up/down contract; the explorer link above is the proof that stands.
+             */
+            rounds.open ? (
+              <>
+                {" · "}
+                <span className="text-white/60">direction round #{rounds.open.id}</span>
+              </>
+            ) : null
+          ) : target ? (
             <>
               {" · "}
               <a href={`/m/${target.id}`} className="text-white/60 underline">
@@ -833,9 +1074,18 @@ export function LiveConsole({
           ) : null}
         </p>
       ) : (
-        <p className="mono pb-6 text-center text-[10px] text-white/25">
-          market {ADDRESSES.market ? shortAddress(ADDRESSES.market, 10, 4) : "not deployed"}
-        </p>
+        /* The contract this game's trades actually land in. The two games are two separate
+           deployments, and printing the range market's address underneath a direction ticket
+           pointed anyone checking the trade at a contract that never saw it. */
+        (() => {
+          const contract = game === "direction" ? ADDRESSES.upDownMarket : ADDRESSES.market;
+          return (
+            <p className="mono pb-6 text-center text-[10px] text-white/25">
+              {game === "direction" ? "up/down" : "market"}{" "}
+              {contract ? shortAddress(contract, 10, 4) : "not deployed"}
+            </p>
+          );
+        })()
       )}
     </div>
   );

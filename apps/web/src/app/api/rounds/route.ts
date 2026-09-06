@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
 import { NETWORKS, decodeRound } from "@molfi/sdk";
-import { NETWORK, call } from "@/lib/rpc";
+import { NETWORK, call, callMany } from "@/lib/rpc";
 import { serialise } from "@/lib/market-reads";
 
 /**
@@ -37,11 +37,19 @@ export async function GET() {
      * scan of every market timed the route out.
      */
     const ids = Array.from({ length: Math.min(count, 24) }, (_, i) => count - i).filter((i) => i >= 1);
-    const rounds = await Promise.all(
-      ids.map(async (id) =>
-        decodeRound(id, await call(address, hash.getSelectorFromName("get_round"), ["0x" + id.toString(16)])),
-      ),
+    /**
+     * One batched request, for the same reason `/api/markets` uses one: a round trip per id
+     * is what made that route unreliable, and this is the read the direction game polls every
+     * eight seconds. Twenty-four of them cost the same half-second as one.
+     */
+    const rows = await callMany(
+      ids.map((id) => ({
+        contract: address,
+        selector: hash.getSelectorFromName("get_round"),
+        calldata: ["0x" + id.toString(16)],
+      })),
     );
+    const rounds = ids.map((id, i) => decodeRound(id, rows[i]));
 
     return NextResponse.json(
       serialise({

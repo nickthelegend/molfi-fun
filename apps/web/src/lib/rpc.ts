@@ -107,6 +107,102 @@ export async function call(
 }
 
 /**
+ * Many `starknet_call`s in one HTTP request, results in the order asked.
+ *
+ * The market list reads sixty markets. Sent as sixty requests — even eight at a time — this
+ * public endpoint answered in twenty to fifty seconds and failed outright more often than it
+ * succeeded, which is how `/api/markets` came to return `fetch failed` on most page loads
+ * while `/api/rounds`, reading five, never did. It was never sixty simultaneous connections
+ * being shed; it is that each round trip costs the better part of a second and sixty of them
+ * do not fit inside any sensible timeout.
+ *
+ * JSON-RPC 2.0 has had the answer since 2010: a request may be an **array**. The same sixty
+ * reads in one array come back in half a second, measured against this endpoint, because the
+ * node walks one state root once instead of sixty times. That is a forty-fold improvement
+ * from deleting round trips rather than from asking for less.
+ *
+ * Ids are the array index, and the response is re-ordered by them — a node is explicitly
+ * allowed to answer a batch out of order, and reading results positionally would silently
+ * attribute market 7's numbers to market 3.
+ */
+export async function callMany(
+  reads: Array<{ contract: string; selector: string; calldata?: string[] }>,
+): Promise<string[][]> {
+  if (reads.length === 0) return [];
+
+  const body = JSON.stringify(
+    reads.map((r, i) => ({
+      jsonrpc: "2.0",
+      id: i,
+      method: "starknet_call",
+      params: [
+        {
+          contract_address: r.contract,
+          entry_point_selector: r.selector,
+          calldata: r.calldata ?? [],
+        },
+        "latest",
+      ],
+    })),
+  );
+
+  let last: unknown;
+  for (const endpoint of ENDPOINTS) {
+    for (let i = 0; i < ATTEMPTS; i += 1) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+          cache: "no-store",
+          // Longer than a single call's budget: one batch stands in for all of them, so the
+          // whole route's patience belongs here rather than being divided sixty ways.
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) throw new RpcError(`the node returned ${res.status}`);
+
+        const parsed = (await res.json()) as unknown;
+        // A node that answers a batch with a single object is reporting one failure for all
+        // of it — usually a malformed request — and its message is the useful one.
+        if (!Array.isArray(parsed)) {
+          const e = (parsed as { error?: { message?: string } }).error;
+          throw new RpcError(e?.message ?? "the node did not answer the batch");
+        }
+
+        const out = new Array<string[]>(reads.length);
+        for (const entry of parsed as Array<{
+          id?: number;
+          result?: string[];
+          error?: { message?: string };
+        }>) {
+          if (typeof entry.id !== "number" || entry.id < 0 || entry.id >= reads.length) {
+            throw new RpcError("the node answered with an id that was not asked for");
+          }
+          if (!entry.result) {
+            // A revert is the contract's answer. Naming the read it came from matters here
+            // in a way it does not for a single call, which is self-evidently about one.
+            throw new RpcError(entry.error?.message ?? `read ${entry.id} returned no result`);
+          }
+          out[entry.id] = entry.result;
+        }
+        if (out.some((r) => r === undefined)) {
+          throw new RpcError("the node left part of the batch unanswered");
+        }
+
+        lastGood = endpoint;
+        return out;
+      } catch (err) {
+        last = err;
+        if (i < ATTEMPTS - 1) await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+  }
+  throw new RpcError(
+    last instanceof Error ? last.message : "no Starknet endpoint could answer the batch",
+  );
+}
+
+/**
  * The latest block's timestamp — the clock every deadline in this app is measured against.
  *
  * `open_position` refuses past the cutoff and `settle` refuses before it, both against the

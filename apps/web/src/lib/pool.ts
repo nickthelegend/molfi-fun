@@ -148,7 +148,24 @@ export function errorText(e: unknown): string {
   );
   if (bare) return bare[0].slice(0, 160);
 
+  /**
+   * The last resort: the first line that is prose rather than the request.
+   *
+   * starknet.js prints `RPC: <method> with params { …the whole request… }` and only then the
+   * failure, so most of what it hands over is the question rather than the answer. The old
+   * filter skipped the `RPC:` line and lines that *began* with a brace or bracket, which left
+   * the request's own fields — and a trader who pressed the key was shown, in full,
+   * `"BLOCK_ID": "LATEST",`. It named the block the estimate was taken against and nothing
+   * about why their ticket did not open.
+   *
+   * So a `"key": value` line is skipped too. What survives is a sentence, which is the only
+   * thing worth putting on the deck.
+   */
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const useful = lines.find((l) => !/^RPC:/.test(l) && !/^[{}[\],]/.test(l) && l.length > 12);
-  return (useful ?? lines[0] ?? "unknown error").slice(0, 200);
+  // A **quoted** key is the request's JSON; an unquoted one is not. `20: Contract not found`
+  // is the node's error code and its sentence, and skipping that would throw away the answer
+  // along with the question.
+  const echoed = (l: string) => /^"[\w_]+"\s*:/.test(l) || /^[{}[\],]/.test(l);
+  const useful = lines.find((l) => !/^RPC:/.test(l) && !echoed(l) && l.length > 12);
+  return (useful ?? lines.find((l) => !echoed(l)) ?? lines[0] ?? "unknown error").slice(0, 200);
 }

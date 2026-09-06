@@ -96,12 +96,83 @@ export async function marketCount(): Promise<number> {
   return Number(BigInt(n));
 }
 
-export async function readMarket(id: number): Promise<MarketState> {
-  const r = await provider.callContract({
-    contractAddress: MARKET,
-    entrypoint: "get_market",
-    calldata: CallData.compile([id]),
+/**
+ * Many reads of one entrypoint, in a single JSON-RPC request.
+ *
+ * Raw `fetch` rather than `provider.callContract`, because starknet.js has no batching API —
+ * its channel sends one request per call, which is precisely the cost being removed here.
+ * The array form is plain JSON-RPC 2.0 and every Starknet node implements it.
+ *
+ * Results are placed by the `id` each response carries, never by position: a node is allowed
+ * to answer a batch in any order, and reading it positionally would attribute one market's
+ * bankroll to another — a silent wrong answer rather than a failure, in the numbers the
+ * keeper uses to decide what to fund.
+ */
+async function batchCall(
+  contract: string,
+  entrypoint: string,
+  calls: string[][],
+): Promise<string[][]> {
+  if (calls.length === 0) return [];
+  const selector = hash.getSelectorFromName(entrypoint);
+
+  /**
+   * Every felt goes on the wire as `0x…`, and this is not tidiness.
+   *
+   * `provider.callContract` normalises calldata before sending; a raw `fetch` does not, and
+   * the node reads a bare string as **hexadecimal**. `CallData.compile([49])` produces the
+   * decimal string `"49"`, which the node therefore answers as market `0x49` — 73. Nothing
+   * errors. The keeper simply read a different market from the one it asked for, decided
+   * two dozen already-settled markets were still open, and sent a settle transaction for
+   * each of them, every cycle. A wrong answer that costs money and looks like data.
+   */
+  const felt = (v: string) => (v.startsWith("0x") ? v : "0x" + BigInt(v).toString(16));
+
+  const res = await fetch(SEPOLIA_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(
+      calls.map((calldata, i) => ({
+        jsonrpc: "2.0",
+        id: i,
+        method: "starknet_call",
+        params: [
+          { contract_address: contract, entry_point_selector: selector, calldata: calldata.map(felt) },
+          "latest",
+        ],
+      })),
+    ),
+    signal: AbortSignal.timeout(20_000),
   });
+  if (!res.ok) throw new Error(`the node returned ${res.status} for a batch of ${calls.length}`);
+
+  const parsed = (await res.json()) as unknown;
+  if (!Array.isArray(parsed)) {
+    const e = (parsed as { error?: { message?: string } }).error;
+    throw new Error(e?.message ?? `the node did not answer a batch of ${calls.length}`);
+  }
+
+  const out = new Array<string[]>(calls.length);
+  for (const entry of parsed as Array<{
+    id?: number;
+    result?: string[];
+    error?: { message?: string };
+  }>) {
+    if (typeof entry.id !== "number" || entry.id < 0 || entry.id >= calls.length) {
+      throw new Error("the node answered with an id that was not asked for");
+    }
+    if (!entry.result) throw new Error(entry.error?.message ?? `${entrypoint} ${entry.id} failed`);
+    out[entry.id] = entry.result;
+  }
+  if (out.some((r) => r === undefined)) throw new Error("the node left part of the batch unanswered");
+  return out;
+}
+
+/**
+ * `get_market`'s felts, decoded. Separated from the read so a batched read decodes with the
+ * same function as a single one rather than a second copy of these offsets.
+ */
+function decodeMarket(id: number, r: string[]): MarketState {
   return {
     id,
     pair: toLabel(r[0]),
@@ -118,11 +189,37 @@ export async function readMarket(id: number): Promise<MarketState> {
   };
 }
 
+export async function readMarket(id: number): Promise<MarketState> {
+  const r = await provider.callContract({
+    contractAddress: MARKET,
+    entrypoint: "get_market",
+    calldata: CallData.compile([id]),
+  });
+  return decodeMarket(id, r as string[]);
+}
+
+/**
+ * Every market, in one request.
+ *
+ * This was a `for` loop doing one `starknet_call` per market. It worked at four markets and
+ * it was quietly the thing that broke the keeper at seventy-two: three new markets are listed
+ * every round, so the read grew until a cycle could not finish inside its own period and
+ * every cycle ended `cycle FAILED: fetch failed`. Nothing about the failure named the loop.
+ *
+ * JSON-RPC 2.0 allows a request to be an array. Seventy-two reads in one array come back in
+ * about half a second, and — the part that matters more than the speed — they come back from
+ * one block rather than from seventy-two successive ones, so the cutoffs and bankrolls the
+ * keeper compares against each other are all from the same instant.
+ */
 export async function allMarkets(): Promise<MarketState[]> {
   const n = await marketCount();
-  const out: MarketState[] = [];
-  for (let id = 1; id <= n; id += 1) out.push(await readMarket(id));
-  return out;
+  const ids = Array.from({ length: n }, (_, i) => i + 1);
+  const rows = await batchCall(
+    MARKET,
+    "get_market",
+    ids.map((id) => CallData.compile([id])),
+  );
+  return ids.map((id, i) => decodeMarket(id, rows[i]));
 }
 
 /** Mainnet Pragma's median for one pair, with the block it was read at. */
@@ -273,7 +370,21 @@ async function bareEstimate(call: Call | Call[], nonce: bigint): Promise<BareEst
           },
         ],
         simulation_flags: ["SKIP_VALIDATE"],
-        block_id: "pending",
+        /**
+         * `latest`, not `pending`.
+         *
+         * RPC 0.9 renamed the pending tag to `pre_confirmed` and made `pending` invalid —
+         * `starknet_getNonce` with it now answers `Invalid block id`, and starknet.js
+         * refuses it client-side with `Block identifier unmanaged: pending` before a request
+         * is even sent. This keeper spent an hour failing every relay, listing and settle
+         * with exactly that message.
+         *
+         * `latest` is the right tag on its own merits rather than the safe one: fees are
+         * being estimated for a transaction that has not been sent, against a block that has
+         * closed, and the pre-confirmed block adds nothing to that but a moving target. It
+         * is also the one tag every RPC version since 0.4 spells the same way.
+         */
+        block_id: "latest",
       },
     }),
   });
@@ -316,7 +427,16 @@ export async function send(call: Call | Call[], label: string, attempts = 3): Pr
     try {
       if (nextNonce === null) await syncNonce();
       const resourceBounds = await boundsFor(call, nextNonce!);
-      const sent = await account.execute(call, { nonce: nextNonce!, resourceBounds });
+      /**
+       * `tip: 0` explicitly, for the same reason the browser sends it explicitly.
+       *
+       * Without it starknet.js downloads the last three blocks with every transaction in
+       * them before each send, purely to compute a tip percentile — three of the heaviest
+       * responses in the JSON-RPC spec, on every relay, settle and funding this keeper
+       * makes, and a throw if any of them fails. Starknet does not order by tip today, so
+       * the computed answer is zero anyway.
+       */
+      const sent = await account.execute(call, { nonce: nextNonce!, resourceBounds, tip: 0 });
       hash = sent.transaction_hash;
       nextNonce! += 1n;
     } catch (e) {
@@ -540,6 +660,7 @@ export const approveUpDownCall = (amount: bigint): Call => ({
 });
 
 /** Every direction round the contract holds, newest last. */
+/** Every direction round, in one request, for the same reasons as `allMarkets`. */
 export async function allRounds(): Promise<import("@molfi/sdk").OnChainRound[]> {
   if (!UPDOWN) return [];
   const { decodeRound } = await import("@molfi/sdk");
@@ -547,12 +668,7 @@ export async function allRounds(): Promise<import("@molfi/sdk").OnChainRound[]> 
     contractAddress: UPDOWN, entrypoint: "round_count", calldata: [],
   });
   const count = Number(BigInt(countRaw));
-  const out: import("@molfi/sdk").OnChainRound[] = [];
-  for (let id = 1; id <= count; id += 1) {
-    const r = await provider.callContract({
-      contractAddress: UPDOWN, entrypoint: "get_round", calldata: [hex(id)],
-    });
-    out.push(decodeRound(id, r as string[]));
-  }
-  return out;
+  const ids = Array.from({ length: count }, (_, i) => i + 1);
+  const rows = await batchCall(UPDOWN, "get_round", ids.map((id) => [hex(id)]));
+  return ids.map((id, i) => decodeRound(id, rows[i]));
 }

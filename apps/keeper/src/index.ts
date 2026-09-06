@@ -303,9 +303,29 @@ async function tendDirectionRounds(): Promise<void> {
     }
   }
 
-  // ---- list one if none is open
+  /**
+   * List the next round *before* the current one closes, not after it has.
+   *
+   * This used to return whenever anything was open, which sounds right and leaves a hole in
+   * the product. A round closes; the keeper notices on its next cycle, up to `CYCLE_MS`
+   * later; it lists a replacement, which has no bankroll; the funding pass picks that up on
+   * the cycle after that. For the two or three minutes in between, every visitor to the
+   * direction game is told `NO OPEN ROUND` — the desk is shut, on a schedule, several times
+   * an hour, and nothing anywhere reports a fault because nothing has faulted.
+   *
+   * So a round is listed once the last one to close is inside `LIST_LEAD` of its cutoff. The
+   * lead has to cover listing *and* funding — a round with no bankroll cannot sell a ticket,
+   * so an unfunded round is not an open one — which is two cycles, plus a cycle of margin for
+   * a retry. Derived from `CYCLE_MS` rather than written down, because a keeper on a slower
+   * loop needs a longer lead and would otherwise reintroduce the same gap quietly.
+   *
+   * The overlap is deliberate and the console already expects it: `useRounds` offers the open
+   * round with the *furthest* cutoff, so a trader is never handed the one about to expire.
+   */
+  const LIST_LEAD = Math.max((3 * CYCLE_MS) / 1000, 180);
   const open = rounds.filter((r) => !r.isSettled && r.cutoffAt > now);
-  if (open.length > 0) return;
+  const furthest = open.reduce((a, r) => (r.cutoffAt > a ? r.cutoffAt : a), 0);
+  if (open.length > 0 && furthest - now > LIST_LEAD) return;
 
   const balance = await strkBalance(account.address);
   if (balance < LOW_BALANCE) {

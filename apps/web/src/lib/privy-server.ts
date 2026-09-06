@@ -120,12 +120,46 @@ export function starknetWalletOf(user: unknown): StarknetWallet | null {
  */
 export async function walletFor(caller: Caller): Promise<StarknetWallet> {
   if (!privy) throw new Error("wallets are not configured on this deployment");
-  if (caller.wallet) return caller.wallet;
 
+  /**
+   * The linked-account shortcut is gone, deliberately.
+   *
+   * It used to return `caller.wallet` — a Starknet wallet found among the user's linked
+   * accounts — without going to Privy at all. That was right while wallets were user-owned.
+   * Now the only wallet molfi can actually sign for is the app-owned one behind the
+   * idempotency key below, and a linked account is by definition *not* that. Preferring it
+   * would hand a returning user the wallet from the old model: real address, real balance,
+   * no way to sign.
+   *
+   * One source of truth for "which account is this session's", even though it costs a call.
+   */
+
+  /**
+   * Created **without** an `owner`, and that is a custody decision rather than an oversight.
+   *
+   * Passing `owner: { user_id }` makes the wallet the user's, which sounds strictly better and
+   * silently breaks the product: Privy will then only sign for it with a *user signing key* or
+   * an *app authorization key*, and this app has neither. Every signature came back
+   * `401 No valid authorization keys or user signing keys available` — after the account had
+   * been funded, at the moment it tried to deploy itself, which is the most expensive possible
+   * place to discover it. The wallet existed, the address was real, the STRK was really there,
+   * and nothing could ever move it.
+   *
+   * So the wallet is app-owned and molfi's server signs for it, once it has verified the
+   * caller's session. That is custodial, and it is the same trust the rest of the product
+   * already asks for — molfi funds the account, runs the keeper and settles the rounds. What
+   * matters is that it is **said out loud** rather than implied: `/privacy` names it.
+   *
+   * The user id still scopes the wallet through the idempotency key, so two people never share
+   * an account and one person keeps theirs across devices and reloads.
+   *
+   * `v2` in the key is deliberate. The first version created owner-scoped wallets, and
+   * reusing that key would hand a returning tester back the unsignable wallet they already
+   * have instead of one that works.
+   */
   const wallet = await privy.wallets().create({
     chain_type: "starknet",
-    owner: { user_id: caller.userId },
-    idempotency_key: `starknet:${caller.userId}`,
+    idempotency_key: `starknet:v2:${caller.userId}`,
   });
   return {
     id: wallet.id,

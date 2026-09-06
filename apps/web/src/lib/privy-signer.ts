@@ -52,15 +52,23 @@ export class PrivySigner extends Signer {
    * session, so there is nothing here that could name somebody else's key.
    */
   protected override async signRaw(msgHash: string): Promise<Signature> {
-    const accessToken = await this.#auth.accessToken();
-    if (!accessToken) throw new Error("your session expired — sign in again");
-
+    /**
+     * A missing token is not an error here any more — it is a question for the server.
+     *
+     * This used to throw "your session expired" the moment there was no access token, which
+     * is right when there is a Privy session to expire and wrong when there was never one:
+     * outside production the route will sign with a development key instead, and throwing
+     * here meant that path could not be reached from the browser at all. The route decides;
+     * an unauthenticated request to a deployment without a development key gets a 401 and the
+     * same sentence, from the place that actually knows.
+     */
+    const accessToken = await this.#auth.accessToken().catch(() => null);
     const idToken = this.#auth.identityToken();
     const res = await fetch("/api/wallet/sign", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${accessToken}`,
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
         ...(idToken ? { "x-privy-id-token": idToken } : {}),
       },
       body: JSON.stringify({ hash: msgHash }),

@@ -290,6 +290,29 @@ export default async function PrivacyPage() {
           />
         </Group>
 
+        <Group title="Held by molfi, not by you" tone="amber">
+          {/*
+            * The custody fact, stated first and plainly.
+            *
+            * A page called "what leaks" that quietly omits who holds the key is not an honest
+            * page. Signing in with an email gets you a Starknet account whose key lives at
+            * Privy under molfi's application — so molfi's server can sign for it, and that is
+            * how the account deploys itself and how a trade is signed without an extension.
+            * It is a real trade-off, made deliberately for a testnet demo, and the reader gets
+            * to know about it rather than infer it.
+            */}
+          <Row
+            what="Who can sign for your account"
+            how="molfi can. An email login gives you a Starknet account whose key is held by Privy under molfi's application, and molfi's server signs with it once it has verified your session. That is what removes the extension and the seed phrase — and it means you are trusting molfi with the key, not just with the code."
+            evidence="The signing endpoint resolves the wallet from your verified session and never from the request, so it cannot be pointed at somebody else's — but it is molfi's server doing the signing."
+          />
+          <Row
+            what="That molfi funded your account"
+            how="A new account is sent 12 test STRK from a molfi faucet so it can deploy itself and play. That transfer is a public transaction linking the faucet to your address."
+            evidence="Visible on any explorer. It says molfi gave this address money; it says nothing about what the address then predicted."
+          />
+        </Group>
+
         <Group title="Public, and it has to be" tone="amber">
           <Row
             what="That a position was opened, and in which market"

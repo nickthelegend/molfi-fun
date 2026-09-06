@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CoinMark, StarknetSpark } from "@/components/CoinMark";
 import { PrivySigner } from "@/lib/privy-signer";
-import { useMemo } from "react";
+import { prepareAccount, type PrepareStage } from "@/lib/prepare-account";
+import { errorText } from "@/lib/pool";
+import { useMemo, useRef } from "react";
 
 /**
  * The door in front of the console.
@@ -32,18 +34,42 @@ const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
  * deck, and that is all it can do.
  */
 const devWallet: Wallet | null =
-  process.env.NODE_ENV === "production"
-    ? null
-    : {
+  process.env.NODE_ENV !== "production" &&
+  /**
+   * Opt-in, not automatic.
+   *
+   * This used to switch itself on whenever the development keys were present, which made the
+   * real front door **unreachable in development**: every local visit walked straight past
+   * the login, so the one flow every genuine visitor takes — sign in, get a wallet, get it
+   * funded and deployed — was the only flow that could never be exercised locally. A bypass
+   * that hides the thing it is meant to help you build is worth less than no bypass.
+   *
+   * Now it needs saying out loud, and the default in development is the real door.
+   */
+  process.env.NEXT_PUBLIC_DEV_WALLET_BYPASS === "1" &&
+  process.env.NEXT_PUBLIC_DEV_WALLET_ADDRESS &&
+  process.env.NEXT_PUBLIC_DEV_WALLET_PUBLIC_KEY
+    ? {
         id: "",
-        address: "0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f",
-        publicKey: "0x0",
-      };
+        address: process.env.NEXT_PUBLIC_DEV_WALLET_ADDRESS,
+        publicKey: process.env.NEXT_PUBLIC_DEV_WALLET_PUBLIC_KEY,
+        /** Already on chain, so the desk connects at this address instead of deriving one. */
+        deployed: true,
+      }
+    : null;
 
 export interface Wallet {
   id: string;
   address: string;
   publicKey: string;
+  /**
+   * Whether `address` is an account that exists, or one computed from the key.
+   *
+   * A fresh Privy wallet is the latter: a key whose account contract has not been deployed,
+   * whose address molfi derives. Anything already on chain is the former, and deriving an
+   * address for it would silently target a different, empty account.
+   */
+  deployed?: boolean;
 }
 
 /**
@@ -105,6 +131,17 @@ function Inner({ children }: { children: GateChildren }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
+  /**
+   * How far the account is from being able to trade, and whether that work has started.
+   *
+   * `null` means not started; anything else is a stage to show. The ref is what stops a
+   * second run: `prepareAccount` sends a **deployment transaction**, and React running an
+   * effect twice — which it does in development, by design — would send two. The second
+   * fails with the account already deployed, which is harmless, but it costs a fee and puts
+   * a frightening error in front of somebody whose account is in fact fine.
+   */
+  const [stage, setStage] = useState<PrepareStage | null>(null);
+  const preparing = useRef(false);
 
   /**
    * One signer for the session, rebuilt only when the key it signs for changes.
@@ -171,6 +208,50 @@ function Inner({ children }: { children: GateChildren }) {
     if (authenticated && !wallet && !claiming && !error) void claim();
   }, [authenticated, identityToken, wallet, claiming, error, claim]);
 
+  /**
+   * Once there is a wallet, make it into an account that can actually do something.
+   *
+   * Deliberately in the gate rather than in the console. The console's entire surface — the
+   * balance, the quote, the fire key — is written against a wallet that works, and threading
+   * "but it might not exist yet" through all of it would put that caveat in twenty places.
+   * Here it is one door: nobody gets through it holding an account that cannot sign.
+   */
+  useEffect(() => {
+    if (!wallet || stage === "ready" || preparing.current || error) return;
+    preparing.current = true;
+    void prepareAccount(
+      wallet.publicKey,
+      signer,
+      { accessToken: () => getAccessToken(), identityToken: () => identityToken ?? null },
+      setStage,
+      wallet.deployed ? wallet.address : null,
+    )
+      .then((prepared) => {
+        /**
+         * Adopt the address the account actually lives at.
+         *
+         * Privy's wallet object carries *its* address for the key. molfi does not trade from
+         * that — it trades from an OpenZeppelin account derived from the same public key, and
+         * that is the address the faucet funded and `prepareAccount` deployed. Handing the
+         * console Privy's address instead meant the balance strip read an address with
+         * nothing in it and reported `ON CHAIN 0.0000 STRK` to somebody holding twelve.
+         *
+         * One address from here down, and it is the one with the money in it.
+         */
+        setWallet((w) => (w ? { ...w, address: prepared.address, deployed: true } : w));
+        setStage("ready");
+      })
+      .catch((e) => {
+        // Through `errorText`, not raw: starknet.js prefixes its failures with the whole
+        // request it made, and a visitor stuck at the front door was being shown
+        // `RPC: starknet_getClass with params {` — the question, not the answer.
+        setError(errorText(e));
+        // Cleared so TRY AGAIN can genuinely try again rather than being a button that
+        // re-renders the same error.
+        preparing.current = false;
+      });
+  }, [wallet, stage, error, signer, getAccessToken, identityToken]);
+
   if (!ready) {
     return (
       <Shell>
@@ -228,6 +309,28 @@ function Inner({ children }: { children: GateChildren }) {
     return (
       <Shell>
         <p className="mono text-[11px] tracking-[0.15em] text-white/35">OPENING YOUR WALLET…</p>
+      </Shell>
+    );
+  }
+
+  /**
+   * The wait, described rather than spun.
+   *
+   * This is two transactions on a public testnet and it takes the better part of half a
+   * minute. A bare spinner for that long reads as broken, and the honest thing to say is also
+   * the interesting thing: the desk is putting a brand-new account on chain and paying for it.
+   */
+  if (stage !== "ready") {
+    return (
+      <Shell>
+        <p className="mono text-[11px] tracking-[0.15em] text-white/35">
+          {stage === "deploying" ? "PUTTING YOUR ACCOUNT ON CHAIN…" : "SETTING UP YOUR ACCOUNT…"}
+        </p>
+        <p className="mt-3 text-[12px] leading-relaxed text-white/45">
+          {stage === "deploying"
+            ? "Your account is being deployed to Starknet Sepolia, signed by your own key. This takes a few seconds and happens once."
+            : "molfi is sending your new account enough STRK to play with. Testnet money — but every position you take with it is a real transaction."}
+        </p>
       </Shell>
     );
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
 import { MARKETS, NETWORKS } from "@molfi/sdk";
-import { NETWORK, call, latestTimestamp } from "@/lib/rpc";
+import { NETWORK, call, callMany, latestTimestamp } from "@/lib/rpc";
 
 /**
  * The markets that exist on chain, read from the contract.
@@ -77,11 +77,21 @@ export async function GET(req: Request) {
       (id) => id >= 1,
     );
 
-    const markets = await Promise.all(
-      ids.map(async (id) => {
-        const r = await call(address, hash.getSelectorFromName("get_market"), [
-          "0x" + id.toString(16),
-        ]);
+    /**
+     * One request, not sixty. Sent individually these took twenty to fifty seconds through a
+     * public endpoint and failed more often than not; as a JSON-RPC batch they take half a
+     * second. `callMany` keeps the answers in the order asked, by id rather than by position.
+     */
+    const rows = await callMany(
+      ids.map((id) => ({
+        contract: address,
+        selector: hash.getSelectorFromName("get_market"),
+        calldata: ["0x" + id.toString(16)],
+      })),
+    );
+
+    const markets = ids.map((id, i) => {
+        const r = rows[i];
         // Market, in declaration order: pair, cutoff_at, round_seconds, token, sigma_1e4,
         // house_edge_bps, settled_price, settled_at, settled_block_at, settled_sources,
         // is_settled, staked, paid. Every u256 is two felts, low limb first.
@@ -105,8 +115,7 @@ export async function GET(req: Request) {
           bankroll: u256(r[18], r[19]).toString(),
           reserved: u256(r[20], r[21]).toString(),
         };
-      }),
-    );
+    });
 
     /**
      * The chain's clock, served alongside the markets.

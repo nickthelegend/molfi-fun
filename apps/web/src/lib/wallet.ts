@@ -147,6 +147,29 @@ export function networkOf(chainId: string): Network | "unknown" {
   return "unknown";
 }
 
+/**
+ * Every transaction molfi sends carries an explicit tip, and the explicit tip is zero.
+ *
+ * Left unset, starknet.js does not simply omit the field: before each V3 transaction it
+ * calls `getEstimateTip()`, which downloads the last three blocks **with all of their
+ * transactions**, extracts every tip in them and takes a percentile. That is three of the
+ * largest responses the JSON-RPC spec has, per trade, on the critical path between pressing
+ * a key and signing — and if any one of them fails, the estimator throws and the trade never
+ * reaches the wallet. The user sees `Failed to analyze tip statistics (sequential): failed
+ * to determine starting block number` and no signature prompt, which is not a sentence
+ * anybody can act on. Against a shared public endpoint that happened on most attempts.
+ *
+ * Zero is not a shortcut around the estimate, it is the answer the estimate would give.
+ * A tip is a priority bid in a congested block; Starknet's fee market prices by resource
+ * and the sequencer does not order by tip today, so every V3 transaction on both networks
+ * carries a tip of zero. Paying a computed non-zero tip would buy nothing and cost the
+ * trader real STRK.
+ *
+ * If that changes — if tips ever start clearing — this is the one constant to revisit, and
+ * it is deliberately in one place rather than at each of the three call sites.
+ */
+export const NO_TIP = { tip: 0 } as const;
+
 /** The Wallet API version that first carries the STRK20 actions. */
 export const STRK20_WALLET_API = "0.10.3";
 
@@ -390,22 +413,11 @@ export async function connectPrivy(
  *
  * Deterministic, so the same key always resolves to the same address on every device and
  * after every reload — which is what makes it safe to fund one before it is deployed.
- */
-export function privyAccountAddress(publicKey: string): string {
-  return hash.calculateContractAddressFromHash(
-    publicKey,
-    OZ_ACCOUNT_CLASS,
-    CallData.compile({ publicKey }),
-    0,
-  );
-}
-
-/**
- * OpenZeppelin's account, as already declared on Sepolia.
  *
- * Chosen rather than invented: it is the class `sncast` itself deploys, so it is present on
- * the network without molfi having to declare anything, and its constructor takes exactly the
- * one public key a Privy signer provides.
+ * Re-exported rather than implemented, because the **server** derives this same address to
+ * decide where to send STRK. If the two derivations ever disagree by a single field, the
+ * faucet funds an address the visitor's browser will never trade from and the money is gone
+ * somewhere nobody can reach. One function, imported by both sides, is the only version of
+ * this that cannot drift.
  */
-export const OZ_ACCOUNT_CLASS =
-  "0x5b4b537eaa2399e3aa99c4e2e0208ebd6c71bc1467938cd52c798c601e43564";
+export { accountAddressFor as privyAccountAddress, OZ_ACCOUNT_CLASS } from "./account-address";

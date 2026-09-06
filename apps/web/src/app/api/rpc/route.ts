@@ -17,19 +17,49 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /**
- * Reads only, and only the ones this app makes.
+ * The methods this app makes, and no others.
  *
- * Notably absent: `starknet_addInvokeTransaction` and friends. Every transaction molfi sends
- * goes through the user's wallet, which submits it itself — proxying a signed transaction
- * would put this server in a path it has no business being in.
+ * This was reads only, on the reasoning that every transaction goes through the user's wallet
+ * and the wallet submits it itself — so proxying a signed transaction would put this server
+ * in a path it had no business being in. That was true of a browser extension. It stopped
+ * being true the moment molfi grew a Privy wallet, because a Privy account has no extension
+ * to submit for it: starknet.js signs in the browser and sends through *this* provider. The
+ * allowlist therefore refused `starknet_estimateFee` and `starknet_addInvokeTransaction`, and
+ * every Privy user's trade died before it reached the chain — visible only as an unreachable
+ * chain, because a blocked method and a dead node look identical from inside starknet.js.
+ *
+ * Forwarding a signed transaction is not the exposure the original comment feared. The
+ * transaction is already signed by a key this server has never held, and any edit here would
+ * invalidate that signature — so the proxy cannot alter what it forwards, only decline to.
+ * What it can be is a relay for traffic, which is equally true of `starknet_call`, and is a
+ * question of rate rather than of authority.
+ *
+ * Still absent, deliberately: `starknet_addDeclareTransaction`, and everything a node exposes
+ * for its own administration. Declaring is not something a page does.
  */
 const ALLOWED = new Set([
+  // Writes. The browser signs, this forwards, the chain decides.
+  "starknet_addInvokeTransaction",
+  /** A counterfactual account deploys itself on first use; nothing else can do it for it. */
+  "starknet_addDeployAccountTransaction",
+  // Asking what a transaction would cost or do, which every send does first.
+  "starknet_estimateFee",
+  "starknet_simulateTransactions",
   "starknet_call",
   "starknet_chainId",
   "starknet_blockNumber",
   "starknet_blockHashAndNumber",
   "starknet_getBlockWithTxHashes",
   "starknet_getClassAt",
+  /**
+   * By hash, not only by address.
+   *
+   * `deployAccount` looks the class up by its hash to decide which Cairo ABI it is talking
+   * to — and it must, because the account does not exist yet, so there is no address to ask
+   * about. Leaving this out meant every first-time deployment died on a blocked method, one
+   * call before the transaction that would have created the account.
+   */
+  "starknet_getClass",
   "starknet_getClassHashAt",
   "starknet_getEvents",
   "starknet_getNonce",

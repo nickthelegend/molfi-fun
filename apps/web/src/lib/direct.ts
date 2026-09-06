@@ -2,7 +2,7 @@
 
 import type { Call } from "starknet";
 import { errorText, isUserRejection } from "./pool";
-import type { Connection } from "./wallet";
+import { NO_TIP, type Connection } from "./wallet";
 
 /**
  * Trading from an ordinary Starknet account.
@@ -91,7 +91,7 @@ export async function submitDirect(
   }
 
   try {
-    const { transaction_hash } = await connection.account.execute(calls);
+    const { transaction_hash } = await connection.account.execute(calls, NO_TIP);
     return { ok: true, txHash: transaction_hash };
   } catch (err) {
     // A user who cancelled is certain; every other failure here happened at or after the

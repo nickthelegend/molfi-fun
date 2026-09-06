@@ -25,19 +25,45 @@ export interface ResourceBounds {
   l2_gas: { max_amount: bigint; max_price_per_unit: bigint };
 }
 
-/** How much of the bare fee to offer as headroom, in total. */
-export const FEE_MARGIN = 150n; // percent
-/** Never offer the whole balance: the account still needs to pay for the next one. */
-export const SPENDABLE = 92n; // percent
 /**
- * Amounts get the smaller share of the headroom.
+ * How much headroom the **amounts** get.
  *
- * The node has just measured this execution and it is deterministic; what moves between the
- * estimate and inclusion is the gas price. So amounts are padded a little against a
- * re-execution against a different block, and everything `cap` allows above that goes to the
- * prices.
+ * The node has just measured this execution and it is deterministic, so in principle the
+ * amounts need nothing. In practice they need this much, because the estimate is taken with
+ * `SKIP_VALIDATE` and therefore leaves out the account's own `__validate__` — see
+ * `AMOUNT_FLOOR`, which is the same shortfall written as a hard limit.
  */
 export const AMOUNT_MARGIN = 150n; // percent
+
+/**
+ * How much headroom the **prices** get, on their own.
+ *
+ * This is the margin that was missing, and its absence is subtle enough to be worth writing
+ * down. `FEE_MARGIN` used to be 150 while `AMOUNT_MARGIN` was also 150, so the whole of the
+ * total headroom was spent padding amounts and the price multiplier — `cap / paddedTotal` —
+ * came out at exactly 1.00. Every transaction was bounded at the spot gas price with nothing
+ * over it, and any upward tick between the estimate and inclusion failed validation. The
+ * relay batch that exposed this missed by 0.014%: max L1DataGas price 655,061,595,784
+ * against an actual 655,154,611,171.
+ *
+ * Thirty percent is not generous. `max_price_per_unit` is a **ceiling**, not a payment — the
+ * chain charges the price that actually clears — so the only cost of raising it is needing
+ * the balance to cover the bound, and the only cost of setting it too low is a transaction
+ * that pays its fee to fail. Those are not symmetric.
+ */
+export const PRICE_MARGIN = 130n; // percent
+
+/**
+ * How much of the bare fee to offer as headroom, in total.
+ *
+ * Derived rather than chosen, because the total is a **product** of the two factors and
+ * writing a third number down by hand is how they came apart the first time: a margin here
+ * that is smaller than `AMOUNT_MARGIN × PRICE_MARGIN` silently steals from the prices,
+ * which is a bound that gets included until the moment gas moves.
+ */
+export const FEE_MARGIN = (AMOUNT_MARGIN * PRICE_MARGIN) / 100n; // percent
+/** Never offer the whole balance: the account still needs to pay for the next one. */
+export const SPENDABLE = 92n; // percent
 
 /**
  * The amount bound is never trimmed below this, whatever the balance says.
@@ -113,14 +139,40 @@ export function boundsFrom(est: BareEstimate, balance: bigint): ResourceBounds {
     amount = padAmount;
     price = (v) => (v * cap) / paddedTotal;
   } else {
-    // Give back amount margin until the padded total fits — but never below the floor, which
-    // is what execution actually needs once validation is counted.
-    amount = (v) => {
-      const scaled = (padAmount(v) * cap) / paddedTotal;
-      const floor = (v * AMOUNT_FLOOR) / 100n;
-      return scaled > floor ? scaled : floor;
-    };
-    price = (v) => v;
+    /**
+     * Not enough room for both margins, so they are ranked rather than quietly shared.
+     *
+     * The price margin is ranked first, which is the opposite of what this code used to do.
+     * A bound at spot price is not the conservative choice it looks like — it is exactly the
+     * bound that failed, because gas need only tick up a fraction of a percent between the
+     * estimate and inclusion for validation to reject it. The amounts give way instead, back
+     * towards the node's own measurement and never below `AMOUNT_FLOOR`.
+     */
+    price = (v) => (v * PRICE_MARGIN) / 100n;
+    const atMarginPrice =
+      est.l1.amount * price(est.l1.price) +
+      est.data.amount * price(est.data.price) +
+      est.l2.amount * price(est.l2.price);
+
+    /** What multiple of the measured amounts the budget still allows at that price. */
+    const room = atMarginPrice > 0n ? (cap * 100n) / atMarginPrice : AMOUNT_MARGIN;
+
+    if (room >= AMOUNT_FLOOR) {
+      const a = room < AMOUNT_MARGIN ? room : AMOUNT_MARGIN;
+      amount = (v) => (v * a) / 100n;
+    } else {
+      /**
+       * The floor and a full price margin cannot both fit. The floor stays — a transaction
+       * bounded below the gas it needs cannot execute at all, while one bounded at spot is
+       * merely at risk of not being included — and the price headroom is what gives, down
+       * to spot but never under it.
+       */
+      amount = (v) => (v * AMOUNT_FLOOR) / 100n;
+      const atFloor = (spotTotal * AMOUNT_FLOOR) / 100n;
+      const priceRoom = atFloor > 0n ? (cap * 100n) / atFloor : 100n;
+      const p = priceRoom > 100n ? priceRoom : 100n;
+      price = (v) => (v * p) / 100n;
+    }
   }
 
   const bounds = {

@@ -11,8 +11,10 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
+  AMOUNT_FLOOR,
   AMOUNT_MARGIN,
   FEE_MARGIN,
+  PRICE_MARGIN,
   SPENDABLE,
   Unaffordable,
   boundTotal,
@@ -136,4 +138,69 @@ test("a zero-cost estimate does not divide by zero", () => {
     data: { amount: 0n, price: 0n },
   };
   assert.equal(boundTotal(boundsFrom(zero, KEEPER_BALANCE)), 0n);
+});
+
+/**
+ * The bug this file exists to catch, in the one shape it had not been asked about.
+ *
+ * Every earlier test here checked that the bound **fits** — that the keeper stops refusing
+ * affordable work and stops asking for more than it holds. None checked that the price bound
+ * clears spot by anything, and with `FEE_MARGIN` and `AMOUNT_MARGIN` both at 150 it cleared
+ * it by nothing at all: the amounts took the entire headroom and `cap / paddedTotal` came out
+ * at exactly 1.00. The relay batch that exposed it missed by 0.014%.
+ */
+test("the price bound clears spot by the price margin, with a balance to spare", () => {
+  const est = consistent(RELAY);
+  // A hundred STRK — nothing here is constrained by affordability.
+  const b = boundsFrom(est, 100_000_000_000_000_000_000n);
+
+  for (const [name, bound, spot] of [
+    ["l1_gas", b.l1_gas, est.l1.price],
+    ["l1_data_gas", b.l1_data_gas, est.data.price],
+    ["l2_gas", b.l2_gas, est.l2.price],
+  ] as const) {
+    assert.equal(
+      bound.max_price_per_unit,
+      (spot * PRICE_MARGIN) / 100n,
+      `${name} must be bounded at ${PRICE_MARGIN}% of spot, not at spot`,
+    );
+    assert.ok(
+      bound.max_price_per_unit > spot,
+      `${name} bounded at ${bound.max_price_per_unit} against a spot of ${spot} — a single tick fails validation`,
+    );
+  }
+});
+
+test("FEE_MARGIN is the product of the two margins it has to pay for", () => {
+  // Written down because the three numbers came apart once already, silently, and the only
+  // symptom was transactions that were included until the moment gas moved.
+  assert.equal(FEE_MARGIN, (AMOUNT_MARGIN * PRICE_MARGIN) / 100n);
+});
+
+/**
+ * Under real pressure the two margins cannot both be paid, and which one gives is a decision
+ * rather than an accident. The amounts give first — a bound below the gas a call needs cannot
+ * execute at all, while one at spot is merely at risk of missing inclusion — but never below
+ * the floor, and the price keeps its margin the whole way down.
+ */
+test("a tight balance gives back amount margin before price margin", () => {
+  const est = consistent(RELAY);
+  const spot = boundTotal({
+    l1_gas: { max_amount: est.l1.amount, max_price_per_unit: est.l1.price },
+    l1_data_gas: { max_amount: est.data.amount, max_price_per_unit: est.data.price },
+    l2_gas: { max_amount: est.l2.amount, max_price_per_unit: est.l2.price },
+  });
+  // Enough for the floor at a full price margin, and not a great deal more.
+  const balance = (spot * AMOUNT_FLOOR * PRICE_MARGIN) / 10_000n / 80n * 100n;
+  const b = boundsFrom(est, balance);
+
+  assert.ok(
+    b.l2_gas.max_price_per_unit > est.l2.price,
+    "the price still has to clear spot when the balance is tight",
+  );
+  assert.ok(
+    b.l2_gas.max_amount >= (est.l2.amount * AMOUNT_FLOOR) / 100n,
+    "and the amount must never fall under what execution needs",
+  );
+  assert.ok(boundTotal(b) <= (balance * SPENDABLE) / 100n, "while still fitting the balance");
 });

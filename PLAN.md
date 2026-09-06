@@ -88,6 +88,37 @@ Now the loop has run on chain, end to end:
 | `settle` | `0x05b61e04…` — reference 79,900.59 → **79,855.59**, DOWN wins |
 | `claim_ticket` | `0x0337599e…` — **SUCCEEDED**, paid 0, reserved released, marked spent |
 
+### The same loop, driven from the browser
+
+The table above was sent with a script. This one was not — every step below is a key pressed
+on the desk at `localhost:3400`, signed by a wallet the browser does not hold the key for:
+
+| | |
+| --- | --- |
+| account | `0x16a4e21b…` — derived from a key, funded (`0x577700…`), then deployed by itself (`0x7e8e07…`, SUCCEEDED) |
+| `open_ticket` | `0x46a766ea…` — SUCCEEDED, fee 0.2506 STRK |
+| what the chain was told | `["0x7", "0x7ff5f363…", "0x4563918244f40000", "0x0"]` — **four felts**: round, commitment, stake. No fifth. |
+| the event | keys `[selector, 0x7, commitment]`, data `[5 STRK]` — the direction is in neither |
+| the round after | `staked 5.0`, `reserved 9.6` — exactly 5 × 1.92, and 9.6 whichever way the ticket went |
+| the account after | 29.9356 → 24.6849 STRK — 5 staked, 0.2506 in fees |
+
+Then the round closed on its own schedule and paid:
+
+| | |
+| --- | --- |
+| `settle` | reference **79,934.84** → settled **80,000.55**, 10 sources — UP |
+| `claim_ticket` | round `paid 9.6`, ticket `claimed: true` — exactly 5 × 1.92 |
+| the account | 24.6849 → **34.1252 STRK** (+9.60 payout, −0.1598 fee) |
+
+End to end from one browser, with real money on a real chain: 29.9356 staked down to 24.6849,
+settled by a keeper nobody asked, claimed back to 34.1252. The direction was never on chain at
+any point in that sequence — it lived in a secret in `localStorage` and was revealed only to
+the claim, after the price was already fixed.
+
+The reserved figure is the part worth dwelling on. It is public, it is exact, and it is the
+same number for UP as for DOWN — which is only true because the quote is symmetric. A
+per-side multiplier would have made this one figure a public read of every trader's position.
+
 The ticket lost, which is the better test: it exercises the branch where a losing claim must
 *succeed* rather than revert, pay nothing, and give its reservation back so the round's
 capacity returns. And the ticket the chain stores is `roundId, stake, multiplierBps, claimed,
@@ -100,7 +131,7 @@ exists, owner` — **no direction field**. UP lived only inside the commitment u
 | 1.3 | Add `commitmentOfDirection(secret, roundId, direction)` to `packages/sdk/src/positions.ts`, mirroring `poseidon(MOLFI_DIRECTION_V1, secret, round_id, direction)`. Add a test asserting it differs from the range commitment for the same secret and id. | **DONE** — `commitmentOfDirection`, with tests that it differs from a range commitment for the same secret and id, that up differs from down, and that the same preimage is stable |
 | 1.4 | Teach the keeper to list and settle direction rounds: extend `apps/keeper/src/index.ts` `openNewRounds` and `settleDue` to iterate the up/down contract alongside the range one, using `create_round` / `settle`. | **DONE** — `tendDirectionRounds` settles what is due and lists when none is open. Funding was in the same transaction until an unattended run showed the id could not be guessed; it is a separate pass now (3.8) |
 | 1.5 | Add `openDirection` and `claimDirection` to `apps/web/src/lib/useLiveDesk.ts`, building `open_ticket(round_id, commitment, stake)` and `claim_ticket(round_id, secret, direction)`. | **DONE** — `fireDirection` and a claim path that routes by game before route |
-| 1.6 | Make the deck's game switch select the contract, not just the paper engine: when `game === "direction"` and the desk is live, fire against the up/down market. | **DONE** — the store is a discriminated union; the compiler found all six places that assumed a band |
+| 1.6 | Make the deck's game switch select the contract, not just the paper engine: when `game === "direction"` and the desk is live, fire against the up/down market. | **DONE** — but this was marked done once before it was. That pass changed the *store* to a discriminated union and stopped there; `LiveConsole` had no direction path at all, so the switch changed a label and nothing else. Now real: `useRounds` polls the contract, ▲UP/▼DOWN replace the band control, `doFireDirection` targets the up/down market, and the deck quotes, explains and links to whichever game is selected. The lesson is that "the types compile" is not the same claim as "the button does the thing" |
 | 1.7 | Extend `/api/markets` (or add `/api/rounds`) to serve direction rounds so the console can list them. | **DONE** — `/api/rounds` |
 | 1.8 | **Open and claim one real direction ticket on Sepolia.** Record both hashes in `strk20.json`. This is what closes "Done means" item 6 for the second game. | **DONE** — see the table above. Five transactions recorded in `strk20.json`, now 26 |
 
@@ -116,8 +147,6 @@ and deployment are proven on chain. What is missing is the UI path.
 | 2.3 | Prove the derived account deploys and its `__validate__` accepts a Privy signature. | **DONE** — `0x5d8b16f6…` at class `0x5b4b537e…`, tx `0x337e385a…` |
 | 2.4 | `connectPrivy()` returning a `Connection` whose `account` is a plain starknet.js `Account`. | **DONE** — `Connection.account` widened from `Strk20Account`; capabilities honest (direct route only) |
 | 2.5 | Call `connectWithPrivy` from the console so GO LIVE uses the Privy account instead of requiring an extension. | **DONE** — the gate hands down a ready-made `PrivySigner`; `readyToAct` tries Privy before the extension list. The account is still neither deployed nor funded, so the first action fails — 2.6 and 2.7 |
-| 2.6 | Deploy the account on first use: detect `getClassHashAt` failing, send `DEPLOY_ACCOUNT`, show progress. Needs ~0.15 STRK of fee bounds at the address first. | NOT STARTED |
-| 2.7 | Fund a new account so a visitor can act: either a faucet drip from the keeper or an on-screen "send STRK here" step. **Decide which — a silent auto-fund from the house is a different product than a deposit.** | NOT STARTED |
 | 2.8 | Re-run register items D13, D14, D15, D19 against the Privy path. | BLOCKED on 2.5–2.7 |
 
 ### Phase 3 — Keeper reliability · **IN PROGRESS**
@@ -140,11 +169,24 @@ and deployment are proven on chain. What is missing is the UI path.
 | 3.3 | `/health` distinguishes starting from stalled. | DONE |
 | 3.4 | Bound the confirmation wait so a cycle cannot hang for minutes. | **DONE and live** — deployed 18:44:45Z, cycling cleanly: 3 cycles, 4 relays, `lastError: None`, `ok: true` |
 | 3.5 | Verify the bound actually fires. | **DONE — it fired on its own.** From the live log: `list round: listed and funded BTC/USD as 73 … was submitted as 0x193dcc45… but could not be confirmed: not confirmed within 90s — falling back to one pair at a time`. Reported against the hash and moved on, instead of blocking the cycle. No forcing needed; a genuinely slow transaction arrived |
-| 3.6 | Cap keeper log volume so a retry loop cannot cross Railway's 500/sec limit and destroy its own diagnostics. | NOT STARTED |
+| 3.6 | Cap keeper log volume so a retry loop cannot cross Railway's 500/sec limit and destroy its own diagnostics. | NOT STARTED — but the cause is now understood and mostly removed. The `RECEIVED` flood came from a failed deploy, and the *sustained* volume came from two loops that no longer run: 24 settle attempts a cycle against already-settled markets (3.11) and a per-market read loop (3.12) |
+| 3.11 | **NEW · DONE** — the keeper was sending ~24 settle transactions every cycle at markets that were already settled. `batchCall` sent `CallData.compile([49])`, which is the *decimal* string `"49"`, and a Starknet node reads a bare felt as **hex** — so it answered for market `0x49` = 73 and nothing errored. The keeper read a different market from the one it asked for, judged two dozen settled markets open, and paid to settle each of them. Felts are normalised to `0x…` at the raw-RPC boundary now, and all 76 markets verified against single reads. |
+| 3.12 | **NEW · DONE** — `allMarkets` looped one `starknet_call` per market, so the read grew with the market list and by 72 markets a cycle could not finish inside its own period: every cycle ended `cycle FAILED: fetch failed`, naming nothing. Both it and `allRounds` are single JSON-RPC batches now — and the reads all come from one block, so the cutoffs and bankrolls compared against each other are from the same instant. |
+| 3.13 | **NEW · DONE** — every keeper transaction had been failing for an hour with `Block identifier unmanaged: pending`. RPC 0.9 renamed the pending tag to `pre_confirmed`; starknet.js v10.5 rejects `pending` client-side before sending. `bareEstimate` was the last place holding it. Estimation is against `latest` now, which is the correct tag for a transaction that has not been sent. |
+| 1.7 | **NEW · DONE** — the JSON-RPC proxy at `/api/rpc` allowed **reads only**, on the reasoning that the user's wallet submits its own transactions. True of a browser extension; false the moment molfi grew a Privy wallet, which has no extension and signs in the browser then sends through this proxy. `starknet_estimateFee` and `starknet_addInvokeTransaction` were refused, so **no Privy user could ever trade** — and it surfaced as "chain unreachable", because from inside starknet.js a blocked method and a dead node are indistinguishable. Writes are allowed now; declares and node administration still are not. |
+| 1.8 | **NEW · DONE** — `riding` counted `p.market && !p.market.isSettled`, which no direction ticket can satisfy: a direction position has no market by construction. A trader who had just opened one saw `0 RIDING` with their stake on chain. It counts both games now, and excludes tickets the chain says do not exist — a trade that fails after the wallet takes it is saved on purpose (it may have landed, and a stake with no local secret is unclaimable), which is the right thing to store and the wrong thing to count. |
+| 1.9 | **NEW · DONE** — direction positions were checked against `/api/position`, which reads the **range** market. It does not fail on a direction commitment; it answers `exists: false` about a contract that has never heard of it. New `/api/ticket/:commitment` reads `get_ticket` on the up/down contract and returns the round with it, so the outcome is decided from one read against one block. |
+| 1.10 | **NEW · DONE** — every V3 transaction downloaded the last three blocks *with all their transactions* before signing, because starknet.js v10.5 estimates a tip when none is given. Three of the heaviest responses in the spec, per trade, on the path between pressing a key and signing — and a throw if any failed, which is what `Failed to analyze tip statistics` was. Starknet does not order by tip today, so the computed answer is zero; it is now passed explicitly at all three send sites. |
+| 1.11 | **NEW · DONE** — `errorText` showed the *request* instead of the failure. starknet.js prints `RPC: <method> with params { … }` and the old filter skipped only the `RPC:` line and lines starting with a brace, so a refused trade displayed `"BLOCK_ID": "LATEST",` — which names the block an estimate was taken against and nothing about why the ticket did not open. Quoted JSON keys are skipped now; unquoted ones are not, because `20: Contract not found` is the answer. |
+| 3.16 | **NEW · DONE** — the fixes above were deployed to Railway, which had been running a build that failed every transaction for an hour while reporting `ok: true`. The corrected build listed and funded round 9 while round 8 still had 294s left, so the list-ahead is running in production and not only locally. |
+| 3.15 | **NEW · DONE** — the keeper listed the next direction round only once nothing was open, so every round boundary left a hole: the close is noticed up to a cycle late, the replacement is listed unfunded, and the funding pass runs a cycle after that. For two to three minutes, several times an hour, every visitor to the direction game saw `NO OPEN ROUND` — the desk shut on a schedule with nothing reporting a fault. It now lists once the furthest open round is inside a lead derived from the cycle length, so a funded round is always waiting. |
+| 2.6 | Deploy the account on first use. | **DONE** — `PrivyGate` prepares the account before the console ever sees it: `/api/wallet/fund` puts STRK there, then the browser sends `DEPLOY_ACCOUNT` signed by the account's own key. Proven with a real email login: account `0x2abba913…` deployed and funded on first visit, then took a 5 STRK position. |
+| 2.7 | Fund a new account so a visitor can act. | **DONE — decided: a faucet drip, and it says so on screen.** A dedicated Sepolia float (deliberately not the keeper, so a bug in the drip cannot touch the bankroll winners are paid from) sends 12 STRK — enough to deploy, take a 10 STRK position and claim it. The address is **derived server-side from the caller's own public key and never read from the request**, so the endpoint can only ever pay the session asking. It tops up below 2 STRK rather than only when empty, because an account worn down by fees cannot claim the ticket it already holds. |
+| 3.14 | **NEW · DONE** — the fee bound gave the **prices** no margin at all. `FEE_MARGIN` and `AMOUNT_MARGIN` were both 150, so the amount padding consumed the entire headroom and the price multiplier `cap / paddedTotal` came out at exactly 1.00: every transaction was bounded at spot gas, and the relay batch that exposed it missed by 0.014%. `PRICE_MARGIN` is now its own constant and `FEE_MARGIN` is derived as the product, with a test asserting the price bound clears spot. |
 | 3.9 | Stop `DuplicateNonce` collisions retrying for ever. | **DONE, second attempt.** Every settle and funding failed on `0x2cf`, three tries each, every cycle: `getNonce()` reports the confirmed state, so a nonce claimed by a not-yet-mined transaction still reads as free, and a retry that re-syncs reads it again. The **first fix read the nonce at `pending` and was worse** — this node answers `Block identifier unmanaged: pending`, so instead of colliding transactions failing, *every* transaction failed. Reverted. The nonce is now incremented on a duplicate, which depends on nothing the node has to support |
 | 3.10 | A watcher that proves funding worked, rather than one a round can age out of. | **NOT STARTED** — the check used `!settled && cutoffAt > now && bankroll == 0` and reported success the moment the unfunded round passed its cutoff and left the set. Round 4 never was funded; it just stopped counting. Any future check has to assert the bankroll *rose*, not that the unfunded list emptied |
 | 3.8 | Fund direction rounds by the id the chain reports rather than `rounds.length + 1`. | **DONE** — found within minutes of the keeper running it unattended: rounds 3 and 4 listed, both fundings landed on 3, which ended with 40 STRK while 4 had nothing. `create_round` returns the id but a multicall cannot feed a return value forward, so funding is now a separate pass over rounds the chain reports unfunded. **Written, not yet proven:** the pass was seen choosing the right id in the logs (`funded direction round 4`) and then failing on the nonce, and it has not landed a funding since |
-| 3.7 | Alert when `ok:false` persists — right now nothing watches the health endpoint. | NOT STARTED |
+| 3.7 | Alert when `ok:false` persists — right now nothing watches the health endpoint. | NOT STARTED — and this pass is the argument for it. The deployed keeper reported `ok:true` with `relayed: 0, settled: 0, listed: 0` while **every transaction it attempted was failing**, for an hour, on a client-side error. Health was green because the loop was running; nobody was watching whether it achieved anything. Any alert has to be on work done, not on liveness. |
 
 ### Phase 4 — Mainnet and the submission bar · **NOT STARTED**
 

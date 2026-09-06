@@ -11,6 +11,7 @@ import {
   openDirectionCalls,
   type DirectionSecret,
   type MarketDef,
+  outcomeOf,
   type PositionSecret,
 } from "@molfi/sdk";
 import { ADDRESSES, LIVE_CONFIGURED, liveBlockedReason, provider } from "./chain";
@@ -20,6 +21,7 @@ import {
   reconnect,
   connectPrivy,
   privyAccountAddress,
+  NO_TIP,
   routeNote,
   routesFor,
   shieldedBalances,
@@ -380,6 +382,55 @@ export function useLiveDesk(market: MarketDef, tier: number) {
           let market = isDirection(p) ? null : markets.find((x) => x.id === p.marketId) ?? null;
           let onChain: LivePosition["onChain"] = null;
           try {
+            /**
+             * Two games, two contracts, two routes.
+             *
+             * A direction ticket lives on the up/down contract and `/api/position` reads the
+             * range market, so asking it about one does not fail — it answers `exists: false`,
+             * confidently, about a contract that has never heard of the commitment. Anything
+             * downstream that trusts that answer concludes a real stake on a real round is a
+             * ticket that was never opened. It is the wrong question rather than a wrong
+             * answer, and the fix is to ask the right contract.
+             */
+            if (isDirection(p)) {
+              const t = await fetchJson<{
+                exists?: boolean;
+                ticket?: { stake: string; multiplierBps: string; claimed: boolean; exists: boolean };
+                round?: Record<string, string | number | boolean>;
+              }>(`/api/ticket/${p.commitment}`);
+              if (t.exists && t.ticket) {
+                onChain = {
+                  stake: BigInt(t.ticket.stake),
+                  multiplierBps: BigInt(t.ticket.multiplierBps),
+                  claimed: t.ticket.claimed,
+                  exists: true,
+                };
+              } else if (t.exists === false) {
+                onChain = { stake: 0n, multiplierBps: 0n, claimed: false, exists: false };
+              }
+              /**
+               * Won, lost or tied — decided here, from the round's own two prices.
+               *
+               * The ticket does not say which way it went and never will; the direction is in
+               * the secret this browser holds. So the outcome is that secret compared against
+               * a comparison anyone can make, which is exactly the property the game is for.
+               */
+              const rd = t.round;
+              const won =
+                rd && Boolean(rd.isSettled) && BigInt(String(rd.settledPrice)) > 0n
+                  ? (() => {
+                      const o = outcomeOf(
+                        BigInt(String(rd.referencePrice)),
+                        BigInt(String(rd.settledPrice)),
+                      );
+                      // A tie returns the stake, so it is not a loss — there is something to
+                      // claim either way, and calling it lost would hide a refund.
+                      return o === "tie" ? true : o === p.direction;
+                    })()
+                  : null;
+              return { ...p, onChain, market: null, won };
+            }
+
             // Through the app's own route, like the market list. It decodes the struct in
             // one place — a u256 is two felts and a u128 is one, and a second copy of those
             // offsets is a second thing to get wrong.
@@ -597,9 +648,18 @@ export function useLiveDesk(market: MarketDef, tier: number) {
    * `deployIfNeeded` below is what makes it able to act.
    */
   const connectWithPrivy = useCallback(
-    async (publicKey: string, signer: SignerInterface) => {
+    async (publicKey: string, signer: SignerInterface, at?: string) => {
       try {
-        const address = privyAccountAddress(publicKey);
+        /**
+         * Derived from the key, unless the caller knows better.
+         *
+         * A Privy wallet is a key with no account contract behind it yet, so its address is
+         * computed — the same key resolves to the same address on every device, which is what
+         * makes it safe to fund one before it exists. An account that is *already* deployed
+         * has an address of its own and deriving one would point at an empty address that
+         * merely happens to be reachable with the same key.
+         */
+        const address = at ?? privyAccountAddress(publicKey);
         const c = await connectPrivy(address, publicKey, signer);
         connectionRef.current = c;
         setState((s) => ({ ...s, connection: c, blocked: blockingReason(c), error: null }));
@@ -861,11 +921,14 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         if (!c || !addresses) throw new Error("connect a wallet first");
         setState((s) => ({ ...s, pending: "settling" }));
         try {
-          const { transaction_hash } = await c.account.execute({
-            contractAddress: addresses.market,
-            entrypoint: "settle",
-            calldata: CallData.compile([marketId]),
-          });
+          const { transaction_hash } = await c.account.execute(
+            {
+              contractAddress: addresses.market,
+              entrypoint: "settle",
+              calldata: CallData.compile([marketId]),
+            },
+            NO_TIP,
+          );
           await provider.waitForTransaction(transaction_hash);
           setState((s) => ({
             ...s,
