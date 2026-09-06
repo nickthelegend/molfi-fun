@@ -51,6 +51,7 @@ export function MenuSheet({
   pnl,
   onReset,
   onAttract,
+  onGuide,
   live,
 }: {
   onClose: () => void;
@@ -60,6 +61,8 @@ export function MenuSheet({
   onReset: () => void;
   /** Start attract mode: the desk plays itself until someone touches it. */
   onAttract?: () => void;
+  /** Start the narrated run: the same engine, with a line saying what each step is doing. */
+  onGuide?: () => void;
   /**
    * The chain, when there is one to talk to.
    *
@@ -286,6 +289,16 @@ export function MenuSheet({
 
       <div className="mt-3 space-y-2">
         <Row icon="🏅" label="All Achievements" onClick={() => setView("awards")} />
+        {onGuide ? (
+          <Row
+            icon="🎬"
+            label="Show me how it works, narrated"
+            onClick={() => {
+              onGuide();
+              onClose();
+            }}
+          />
+        ) : null}
         {onAttract ? (
           <Row
             icon="▶️"

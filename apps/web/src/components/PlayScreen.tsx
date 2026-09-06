@@ -22,6 +22,7 @@ import { BandControl } from "./device/BandControl";
 import { StatusBar } from "./device/StatusBar";
 import { Knob } from "./device/Knob";
 import { Positions } from "./device/Positions";
+import { CountUp } from "./device/CountUp";
 import { BlueKey, DeckKey, FireKey, KeyFrame, MarketChip } from "./device/Controls";
 import { OracleStrip } from "./device/OracleStrip";
 import { HouseBattery } from "./device/HouseBattery";
@@ -53,6 +54,48 @@ const QUICK_STAKES = [1_000_000n, 2_500_000n, 5_000_000n, 10_000_000n];
  * Starknet market rendered in Bitcoin orange — the one market whose colour a Starknet judge
  * would recognise, wearing another chain's.
  */
+/**
+ * The guided run, one step at a time.
+ *
+ * `act` runs once on entry and `ms` is how long the line stays up. Every action is a real
+ * one — the band solver, the pricing kernel and the paper engine are the same ones a person
+ * drives — so a step can fail exactly the way a person's press would, and that is the point.
+ */
+interface GuideStep {
+  say: string;
+  ms: number;
+  act?: (api: { nudge: (d: number) => void; fire: () => void }) => void;
+}
+
+const GUIDE: GuideStep[] = [
+  {
+    say: "THIS PRICE IS REAL — AN EXCHANGE TAPE, REPLAYED SECOND BY SECOND.",
+    ms: 3200,
+  },
+  {
+    say: "PICK A BAND. TIGHTER PAYS MORE, BECAUSE IT IS LESS LIKELY.",
+    ms: 3600,
+    act: ({ nudge }) => nudge(-0.18),
+  },
+  {
+    say: "THE CONTRACT IS NEVER TOLD THE BAND — ONLY HOW FAR IT REACHES.",
+    ms: 3800,
+  },
+  {
+    say: "FIRE. THE STAKE IS LOCKED AND THE BAND IS SEALED UNTIL THE CUTOFF.",
+    ms: 3000,
+    act: ({ fire }) => fire(),
+  },
+  {
+    say: "THE CUTOFF IS A BLOCK TIMESTAMP. THE RING IS DRAINING TOWARDS IT.",
+    ms: 4200,
+  },
+  {
+    say: "IT SETTLES AGAINST THE ORACLE'S MEDIAN — AND ANYONE CAN RECOMPUTE IT.",
+    ms: 4500,
+  },
+];
+
 const COIN_TONE: Record<string, string> = {
   BTC: "#f7931a",
   ETH: "#8098ee",
@@ -76,7 +119,13 @@ export function PlayScreen() {
   const [screen, setScreen] = useState<"range" | "positions">("range");
   const [sheet, setSheet] = useState<null | "menu" | "howto">(null);
   const [live, setLive] = useState(false);
-  const [flash, setFlash] = useState<null | { kind: "won" | "lost"; text: string }>(null);
+  /**
+   * The banner over the chart. `amount` is set only for a settlement, and only then does the
+   * number count up — a refusal is not an arrival and should not be animated like one.
+   */
+  const [flash, setFlash] = useState<
+    null | { kind: "won" | "lost"; text: string; amount?: bigint }
+  >(null);
   /**
    * Whether the screen is mid-refusal shake.
    *
@@ -128,6 +177,16 @@ export function PlayScreen() {
    * product running, not a recording of it — and it stops the moment anyone interacts.
    */
   const [attract, setAttract] = useState(false);
+  /**
+   * The guided run: which step is on screen, or null.
+   *
+   * Attract mode shows that the desk works. This explains *what it is doing while it works*,
+   * which is the harder half — a judge has four minutes and the interesting claim (the
+   * contract is never told the band) is invisible unless something says so at the moment it
+   * happens. It drives the same engine and the same keys a person would; nothing here is a
+   * recording.
+   */
+  const [guideStep, setGuideStep] = useState<number | null>(null);
   const [shaking, setShaking] = useState(false);
   const shake = useCallback(() => {
     setShaking(false);
@@ -221,6 +280,7 @@ export function PlayScreen() {
     setFlash({
       kind: t.status === "won" ? "won" : "lost",
       text: t.status === "won" ? `+${fmtUsd(t.payout - t.stake)}` : `−${fmtUsd(t.stake)}`,
+      amount: t.status === "won" ? t.payout - t.stake : t.stake,
     });
     // A bigger win rings brighter — the sound reports the size, not just the outcome.
     play(
@@ -267,6 +327,40 @@ export function PlayScreen() {
     }, 4000);
     return () => clearInterval(id);
   }, [attract, band, doFire]);
+
+  /**
+   * Step the guided run.
+   *
+   * The action and the schedule are held in refs so the effect keys only on the step number.
+   * Depending on `doFire` and `band` directly would restart the timer on every price tick,
+   * and the run would never advance past its first line.
+   */
+  const guideApi = useRef({ nudge: (_: number) => {}, fire: () => {} });
+  guideApi.current = { nudge: (d: number) => band.nudge(d), fire: () => doFire() };
+
+  useEffect(() => {
+    if (guideStep === null) return;
+    const step = GUIDE[guideStep];
+    if (!step) {
+      setGuideStep(null);
+      return;
+    }
+    step.act?.(guideApi.current);
+    const id = setTimeout(() => setGuideStep((n) => (n === null ? null : n + 1)), step.ms);
+    return () => clearTimeout(id);
+  }, [guideStep]);
+
+  /** Any real input ends the guided run, the same way it ends attract mode. */
+  useEffect(() => {
+    if (guideStep === null) return;
+    const stop = () => setGuideStep(null);
+    window.addEventListener("pointerdown", stop);
+    window.addEventListener("keydown", stop);
+    return () => {
+      window.removeEventListener("pointerdown", stop);
+      window.removeEventListener("keydown", stop);
+    };
+  }, [guideStep]);
 
   /** Any real input takes the console back. */
   useEffect(() => {
@@ -520,7 +614,32 @@ export function PlayScreen() {
                           flash.kind === "won" ? "text-green glow-green" : "text-red"
                         }`}
                       >
-                        {flash.text}
+                        {flash.amount === undefined ? (
+                          flash.text
+                        ) : (
+                          <span>
+                            {flash.kind === "won" ? "+" : "−"}
+                            <CountUp
+                              to={flash.amount}
+                              format={(v) => fmtUsd(v)}
+                              reducedMotion={reducedMotion}
+                            />
+                          </span>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {/* Narration sits over the chart rather than under it: the glass is one
+                        fixed height for every screen, and a line that pushes the deck down
+                        would break that for the sake of a sentence. */}
+                    {guideStep !== null && GUIDE[guideStep] ? (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0">
+                        <div className="mono pop bg-black/85 px-2.5 py-2 text-center text-[9px] leading-[1.5] tracking-[0.1em] text-amber">
+                          {GUIDE[guideStep].say}
+                          <span className="mt-1 block text-[8.5px] tracking-[0.14em] text-dim">
+                            {guideStep + 1}/{GUIDE.length} · TOUCH ANYTHING TO TAKE OVER
+                          </span>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -756,6 +875,7 @@ export function PlayScreen() {
           pnl={state.pnl}
           onReset={reset}
           onAttract={() => setAttract(true)}
+          onGuide={() => setGuideStep(0)}
         />
       ) : null}
       {sheet === "howto" ? <HowToSheet onClose={() => setSheet(null)} round={round} /> : null}
