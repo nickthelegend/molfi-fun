@@ -596,3 +596,40 @@ and a local build for the console, which the gate now stands in front of.
 - **Zero mocks, stubs or fixtures.** The eight grep hits are HTML `placeholder` attributes,
   comments explaining why placeholders are *not* used, and the devnet test doubles the deploy
   script refuses to put on a public network.
+
+---
+
+# Fifth run — the day the declare landed
+
+Everything below was blocked on one thing for the whole project: a class declare costing about
+sixty STRK, against an account holding 0.03. The account was funded, and the block came off.
+
+## S · The declare, and what it changed
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| S1 | The class declares | `MolfiMarket` accepted on Sepolia. | **PASS** — class `0x05a01fe3…`, tx `0x0276c972…` |
+| S2 | It deploys | A market contract at a new address. | **PASS** — `0x053b1721…` |
+| S3 | **The band is not on chain** | `Position` has no `band_low` / `band_high`. | **PASS** — read off the deployed ABI on an independent node: `market_id, low_off_1e8, high_off_1e8, stake, multiplier_bps, claimed, exists, owner` |
+| S4 | The public route exists | `open_position`, `claim_position`, `quote_offsets` present. | **PASS** — all three, which the old class never had |
+| S5 | The up/down game deploys | `UpDownMarket` declared and deployed. | **PASS** — class `0x04e1b77a…`, market `0x07881b0c…` |
+| S6 | The leak banners retract themselves | `/privacy` and `/verify` drop the red banner with no code change, because they read the ABI. | **PASS** — both gone |
+| S7 | The keeper lists against the new contract | Four markets, funded. | **PASS** — BTC, ETH, STRK, WBTC at 20 STRK bankroll each |
+
+## T · The first real position
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| T1 | A stake reaches the contract | `open_position` succeeds and `staked` moves off zero. | **PASS** — tx `0x028801d1…` SUCCEEDED, market #1 staked 2.0000 STRK after fifty-two markets that never held a penny |
+| T2 | The payout is reserved at open | `reserved` equals stake × multiplier. | **PASS** — 2.1026 STRK against a 1.0513x quote |
+| T3 | **The band is not in the record** | The stored position names the reach, never the edges. | **PASS** — `lowOff1e8 300000, highOff1e8 300000`. The band was 79,362.67–79,840.28 and appears nowhere |
+| T4 | The totals move on the site | `/privacy` stops reading 0.0000 STRK staked. | **PASS** — 2.0000 STRK |
+
+## U · Bugs this run surfaced, and the fixes
+
+| # | What broke | Root cause | Fix |
+| --- | --- | --- | --- |
+| U1 | Every keeper deploy failed its healthcheck and was killed | `/health` needed one completed cycle to answer 200, so a booting keeper returned 503 before its first cycle ran. Railway checks immediately, retried five minutes, killed the replica — every time. **The deploy carrying the fix for a stalled keeper was the one that could not ship.** | One cycle plus a margin of grace, reported as `starting`. Stall rules unchanged outside it |
+| U2 | `pnpm verify` died with a stack trace on a fresh contract | `settled.at(-1)` is `undefined` when nothing has settled; reading `.id` threw and took the whole suite with it — exactly when you most want the other thirty results | D5 reports the dependency instead of crashing |
+| U3 | Every market failed its table audit | Recalibrating for WBTC refit BTC/ETH/STRK too. 52 markets were listed against the old tables | Published tables restored; only WBTC is new. The constraint is written into the generated file |
+| U4 | D13 still reported the leak after the fix shipped | It reads `deployments/sepolia.json`, not `networks.ts` | Record updated, with the superseded deployment kept rather than overwritten |
