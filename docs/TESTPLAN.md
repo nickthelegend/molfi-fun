@@ -273,7 +273,15 @@ position through the console's own call builders, and re-run the plan.
 ## What is untested, and why
 
 **D10 — the pool sandwich against the real STRK20 pool.** Needs a registered account holding
-a note. No public proving or discovery endpoint exists: the SDK docs, `starknet-privacy`,
+a note.
+
+Checked twice, because the first answer was too quick. Running it locally is not a way round:
+`starknet-privacy`'s own devnet e2e harness builds its provider from
+`ScreeningCallMockProofProvider` — a mock — because devnet has no proof-verification syscall
+to satisfy. A local run would exercise the real pool contract, the real action compilation and
+the real `privacy_invoke` deserialisation, and would still be resting on a mocked proof, so it
+cannot be recorded as a pass here whatever it showed. On a public network the proving service
+is the blocker and has no public endpoint. No public proving or discovery endpoint exists: the SDK docs, `starknet-privacy`,
 `strk20-by-example.org` and the starter kit all point at localhost, self-hosting needs a
 synced Pathfinder node, and the pool verifies an FPI screening signature on chain, so
 self-hosting is not a route around it. `scripts/pool-probe.mjs` validates molfi's action list
