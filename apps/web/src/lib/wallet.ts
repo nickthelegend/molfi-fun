@@ -4,7 +4,7 @@ import { createStore, type Store } from "@starknet-io/get-starknet-core";
 import { WalletAccountV6 } from "starknet";
 import type { STRK20_ACTION, STRK20_BALANCE_ENTRY } from "@starknet-io/types-js";
 import { CHAIN_IDS } from "@molfi/sdk";
-import { NETWORK, provider } from "./chain";
+import { activeNetwork, provider } from "./chain";
 
 /**
  * The wallet, and nothing else.
@@ -125,18 +125,50 @@ export function networkOf(chainId: string): Network | "unknown" {
   return "unknown";
 }
 
-/** What a wallet can actually do, probed rather than assumed. */
-export function capabilitiesOf(account: Strk20Account): Capabilities {
+/**
+ * What a wallet can actually do — asked, not inferred from the shape of the object.
+ *
+ * This used to test `typeof account.strk20InvokeTransaction === "function"` and always got
+ * `true`. starknet.js binds the STRK20 helpers onto every `WalletAccountV6` it builds; each
+ * one is a thin wrapper that forwards `wallet_strk20InvokeTransaction` to the wallet, and
+ * whether the wallet answers is a question only asking can settle. So every wallet reported
+ * itself STRK20-capable, molfi offered the pool route to wallets that cannot take it, and —
+ * worse — made it the *default*, because the pool route is listed first. The trade then
+ * failed inside the wallet with a message about an unsupported method, on the one screen
+ * where a trader is committing money.
+ *
+ * The probe is `strk20Balances`, which is a read: no signature, no prompt, nothing spent. A
+ * wallet that answers it speaks STRK20; one that rejects it does not, whatever methods
+ * happen to exist on the object.
+ *
+ * Only a successful answer counts as support. Treating an ambiguous failure as "probably
+ * fine" is how the original bug behaved, and offering a route that cannot work is worse than
+ * withholding one that might — molfi has a second route, and it works from any wallet.
+ */
+export async function capabilitiesOf(
+  account: Strk20Account,
+  token: string | null,
+): Promise<Capabilities> {
+  const none: Capabilities = { privateActions: false, dryRun: false, balances: false };
+  if (!token || typeof account.strk20Balances !== "function") return none;
+
+  try {
+    await account.strk20Balances([token as `0x${string}`]);
+  } catch {
+    return none;
+  }
+
   return {
     privateActions: typeof account.strk20InvokeTransaction === "function",
     dryRun: typeof account.strk20PrepareInvoke === "function",
-    balances: typeof account.strk20Balances === "function",
+    balances: true,
   };
 }
 
 /** Connect one wallet and read back who and where it is. */
 export async function connectTo(
   wallet: StarknetWallet,
+  token: string | null = null,
 ): Promise<Connection> {
   const account = (await WalletAccountV6.connect(
     provider,
@@ -150,7 +182,7 @@ export async function connectTo(
     chainId,
     network: networkOf(chainId),
     walletName: wallet.name,
-    capabilities: capabilitiesOf(account),
+    capabilities: await capabilitiesOf(account, token),
     account,
     wallet,
   };
@@ -159,6 +191,7 @@ export async function connectTo(
 /** Reconnect without prompting, for a wallet this browser has already authorised. */
 export async function reconnect(
   wallet: StarknetWallet,
+  token: string | null = null,
 ): Promise<Connection | null> {
   try {
     const account = (await WalletAccountV6.connectSilent(
@@ -171,7 +204,7 @@ export async function reconnect(
       chainId: chainIdOf(wallet),
       network: networkOf(chainIdOf(wallet)),
       walletName: wallet.name,
-      capabilities: capabilitiesOf(account),
+      capabilities: await capabilitiesOf(account, token),
       account,
       wallet,
     };
@@ -191,16 +224,27 @@ export async function reconnect(
  */
 export function networkMismatch(
   connection: Connection,
-  expected: Network = NETWORK === "sepolia" ? "sepolia" : "mainnet",
+  expectedChainId: string = activeNetwork.chainId,
 ): { mismatched: boolean; message: string } {
-  if (connection.network === expected) return { mismatched: false, message: "" };
+  // Compared by chain id, not by the name of the deployment.
+  //
+  // This used to read `NETWORK === "sepolia" ? "sepolia" : "mainnet"`, so anything that was
+  // not literally the string "sepolia" was assumed to be mainnet — including devnet, which
+  // runs on Sepolia's chain id. A local deployment therefore told every correctly-connected
+  // wallet it was on the wrong network and refused to trade, which is a hard failure with a
+  // message pointing at the wrong thing. The chain id is what the wallet and the node
+  // actually agree on, so that is what gets compared.
+  if (connection.chainId.toLowerCase() === expectedChainId.toLowerCase()) {
+    return { mismatched: false, message: "" };
+  }
   const where =
     connection.network === "unknown"
       ? `an unrecognised chain (${connection.chainId})`
       : `Starknet ${connection.network}`;
+  const wanted = networkOf(expectedChainId);
   return {
     mismatched: true,
-    message: `molfi is on Starknet ${expected}. Your wallet is on ${where}, so every action would fail until you switch it.`,
+    message: `molfi is on ${wanted === "unknown" ? `chain ${expectedChainId}` : `Starknet ${wanted}`}. Your wallet is on ${where}, so every action would fail until you switch it.`,
   };
 }
 

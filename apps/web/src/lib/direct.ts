@@ -55,15 +55,26 @@ export async function submitDirect(
   calls: Call[],
 ): Promise<SubmitResult> {
   try {
-    await connection.account.simulateTransaction([{ type: "INVOKE", payload: calls }], {
-      skipValidate: true,
-    });
+    // Timeboxed. The simulation is a courtesy — a calldata mistake found before the
+    // signature costs nothing — but a wallet that accepts the request and never answers
+    // would otherwise hang the transaction queue for the rest of the session, with the key
+    // doing nothing and saying nothing. Six seconds, then go ahead and let the chain decide.
+    await Promise.race([
+      connection.account.simulateTransaction([{ type: "INVOKE", payload: calls }], {
+        skipValidate: true,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("simulation timed out")), 6_000),
+      ),
+    ]);
   } catch (err) {
     const text = errorText(err);
     // Only refuse on a revert the node is sure about. Simulation fails for plenty of reasons
     // that say nothing about the call — an estimate the node will not do, a rate limit, a
     // wallet that does not implement it — and refusing on those would block a good trade.
-    if (/execution|revert|entry ?point|argent|failed to deserialize/i.test(text)) {
+    if (/simulation timed out/i.test(text)) {
+      // Not an answer about the call. Fall through and submit.
+    } else if (/execution|revert|entry ?point|argent|failed to deserialize/i.test(text)) {
       return { ok: false, error: `This would fail on chain: ${text}` };
     }
   }

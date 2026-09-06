@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "starknet";
 import { MARKETS, NETWORKS } from "@molfi/sdk";
-import { NETWORK, call } from "@/lib/rpc";
+import { NETWORK, call, latestTimestamp } from "@/lib/rpc";
 
 /**
  * The markets that exist on chain, read from the contract.
@@ -80,8 +80,20 @@ export async function GET() {
       }),
     );
 
+    /**
+     * The chain's clock, served alongside the markets.
+     *
+     * Every deadline in this app is a block timestamp — `open_position` refuses past the
+     * cutoff, `settle` refuses before it — and the browser's clock is a different clock.
+     * On a public network they agree to within seconds and the difference never shows; on a
+     * chain running ahead or behind, a console using `Date.now()` offers trades the contract
+     * will refuse and hides settlements that are already due. Serving the timestamp the
+     * contract will actually compare against costs one field.
+     */
+    const chainNow = await latestTimestamp();
+
     return NextResponse.json(
-      { network: NETWORK, deployed: true, contract: address, markets },
+      { network: NETWORK, deployed: true, contract: address, chainNow, markets },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (err) {

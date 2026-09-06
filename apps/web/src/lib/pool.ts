@@ -206,7 +206,27 @@ export async function submit(
  */
 export function errorText(e: unknown): string {
   const err = e as { message?: string; data?: { message?: string }; shortMessage?: string };
-  const pick =
+  const text =
     err?.data?.message || err?.shortMessage || err?.message || String(e) || "unknown error";
-  return pick.split("\n")[0].slice(0, 200);
+
+  // A contract refusal arrives as a Cairo short string in parentheses, several envelopes
+  // deep. It is the whole content of the failure and the only part worth showing.
+  const named = text.match(/\('([A-Z0-9_]+)'\)/) ?? text.match(/'([A-Z][A-Z0-9_]{5,})'/);
+  if (named) return named[1].replace(/_/g, " ").toLowerCase();
+
+  // An RPC rejection does not. starknet.js formats it across several lines with the request
+  // echoed first, so the first line is `RPC: starknet_estimateFee with params {` — which
+  // names the *method* and says nothing about the failure. Taking it as the message is what
+  // this function used to do, and a trader whose position was refused was shown exactly
+  // that. The keeper learned the same lesson; this is the same extraction.
+  const rpc = text.match(/"message"\s*:\s*"([^"]+)"/);
+  if (rpc) return rpc[1].slice(0, 160);
+  const bare = text.match(
+    /(Invalid transaction nonce|Account validation failed|insufficient|exceed balance|reverted)[^\n"]*/i,
+  );
+  if (bare) return bare[0].slice(0, 160);
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const useful = lines.find((l) => !/^RPC:/.test(l) && !/^[{}[\],]/.test(l) && l.length > 12);
+  return (useful ?? lines[0] ?? "unknown error").slice(0, 200);
 }

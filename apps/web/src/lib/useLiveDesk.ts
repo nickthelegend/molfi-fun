@@ -104,6 +104,15 @@ export interface LiveState {
   markets: LiveMarket[];
   positions: LivePosition[];
   /**
+   * The chain's clock, and when this browser read it.
+   *
+   * Deadlines are block timestamps, so anything comparing against them has to use the
+   * chain's clock rather than the browser's. Interpolated between polls from the local
+   * monotonic clock, which is fine for a countdown and exact enough for a cutoff.
+   */
+  chainNow: number | null;
+  chainNowReadAt: number;
+  /**
    * Every market past its cutoff that nobody has settled.
    *
    * Settlement is permissionless on purpose — a market whose resolution depends on the
@@ -127,6 +136,8 @@ const EMPTY: LiveState = {
   wallets: [],
   shielded: null,
   markets: [],
+  chainNow: null,
+  chainNowReadAt: 0,
   positions: [],
   dueMarkets: [],
   spot: 0n,
@@ -204,7 +215,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       const unsubscribe = store.subscribe(publish);
 
       for (const w of store.getWallets()) {
-        const c = await reconnect(w);
+        const c = await reconnect(w, ADDRESSES.token);
         if (c && !stop) {
           connectionRef.current = c;
           setState((s) => ({ ...s, connection: c, blocked: blockingReason(c) }));
@@ -283,6 +294,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         reason?: string;
         error?: string;
         markets?: Array<Record<string, string | number | boolean>>;
+        chainNow?: number;
       };
       if (body.error) throw new Error(body.error);
 
@@ -304,7 +316,11 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         reserved: BigInt(String(m.reserved)),
       }));
 
-      const now = Math.floor(Date.now() / 1000);
+      // The chain's clock, not this machine's. A console that decides what is due from
+      // `Date.now()` hides settlements the contract already accepts, and offers opens it
+      // will refuse, whenever the two disagree.
+      const chainNow = typeof body.chainNow === "number" ? body.chainNow : null;
+      const now = chainNow ?? Math.floor(Date.now() / 1000);
       const dueMarkets = markets.filter((m) => !m.isSettled && m.cutoffAt <= now);
 
       // Positions are looked up by commitment, which is public and says nothing about who
@@ -369,6 +385,8 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         ready: true,
         error: null,
         markets,
+        chainNow,
+        chainNowReadAt: Date.now(),
         dueMarkets,
         positions,
         shielded,
@@ -477,7 +495,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
 
   const connect = useCallback(async (wallet: StarknetWallet) => {
     try {
-      const c = await connectTo(wallet);
+      const c = await connectTo(wallet, ADDRESSES.token);
       connectionRef.current = c;
       setState((s) => ({ ...s, connection: c, blocked: blockingReason(c), error: null }));
       void refresh();

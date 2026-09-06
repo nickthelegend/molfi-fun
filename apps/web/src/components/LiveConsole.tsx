@@ -74,7 +74,17 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
     setTimeout(() => setFlash(null), 2600);
   }, []);
 
-  const now = Math.floor(Date.now() / 1000);
+  /**
+   * The chain's clock, interpolated forward from the last read.
+   *
+   * Cutoffs are block timestamps. Using the browser's clock made the settle-due key stay
+   * hidden on a chain running ahead — the contract would have accepted the settlement the
+   * whole time. Falls back to local time only before the first read lands, when there is
+   * nothing better to use.
+   */
+  const now = state.chainNow
+    ? state.chainNow + Math.floor((Date.now() - state.chainNowReadAt) / 1000)
+    : Math.floor(Date.now() / 1000);
 
   /**
    * The on-chain market a band would actually open into: this pair, still open, and the
@@ -111,7 +121,16 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
       say(state.blocked.slice(0, 60).toUpperCase());
       return;
     }
-    if (!band.band || !target) return;
+    // Never a silent no-op. A key that does nothing and says nothing is indistinguishable
+    // from a broken app, and it cost an afternoon of debugging to find out which it was.
+    if (!target) {
+      say("NO OPEN MARKET FOR THIS ROUND");
+      return;
+    }
+    if (!band.band) {
+      say("NO PRICE YET — THE BAND IS NOT SET");
+      return;
+    }
     try {
       const hash = await live.fire(target.id, band.low, band.high, stake, route ?? undefined);
       say(`OPENED ${hash.slice(0, 10)}…`);

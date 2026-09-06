@@ -105,3 +105,41 @@ export async function call(
     last instanceof Error ? last.message : "no Starknet endpoint could be reached",
   );
 }
+
+/**
+ * The latest block's timestamp — the clock every deadline in this app is measured against.
+ *
+ * `open_position` refuses past the cutoff and `settle` refuses before it, both against the
+ * block timestamp. The browser's clock is a different clock, and where the two disagree the
+ * console offers trades the contract will refuse and hides settlements that are already due.
+ * Cheap enough to serve with every market read.
+ */
+export async function latestTimestamp(): Promise<number> {
+  const endpoints = [RPC_URL, FALLBACK_RPC_URL].filter(
+    (e, i, all) => e && all.indexOf(e) === i,
+  );
+  let last: unknown = null;
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "starknet_getBlockWithTxHashes",
+          params: ["latest"],
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(8_000),
+      });
+      const body = (await res.json()) as { result?: { timestamp?: number } };
+      if (typeof body.result?.timestamp === "number") return body.result.timestamp;
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw new RpcError(
+    `could not read the chain's clock${last ? `: ${String((last as Error).message).slice(0, 80)}` : ""}`,
+  );
+}

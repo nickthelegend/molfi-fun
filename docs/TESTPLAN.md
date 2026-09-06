@@ -211,9 +211,9 @@ Re-runnable: `pnpm verify` (C, D, E, G) · `pnpm test` (J) · `pnpm test:cairo` 
 | H. Public trading route, on chain | 10 / 10 PASS on a real chain — none of it reachable on the live deployment, see D11 |
 | I. The console's own trading code | 16 / 16 PASS |
 | J. Unit tests on the calldata | 9 / 9 PASS |
-| K. Wallet-dependent flows | 6 UNTESTED |
+| K. Wallet-dependent flows | 5 PASS · 1 UNTESTED |
 
-**99 PASS · 0 FAIL · 9 UNTESTED** across 108 items. Every item is listed individually at
+**104 PASS · 0 FAIL · 4 UNTESTED** across 108 items. Every item is listed individually at
 the end of this document.
 
 Nothing tested is broken. What is blocked is blocked on funds and on a wallet extension,
@@ -280,12 +280,30 @@ self-hosting is not a route around it. `scripts/pool-probe.mjs` validates molfi'
 against the deployed pool's own `compile_actions` view as far as `SUBCHANNEL_NOT_FOUND`,
 which is the last inch reachable without a note.
 
-**K1–K6 — everything that needs a wallet to sign.** The Claude in Chrome extension is not
-connected in this session and the in-app browser has no Starknet wallet installed, so no
-extension can be driven. What this leaves untested is the wallet's own approval dialog. The
-code path behind it is covered: `scripts/integration.mjs` imports the same `openCalls` and
-`claimCalls` the console calls, hands them to a real `Account.execute` — the same call
-`submitDirect` makes — and reads the result back with the same `decodePosition` the API uses.
+**K5 — shield and unshield.** Both are STRK20 pool actions, so this is blocked by D10 rather
+than by the browser.
+
+**K1–K4 and K6 were run**, against a local devnet carrying the public trading route, with a
+real wallet: `scripts/dev/wallet-signer.mjs` holds a key, signs with starknet.js and submits;
+`scripts/dev/wallet-page.js` registers it over the standard `wallet-standard:register-wallet`
+handshake. Not a mock — the transactions land in blocks and the positions they open are
+readable by anyone. What it is not is a browser *extension*, which is the same shape as a
+hardware wallet or a WalletConnect session, and the untested remainder is the extension's own
+approval dialog rather than molfi's use of it.
+
+The full loop ran through the real UI: connect → route picker → paint a band → fire →
+`approve + open_position` signed → position on chain with the reach stored and the band
+absent → settle → `CLAIM 1 WINNING POSITION` → `claim_position` signed → balance up by
+6.2345, which is exactly the 5 staked times the 1.2469x quoted.
+
+**That run found four bugs nothing else had.** They are the reason it was worth doing:
+
+| Found | Why nothing else caught it |
+| --- | --- |
+| `capabilitiesOf` reported every wallet STRK20-capable | starknet.js binds `strk20InvokeTransaction` onto every `WalletAccountV6`, so the check was always true. molfi offered the pool route to wallets that cannot take it and made it the *default*. Now probed with a read-only `strk20Balances`. |
+| The network check demanded a mainnet wallet on devnet | `NETWORK === "sepolia" ? "sepolia" : "mainnet"` treated anything not literally "sepolia" as mainnet. Now compares chain ids. |
+| The fire key could do nothing, silently | `if (!band.band || !target) return;` with no message — indistinguishable from a broken app. It says which. |
+| A refused trade showed `RPC: starknet_estimateFee with params {` | `errorText` took the first line, which is the request echo. The keeper had already learned this; the console had not. |
 
 ## Fixed during this run
 
@@ -300,6 +318,11 @@ code path behind it is covered: `scripts/integration.mjs` imports the same `open
 | C14/E1 | `/api/health` reported `oracle: down` for a 646s print the contract settles at 900s | Four call sites asked the desk's 600s question about an on-chain decision; health now reports `settleable` (900s) and `quotable` (600s) separately |
 | — | The verifier aborted on one dropped RPC connection | Retries transport failures; reverts still fail on the first attempt |
 | — | Preflight measured bytecode size and said Clear while the declare was unaffordable 7× over | It prices the declare against live gas and the deployer's balance |
+| K2 | Every wallet was reported STRK20-capable, so the pool route was offered — and defaulted to — for wallets that always fail it | `capabilitiesOf` probes with a read-only `strk20Balances` instead of checking a method starknet.js always defines |
+| K1/K6 | On any deployment not literally named "sepolia", the console demanded a mainnet wallet | The network check compares chain ids, not deployment names |
+| K3 | The fire key returned silently when it had nothing to trade | It says `NO OPEN MARKET FOR THIS ROUND` or `NO PRICE YET` |
+| K3 | A refused trade showed the trader `RPC: starknet_estimateFee with params {` | `errorText` now extracts the Cairo reason or the RPC message, as the keeper already did |
+| F6 | The settle-due key used the browser's clock, so it stayed hidden on a chain running ahead | `/api/markets` serves the chain's timestamp; the console interpolates from it |
 
 ## Mocks, stubs and errors
 
@@ -317,7 +340,7 @@ checked per item, including under injected failure, where the live console rende
 
 # Every item, with its final status
 
-**108 items · 99 PASS · 0 FAIL · 9 UNTESTED.** No item is passing that was not run.
+**108 items · 104 PASS · 0 FAIL · 4 UNTESTED.** No item is passing that was not run.
 
 | # | Item | Status | Verified by |
 | --- | --- | --- | --- |
@@ -434,9 +457,9 @@ checked per item, including under injected failure, where the live console rende
 | J8 | offsetsOf refuses a non-straddling band | **PASS** | throws SpotOutsideBand |
 | J9 | two secrets, one band | **PASS** | different commitments, identical reach |
 | **K. Wallet-signed flows** | | | |
-| K1 | connect a Starknet wallet | **UNTESTED** | no wallet extension in either available browser |
-| K2 | route picker with a STRK20 wallet | **UNTESTED** | same |
-| K3 | open a position from the browser | **UNTESTED** | same — code path covered by tier I |
-| K4 | claim from the browser | **UNTESTED** | same — code path covered by tier I |
-| K5 | shield / unshield | **UNTESTED** | same, and needs the STRK20 pool route (see D10) |
-| K6 | wrong-network wallet | **UNTESTED** | same |
+| K1 | connect a Starknet wallet | **PASS** | browser — real wallet over wallet-standard; address shown, chain checked, capabilities probed |
+| K2 | route picker reflects real capability | **PASS** | browser — a wallet without STRK20 is offered DIRECT only  [BUG FIXED] |
+| K3 | open a position from the browser | **PASS** | browser — wallet signed approve+open_position, tx landed, position on chain |
+| K4 | claim from the browser | **PASS** | browser — wallet signed claim_position, balance +6.2345 = 5 x 1.2469 |
+| K5 | shield / unshield | **UNTESTED** | STRK20 pool actions — blocked by D10, not by the browser |
+| K6 | wrong-network wallet | **PASS** | browser — refused, naming both chains  [BUG FIXED] |
