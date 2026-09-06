@@ -524,3 +524,71 @@ Both are external and neither can be closed from this repository:
   and white as signal; no emoji on the device surface.
 - **89 SDK · 12 keeper · 88 Cairo tests green**; three packages typecheck clean; `api:check`
   passes in full against production.
+
+---
+
+# Fourth run — the surface added since the third
+
+New components, new flows, and the items that only exist because the product grew: the
+direction game, the game switch, the Privy gate, the on-chain balance, and the rebuilt landing
+page. Executed against the real app — production for everything reachable without a wallet,
+and a local build for the console, which the gate now stands in front of.
+
+## O · The direction game
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| O1 | Switch renders | A two-position toggle above the chart, amber pill on the active side, RANGE selected by default. | **PASS** |
+| O2 | Switch changes the control | Selecting UP / DOWN replaces the band control with two keys, a reference price and one multiplier. | **PASS** — `FROM 79,909.54 · EITHER WAY PAYS 1.92x` |
+| O3 | Both sides quoted identically | One multiplier, no per-side price. If they ever differ the public reserve discloses the direction. | **PASS** — 1.92x, and the contract asserts the same |
+| O4 | PAYS follows the game | The panel and the 38px multiplier show the direction price, not the range one. | **FAIL → fixed.** They kept quoting the range band: the control read 1.92x and the panel three centimetres above read 1.25x. Both now read `quotedBps` |
+| O5 | Payout is exact | `$1.50 → $2.88` at 1.92x, floored, matching `payoutFor`. | **PASS** |
+| O6 | Chart drops the band | No band box in direction mode — a single reference line the price must finish above or below. | **PASS** |
+| O7 | One reference label | The collapsed band is labelled once, not once per edge. | **FAIL → fixed.** It printed the same price twice, eight pixels apart |
+| O8 | Firing opens a ticket | Balance falls by the stake, RIDING rises, and the card appears. | **PASS** — $250.00 → $248.50, RIDING 1 |
+| O9 | The card says what was bought | A direction ticket names its side and its reference, never a band. | **FAIL → fixed.** It rendered `X – X`, a range whose edges were the same number. Now `BTC ▲ UP from 79,951.55` |
+| O10 | A tie refunds | Settling exactly on the reference returns the stake to either side. | **PASS** — engine test; the contract asserts it too |
+
+## P · The chart, with positions riding
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| P1 | Open bands are visible | The bands you hold are drawn, and are not hidden by the band you might buy. | **FAIL → fixed.** They were drawn *before* the amber box and painted over. Now drawn last |
+| P2 | In the money reads as winning | A band containing the current price is green. | **FAIL → fixed.** It was `C.dim` at half alpha — being in the money looked like being switched off. Verified: 21 green pixels sampled off the canvas |
+| P3 | Out of the money reads as losing | A band the price has left is red. | **UNTESTED IN BROWSER.** Same branch, different constant; the pane the tests run in throttles the desk clock, so the price never walks out of a band. Not claimed as a pass |
+| P4 | Bands belong to their market | Switching market with a position open must not draw that position on the new market's axis. | **FAIL → fixed.** A BTC band at 79,900 was drawn on the ETH chart against 2,501, clamped to the axis and painted red — three positions reported as losing that were on another market. Verified: 21 green on STRK, 0 after switching to BTC |
+| P5 | Overlapping bands are countable | Two positions on the same band read as two, not one. | **PASS** — solid cap at `now` per band |
+
+## Q · Privy and the wallet
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| Q1 | The gate stands in front of the console | `/play` shows a connect card, not the deck. | **PASS** |
+| Q2 | The login modal opens | Privy's dialog loads from `auth.privy.io` with email, Google and wallet. | **PASS**, zero console errors |
+| Q3 | A Starknet wallet is created | Real wallet, real address, real public key. | **PASS** — `0x6fa455f6…` created against the live API |
+| Q4 | Signing works | `rawSign` returns 128 hex digits, split into `r` and `s`. | **PASS** |
+| Q5 | The signing route refuses a stranger | No token, or a token for another account, is refused. | **PASS** by construction — the wallet is read off the caller's verified identity token and never taken from the body |
+| Q6 | Completing a login | Email OTP through to the deck. | **UNTESTED** — needs a mailbox this environment does not have |
+| Q7 | The balance is real | The deck prints the connected address's STRK, read from chain. | **PASS** — `ON CHAIN 0.0336 STRK`, matching `/api/keeper` |
+| Q8 | Unknown is not zero | A failed read prints a reason, never `0.000`. | **PASS** — dash before the first read, `CHAIN UNREADABLE` after a failure |
+| Q9 | `/api/balance` rejects rubbish | A non-felt address is a 400. | **PASS** |
+
+## R · The landing page
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| R1 | Renders | Wordmark, console, live strip, headline, three coin marks, primary key. | **PASS** |
+| R2 | Sections arrive | Each of the three lower sections reaches full opacity. | **FAIL → fixed.** All three sat at opacity 0 with their text in the DOM, scrolled fully into view: `Reveal` hid on mount and waited for an `IntersectionObserver` that never fires in a tab that is not painting. It fails open after 2.5s now |
+| R3 | Motion is opt-out | Every loop behind `motion-safe`, and `Reveal` never arms under reduced motion. | **PASS** |
+| R4 | No `/live` anywhere | The route is gone and nothing links to it. | **PASS** — 404, and no `/live` in any page's markup |
+
+## Confirmations for this run
+
+- **Zero console errors and zero failed requests** on `/`, `/play`, `/privacy`, `/keeper`,
+  `/verify` and `/m/48` on production, and on the console locally through the range game, the
+  direction game, the switch, firing, and market changes.
+- **105 SDK · 23 keeper · 119 Cairo** green; three packages typecheck clean; `api:check`
+  passes in full against production.
+- **Zero mocks, stubs or fixtures.** The eight grep hits are HTML `placeholder` attributes,
+  comments explaining why placeholders are *not* used, and the devnet test doubles the deploy
+  script refuses to put on a public network.
