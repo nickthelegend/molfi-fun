@@ -14,12 +14,24 @@ import {
   roundLabel,
 } from "@molfi/sdk";
 import { useLiveDesk, type LiveMarket } from "@/lib/useLiveDesk";
+import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
 import { useBand } from "@/lib/useBand";
 import { ADDRESSES, activeNetwork, explorerTx, shortAddress } from "@/lib/chain";
 import { DeviceFrame } from "./device/DeviceFrame";
 import { RangeChart } from "./device/RangeChart";
 import { BlueKey, CoinKey, CoinStack, DeckKey, FireKey } from "./device/Controls";
+
+/**
+ * A thrown error, as a line the console can show.
+ *
+ * The screen is narrow and upper-cased, so it gets the first sentence and nothing else —
+ * but the first sentence has to be the reason. `errorText` already digs the Cairo refusal or
+ * the RPC message out of whatever envelope it arrived in; this only trims and shapes it.
+ */
+function errorFlash(e: unknown): string {
+  return errorText(e).split("\n")[0].slice(0, 72).toUpperCase();
+}
 
 /** Stakes the deck offers, in whole STRK. */
 const STAKE_STEPS = [1, 2, 5, 10, 25, 50].map((n) => parseStrk(n));
@@ -107,20 +119,37 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
   const route: Route | null =
     routes.length === 0 ? null : routePref && routes.includes(routePref) ? routePref : routes[0];
 
-  const doFire = useCallback(async () => {
+  /**
+   * Make sure there is a wallet to act with, connecting if there is one to connect.
+   *
+   * Every key that sends a transaction needs this, and only the fire key had it. Settling
+   * and claiming went straight to the desk, which threw `connect a wallet first` — an
+   * internal string, lowercase, written for whoever was debugging — and flashed it at the
+   * user as though it were an explanation. Now all three keys behave the same way: offer to
+   * connect, say plainly when there is nothing to connect to, and never leak a developer's
+   * sentence onto the screen.
+   */
+  const readyToAct = useCallback(async (): Promise<boolean> => {
     if (!state.connection) {
       const wallet = state.wallets[0];
       if (!wallet) {
         say("NO STARKNET WALLET FOUND");
-        return;
+        return false;
       }
-      await live.connect(wallet).catch((e) => say(String((e as Error).message).slice(0, 60)));
-      return;
+      await live.connect(wallet).catch((e) => say(errorFlash(e)));
+      // Connecting is its own action. The key does the thing on the next press, once the
+      // address is on screen and the trader can see what they are about to act with.
+      return false;
     }
     if (state.blocked) {
       say(state.blocked.slice(0, 60).toUpperCase());
-      return;
+      return false;
     }
+    return true;
+  }, [state.connection, state.wallets, state.blocked, live, say]);
+
+  const doFire = useCallback(async () => {
+    if (!(await readyToAct())) return;
     // Never a silent no-op. A key that does nothing and says nothing is indistinguishable
     // from a broken app, and it cost an afternoon of debugging to find out which it was.
     if (!target) {
@@ -135,9 +164,9 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
       const hash = await live.fire(target.id, band.low, band.high, stake, route ?? undefined);
       say(`OPENED ${hash.slice(0, 10)}…`);
     } catch (e) {
-      say(String((e as Error).message).split("\n")[0].slice(0, 60));
+      say(errorFlash(e));
     }
-  }, [state.connection, state.wallets, state.blocked, live, band.band, band.low, band.high, target, stake, route, say]);
+  }, [readyToAct, live, band.band, band.low, band.high, target, stake, route, say]);
 
   /**
    * The same keys as the demo desk.
@@ -334,10 +363,13 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
             {state.dueMarkets.length > 0 ? (
               <button
                 onClick={() =>
-                  void live
-                    .settle(state.dueMarkets[0].id)
-                    .then((h) => say(`SETTLED · ${h.slice(0, 10)}…`))
-                    .catch((e) => say(String((e as Error).message).split("\n")[0].slice(0, 60)))
+                  void (async () => {
+                    if (!(await readyToAct())) return;
+                    await live
+                      .settle(state.dueMarkets[0].id)
+                      .then((h) => say(`SETTLED · ${h.slice(0, 10)}…`))
+                      .catch((e) => say(errorFlash(e)));
+                  })()
                 }
                 disabled={Boolean(state.pending)}
                 title="Anyone may settle an expired market, not only its participants"
@@ -350,10 +382,13 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
             {claimable.length > 0 ? (
               <button
                 onClick={() =>
-                  void live
-                    .claim(claimable[0])
-                    .then((h) => say(`CLAIMED · ${h.slice(0, 10)}…`))
-                    .catch((e) => say(String((e as Error).message).split("\n")[0].slice(0, 60)))
+                  void (async () => {
+                    if (!(await readyToAct())) return;
+                    await live
+                      .claim(claimable[0])
+                      .then((h) => say(`CLAIMED · ${h.slice(0, 10)}…`))
+                      .catch((e) => say(errorFlash(e)));
+                  })()
                 }
                 disabled={Boolean(state.pending)}
                 className="mono mt-2 w-full rounded-lg bg-green/15 py-1.5 text-[9px] tracking-[0.08em] text-green disabled:opacity-40"
