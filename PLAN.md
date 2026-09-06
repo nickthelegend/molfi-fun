@@ -62,7 +62,20 @@ Tier 4 (71–100) is the recorded list of things deliberately not built.
 
 Everything in Phases 1–3 depends on one or both.
 
-**B-1 · The deployed Sepolia class predates the public trading route.**
+**B-1 · The deployed Sepolia class predates the public trading route — and leaks the band.**
+
+The second half is worse than the first and was found while executing this plan. The live
+class's `Position` struct stores `band_low` and `band_high` outright, and commitments are
+indexed event keys, so **anyone can enumerate a market's positions and read the band each one
+bought.** `cairo/src/market.cairo` replaced both fields with reach ratios and never stores the
+band; that class is not deployed. Until it is, the headline claim — the one the product is
+named for — does not hold on chain. The pool route's other guarantees are unaffected: who and
+how much still stay hidden.
+
+`/privacy` now reads the deployed class's ABI at render time and says so in a red banner, and
+`pnpm verify` D13 fails with "Position stores band_low and band_high". Both retract themselves
+automatically once a class without the band is live.
+
 Probed against the live ABI. The deployed class has `privacy_invoke`, `settle`, `fund_market`,
 `create_market`, `get_market`, `get_table`, `get_position`, `quote_band`, `accounted_for`,
 `pool`, `oracle`. It does **not** have `open_position`, `claim_position`, `quote_offsets`,
@@ -127,7 +140,8 @@ becomes affordable again and the desk goes back to a settlement every fifteen mi
 | 1.5 | Set `MOLFI_MARKET` on the Railway keeper service to the new address and redeploy. | BLOCKED on 1.3 |
 | 1.6 | Redeploy the web app (`npx vercel --prod --yes`) so `/live`, `/m/<id>` and the console read the new contract. | BLOCKED on 1.4 |
 | 1.7 | Confirm the direct-route probe flips: the live desk stops saying "POOL ONLY HERE" and offers both routes to a capable wallet. `useLiveDesk` probes `quote_offsets`; no code change needed. | BLOCKED on 1.6 |
-| 1.8 | Re-run `pnpm verify`; D11 and D12 must leave UNTESTED. | BLOCKED on 1.6 |
+| 1.8 | Re-run `pnpm verify`; D11 and D12 must leave UNTESTED **and D13 must turn PASS**. | BLOCKED on 1.6 |
+| 1.9 | Confirm `/privacy` drops its red banner on its own — it is drawn from the deployed ABI, so a passing D13 and a banner still showing would mean the page is reading a different contract than the verifier. | BLOCKED on 1.6 |
 
 ### Phase 2 — Prove a trade, both routes · **BLOCKED (Phase 1)**
 
@@ -220,6 +234,7 @@ Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 | **The deployed Sepolia contract has no trading route.** `open_position`, `claim_position`, `quote_offsets`, `owner`, `set_oracle` are absent from the live class. | Probed the deployed ABI directly; `pnpm verify` D11/D12 UNTESTED | 1.3, 2.1–2.6, 5.1–5.3 |
 | **Nobody has ever opened a position.** `staked` is 0 across all 49 markets. The core claim is unproven on chain. | `/api/markets`, total staked 0 | 2.1, 5.1, 5.2, 5.3 |
 | **The keeper cannot pay for gas.** 0.0808 STRK; relay stale by up to 15,882s; one market past cutoff unsettled; listing stopped. | `pnpm verify` E1 FAIL; `/api/keeper` | 0.1–0.5 |
+| **The deployed class stores the band in the clear.** `Position` carries `band_low`/`band_high`; commitments are indexed event keys. The core privacy claim does not hold on the contract the site links to. | Read from the deployed ABI; `pnpm verify` D13 FAIL | B-1, 1.3 — the same declare fixes it |
 | **Nothing is deployed to mainnet**, and the prize requires three mainnet pool transactions. | `networks.ts` `MOLFI_MARKET.mainnet = null`; preflight confirms no contract there | 3.1–3.8 |
 | **`strk20.json.demo_video` is empty**, and it names `"network": "sepolia"` rather than mainnet. | The file itself | 4.1, 4.3, 3.7 |
 
