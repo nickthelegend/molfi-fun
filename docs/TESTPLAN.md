@@ -220,7 +220,7 @@ Every read path, every UI path and every already-settled market is fully testabl
 | J1 | Zero console errors | No error or unhandled rejection on any page in the tested surface. |
 | J2 | Zero failed requests | No 4xx/5xx in the network log on any page, except the ones deliberately provoked. |
 | J3 | No mocks | No mock, stub, fixture or fallback datum stands in for real data anywhere in the shipped app. |
-| J4 | No leftover debug | No `console.log`, no `data-debug`, no TODO standing in for behaviour. |
+| J4 | No leftover debug | No `console.log`, `console.debug`, `debugger` or `data-debug` **in the browser bundle or the SDK**, and no TODO/FIXME/HACK anywhere in shipped source. The keeper's `console.log` calls are excluded deliberately: a server's stdout is its operator interface, not debug residue — those lines are what diagnosed production all session. |
 | J5 | Typecheck | All three packages typecheck clean. |
 | J6 | Favicon and manifest | Both resolve; the icon is the band mark. |
 | J7 | No emoji on the glass | The device surface carries none. |
@@ -349,3 +349,59 @@ The direct route the deployed contract lacks is **not offered**: the console pro
   matches. The browser holds no credential and cannot send a transaction through the proxy.
 - **Suites green**: 84 SDK tests, 9 keeper tests, 81 Cairo tests, and all three TypeScript
   packages typecheck clean.
+
+---
+
+# Second run
+
+The plan grew to **187 items** — sections K, L, M and N cover the surface added after the
+first run (`/verify`, the honesty pages that read the deployed ABI, the guided run and
+count-up, the live-desk menu, the keeper's stall detection and self-funding). Everything was
+re-executed against `https://molfi.fun` in fresh browser tabs, reading the console and network
+log on each page.
+
+**187 items · 172 PASS · 0 FAIL outstanding · 15 UNTESTABLE, each named.**
+
+## The one failure, and what it was
+
+| # | Failure | Root cause | Fix |
+| --- | --- | --- | --- |
+| M8 | The live desk's menu announced a **"Paper balance"** and called itself the **"Demo desk"**, offering "No plays yet, make your first play" about a paper session that does not exist there | The balance card and the header keyed off `live?.connection` — whether a *wallet* is connected — rather than which desk the menu was opened from. With no wallet on the live desk, both fell through to the paper branch | They key off the desk. What is unknown on the live desk is the *shielded* balance, and unknown shows as unknown; the subtitle now states whether there is a wallet behind the menu, which is the fact that matters there. Re-verified on both desks: demo still says Paper balance / Demo desk / RESET, live says Shielded / Live desk / no RESET |
+
+## Four things that looked like failures and were not
+
+Chased to ground rather than recorded, because a false FAIL is as expensive as a missed one.
+
+- **M4, the settlement count-up**, appeared static across three separate measurements. All
+  three were mine: a regex matching the header's session P&L instead of the flash, a selector
+  one DOM level above the flash, and a 33s window against a 45s round. Measured properly it
+  ramps through **23 eased values from `−$0.00` to `−$1.50`**, landing exactly on the stake.
+- **J3** flagged `BootSequence.tsx` — the hit is a comment saying the sequence is *deliberately
+  not faked*.
+- **J4** flagged the keeper's `console.log`. A server's stdout is its operator interface, not
+  debug residue; those lines are what diagnosed production all session. The item now scopes
+  the rule to the browser bundle and the SDK, where the count is **0**.
+- **Case and comment-node artifacts** twice made a rendered label look absent (`Paper balance`
+  is CSS-uppercased; `CONTRACT {address}` is split by a React comment node).
+
+## Untestable in this run
+
+`K6` — the revealed/withheld columns with a **real** position — needs a position to exist on
+chain, which needs the declare. The rest are the fifteen already recorded above: the wallet
+flows, `quote_offsets`/`open_position`/`claim_position` (not on the deployed class), OS-level
+`prefers-reduced-motion`, and a listing round landing.
+
+## Confirmations
+
+- **Zero console messages** on `/`, `/live`, `/privacy`, `/verify`, `/keeper`, `/m/47`,
+  `/m/49` and `/play` in fresh tabs, including after firing a position and walking the menu.
+- **Zero failed requests** except the ones that should fail: `/api/price?market=NOPE` 404,
+  `/api/audit/99999` 404, `/api/audit/abc` 400, `/api/position/zzz` 400, `/api/rpc` **403** on
+  every write method, `/api/health` **503** while the relay is stale. `/api/keeper` answers
+  **200** while the keeper itself answers 503 — reporting on a sick keeper is not a failure of
+  the reporting.
+- **Zero mocks, stubs, fixtures or fallback data**; **zero** `console.log`/`debugger`/
+  `data-debug` in the browser bundle and SDK; **zero** TODO/FIXME/HACK in shipped source.
+- **No credential** in any of six API responses.
+- 88 Cairo · 84 SDK · 12 keeper tests green; three packages typecheck clean; `api:check`
+  passes in full against production.
