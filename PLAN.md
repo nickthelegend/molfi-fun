@@ -122,6 +122,13 @@ and deployment are proven on chain. What is missing is the UI path.
 
 ### Phase 3 — Keeper reliability · **IN PROGRESS**
 
+> **Live state at the time of writing: the keeper is running a build I broke.** The `pending`
+> nonce read (3.9, first attempt) makes this node reject every transaction — relays, settles
+> and fundings all fail with `Block identifier unmanaged: pending`. The corrected build is
+> committed and its Railway deploy has not taken over yet. Nothing is lost while it is down —
+> markets stay open past their cutoff and settle when it recovers — but it is down, and it is
+> down because of a fix, which is the worst way for it to be down.
+
 | # | Task | State |
 | --- | --- | --- |
 | 3.1 | Affordability against the node's real fee, not starknet.js's padded bound. | DONE — `apps/keeper/src/bounds.ts`, 23 tests |
