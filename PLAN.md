@@ -115,7 +115,7 @@ and deployment are proven on chain. What is missing is the UI path.
 | 2.2 | Derive the account address from OpenZeppelin's class + Privy's public key. | **DONE** — `privyAccountAddress()` in `apps/web/src/lib/wallet.ts` |
 | 2.3 | Prove the derived account deploys and its `__validate__` accepts a Privy signature. | **DONE** — `0x5d8b16f6…` at class `0x5b4b537e…`, tx `0x337e385a…` |
 | 2.4 | `connectPrivy()` returning a `Connection` whose `account` is a plain starknet.js `Account`. | **DONE** — `Connection.account` widened from `Strk20Account`; capabilities honest (direct route only) |
-| 2.5 | Call `connectWithPrivy` from the console so GO LIVE uses the Privy account instead of requiring an extension. | NOT STARTED — the hook exports it; nothing calls it |
+| 2.5 | Call `connectWithPrivy` from the console so GO LIVE uses the Privy account instead of requiring an extension. | **DONE** — the gate hands down a ready-made `PrivySigner`; `readyToAct` tries Privy before the extension list. The account is still neither deployed nor funded, so the first action fails — 2.6 and 2.7 |
 | 2.6 | Deploy the account on first use: detect `getClassHashAt` failing, send `DEPLOY_ACCOUNT`, show progress. Needs ~0.15 STRK of fee bounds at the address first. | NOT STARTED |
 | 2.7 | Fund a new account so a visitor can act: either a faucet drip from the keeper or an on-screen "send STRK here" step. **Decide which — a silent auto-fund from the house is a different product than a deposit.** | NOT STARTED |
 | 2.8 | Re-run register items D13, D14, D15, D19 against the Privy path. | BLOCKED on 2.5–2.7 |
@@ -181,8 +181,10 @@ listing and settling, `/api/rounds`, `fireDirection`, and a claim path that rout
 **G2 · CLOSED.** A ticket was opened, the round settled, and the ticket was claimed — the
 losing branch, which is the one that had to succeed rather than revert.
 
-**G3 · The Privy account cannot be used from the UI.** *(Phase 2.5–2.7)*
-`connectWithPrivy` exists and is exported from `useLiveDesk`; nothing calls it. GO LIVE still requires a browser extension. A visitor can sign in, see their address and balance, and cannot trade.
+**G3 · PARTLY CLOSED.** *(Phase 2.6–2.7)* The console now connects with Privy — the gate hands
+down a signer and `readyToAct` prefers it over an extension. What remains is that the account
+it connects to is counterfactual and empty, so the first transaction still fails. That is G4,
+and it is now the whole of the remaining gap rather than half of it.
 
 **G4 · A new Privy account is undeployed and unfunded.** *(Phase 2.6–2.7)*
 A Starknet account is an address until someone pays to make it a contract. There is no deploy step and no funding step, so even once 2.5 lands the first action any visitor takes will fail.
