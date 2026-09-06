@@ -187,10 +187,14 @@ let nextNonce: bigint | null = null;
  * never converges: observed live as three attempts on nonce `0x2cf`, then a hard failure, for
  * both a settle and a funding, on every cycle.
  *
- * `pending` includes the mempool, so the next nonce is the one nothing has claimed.
+ * **`pending` is not the answer.** It was tried, and this node answers
+ * `Block identifier unmanaged: pending` for `starknet_getNonce` — which turned a fault that
+ * hit colliding transactions into one that hit *every* transaction. The right fix does not
+ * depend on the node supporting anything: when the chain says a nonce is already taken, the
+ * next one to try is the one after it, not the same one read again. That lives in `send`.
  */
 async function syncNonce(): Promise<bigint> {
-  const n = await account.getNonce("pending");
+  const n = await account.getNonce();
   nextNonce = BigInt(n);
   return nextNonce;
 }
@@ -316,10 +320,24 @@ export async function send(call: Call | Call[], label: string, attempts = 3): Pr
       hash = sent.transaction_hash;
       nextNonce! += 1n;
     } catch (e) {
-      // Submission failed, so nothing reached the chain and retrying is safe. The local
-      // nonce is suspect either way; ask the chain again.
+      // Submission failed, so nothing reached the chain and retrying is safe.
       last = reason(e);
-      nextNonce = null;
+      /**
+       * A duplicate nonce is the one case where re-reading is exactly wrong.
+       *
+       * `getNonce` reports the confirmed state, so a transaction that is accepted and not yet
+       * mined does not move it. Something else signing from this account — the previous
+       * replica during a rolling deploy — leaves the keeper reading a nonce that is already
+       * claimed, and a retry that re-syncs reads the identical value and collides again, for
+       * ever. Observed live: three attempts on `0x2cf`, every cycle, for both a settle and a
+       * funding.
+       *
+       * When the chain says a nonce is taken, the next one to try is the one after it. Every
+       * other failure still re-syncs, because the local value is suspect for reasons the
+       * chain is the authority on.
+       */
+      if (/nonce/i.test(last) && nextNonce !== null) nextNonce += 1n;
+      else nextNonce = null;
       if (!transient(last) || i === attempts - 1) throw new Error(last);
       console.log(`    ${label}: ${last} — retrying`);
       await new Promise((r) => setTimeout(r, 1_500 * (i + 1)));
