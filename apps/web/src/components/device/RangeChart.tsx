@@ -83,11 +83,29 @@ export function RangeChart({
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const ro = new ResizeObserver(([e]) => {
-      setSize({ w: Math.max(240, e.contentRect.width), h: Math.max(160, e.contentRect.height) });
-    });
+
+    const measure = (w: number, h: number) =>
+      setSize({ w: Math.max(240, w), h: Math.max(160, h) });
+
+    // Measure once directly. A ResizeObserver reports the first size too, but only once it
+    // has been delivered, and the canvas should never render from a size that predates the
+    // element it lives in.
+    measure(el.clientWidth, el.clientHeight);
+
+    const ro = new ResizeObserver(([e]) => measure(e.contentRect.width, e.contentRect.height));
     ro.observe(el);
-    return () => ro.disconnect();
+
+    // A resize the observer misses is not hypothetical: the browser stops delivering
+    // notifications when it detects a resize loop, and this canvas used to be able to grow
+    // wider than its own container and hold that width, which is what put a horizontal
+    // scrollbar on a 320px screen. The window listener is the cheap backstop.
+    const onWindowResize = () => measure(el.clientWidth, el.clientHeight);
+    window.addEventListener("resize", onWindowResize);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", onWindowResize);
+    };
   }, []);
 
   const scale = useCallback(() => {
@@ -276,7 +294,16 @@ export function RangeChart({
     <div ref={wrap} className="relative h-full w-full">
       <canvas
         ref={ref}
-        style={{ width: size.w, height: size.h, touchAction: "none" }}
+        /**
+         * Sized by CSS to its container, not by state.
+         *
+         * The backing store is still `size` — that is what the drawing maths is in — but the
+         * element's own width is the wrapper's, so it cannot overflow no matter what the
+         * state says. Driving the CSS width from state meant one missed resize notification
+         * left a 330px canvas inside a 240px frame, and a horizontal scrollbar on every
+         * phone narrower than 370px. A stale size now costs a blurred frame instead.
+         */
+        style={{ width: "100%", height: "100%", display: "block", touchAction: "none" }}
         className={onDragEdge ? "cursor-ns-resize" : undefined}
         onPointerDown={onDown}
         onPointerMove={onMove}
