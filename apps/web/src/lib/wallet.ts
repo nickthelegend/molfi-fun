@@ -1,7 +1,15 @@
 "use client";
 
 import { createStore, type Store } from "@starknet-io/get-starknet-core";
-import { WalletAccountV6, compareVersions, walletV6 } from "starknet";
+import {
+  Account,
+  CallData,
+  WalletAccountV6,
+  compareVersions,
+  hash,
+  walletV6,
+  type SignerInterface,
+} from "starknet";
 import type { STRK20_ACTION, STRK20_BALANCE_ENTRY } from "@starknet-io/types-js";
 import { CHAIN_IDS } from "@molfi/sdk";
 import { activeNetwork, provider } from "./chain";
@@ -64,8 +72,22 @@ export interface Connection {
   network: Network | "unknown";
   walletName: string;
   capabilities: Capabilities;
-  account: Strk20Account;
-  wallet: StarknetWallet;
+  /**
+   * Anything that can `execute`.
+   *
+   * Widened from `Strk20Account` because a Privy-backed account is a plain starknet.js
+   * `Account` — it has no wallet-standard object behind it and never will. The desk uses
+   * exactly one method on this, `execute`, so the narrower type was buying nothing and
+   * costing the ability to connect anything that is not a browser extension.
+   */
+  account: Account;
+  /**
+   * The wallet-standard object, when the connection came from an extension.
+   *
+   * Null for a Privy connection. Only the pool route needs it, and `capabilities` already
+   * decides whether that route is offered, so a null here is a fact rather than a gap.
+   */
+  wallet: StarknetWallet | null;
 }
 
 /**
@@ -314,8 +336,76 @@ export async function shieldedBalances(
   connection: Connection,
   tokens: string[],
 ): Promise<STRK20_BALANCE_ENTRY[]> {
-  if (!connection.capabilities.balances) return [];
-  return connection.account.strk20Balances(tokens as `0x${string}`[]);
+  /**
+   * Gated twice on purpose.
+   *
+   * `capabilities.balances` is only ever true for a wallet-standard connection, so the cast
+   * below is safe — but a cast that depends on a flag two lines up is exactly the kind that
+   * rots. `wallet` being null is the structural fact that a Privy connection has no such
+   * interface, and checking it makes the narrowing true rather than merely believed.
+   */
+  if (!connection.capabilities.balances || !connection.wallet) return [];
+  return (connection.account as Strk20Account).strk20Balances(tokens as `0x${string}`[]);
 }
 
 export type { STRK20_ACTION };
+
+/**
+ * A connection backed by Privy rather than by a browser extension.
+ *
+ * The account address is **not** Privy's `wallet.address`. That value is counterfactual and
+ * matches no standard account preset — checked against seven class hashes, three salts and two
+ * constructor shapes. Privy supplies a *signer*; the account class is the integration's choice,
+ * which is what Privy's own reference hands to StarkZap's `accountPreset`. molfi picks
+ * OpenZeppelin's, already declared on Sepolia, and derives the address from it and the public
+ * key. Verified end to end: the derived account deploys and its `__validate__` accepts a
+ * signature made by `rawSign`.
+ *
+ * Capabilities are honest about what this cannot do. A Privy account has no wallet-standard
+ * interface, so no STRK20 actions and no shielded balance — `routesFor` therefore offers the
+ * direct route only, and the desk says so rather than failing at signing time.
+ */
+export async function connectPrivy(
+  address: string,
+  publicKey: string,
+  signer: SignerInterface,
+): Promise<Connection> {
+  const account = new Account({ provider, address, signer });
+  void publicKey;
+  return {
+    address,
+    chainId: CHAIN_IDS[activeNetwork.name],
+    // networkOf maps a chain id to the two networks a connection can be on; devnet shares
+    // Sepolia's id, so deriving it this way keeps one source of truth rather than two.
+    network: networkOf(CHAIN_IDS[activeNetwork.name]),
+    walletName: "Privy",
+    capabilities: { privateActions: false, dryRun: false, balances: false },
+    account,
+    wallet: null,
+  };
+}
+
+/**
+ * Where a Privy signer's account lives, before it exists.
+ *
+ * Deterministic, so the same key always resolves to the same address on every device and
+ * after every reload — which is what makes it safe to fund one before it is deployed.
+ */
+export function privyAccountAddress(publicKey: string): string {
+  return hash.calculateContractAddressFromHash(
+    publicKey,
+    OZ_ACCOUNT_CLASS,
+    CallData.compile({ publicKey }),
+    0,
+  );
+}
+
+/**
+ * OpenZeppelin's account, as already declared on Sepolia.
+ *
+ * Chosen rather than invented: it is the class `sncast` itself deploys, so it is present on
+ * the network without molfi having to declare anything, and its constructor takes exactly the
+ * one public key a Privy signer provides.
+ */
+export const OZ_ACCOUNT_CLASS =
+  "0x5b4b537eaa2399e3aa99c4e2e0208ebd6c71bc1467938cd52c798c601e43564";

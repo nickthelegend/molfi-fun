@@ -1,7 +1,7 @@
 "use client";
 
 import type { STRK20_ACTION } from "@starknet-io/types-js";
-import type { Connection } from "./wallet";
+import type { Connection, Strk20Account } from "./wallet";
 
 /**
  * The four things a trader does through the pool.
@@ -67,7 +67,7 @@ export async function submit(
 
   if (dryRun && connection.capabilities.dryRun) {
     try {
-      await connection.account.strk20PrepareInvoke(actions, true);
+      await (connection.account as Strk20Account).strk20PrepareInvoke(actions, true);
     } catch (err) {
       return {
         ok: false,
@@ -78,7 +78,23 @@ export async function submit(
   }
 
   try {
-    const { transaction_hash } = await connection.account.strk20InvokeTransaction(actions);
+    /**
+     * The pool route needs the wallet-standard interface, which only an extension has.
+     *
+     * `routesFor` never offers this route unless `capabilities.privateActions` is true, and
+     * that is only ever true for a wallet-standard connection — so reaching here with a Privy
+     * account is a routing bug, and the guard says so instead of failing inside the cast.
+     */
+    if (!connection.wallet) {
+      return {
+        ok: false,
+        error: "This wallet cannot take the pool route — it exposes no STRK20 actions.",
+        maybeSubmitted: false,
+      };
+    }
+    const { transaction_hash } = await (
+      connection.account as Strk20Account
+    ).strk20InvokeTransaction(actions);
     return { ok: true, txHash: transaction_hash };
   } catch (err) {
     return { ok: false, error: errorText(err), maybeSubmitted: !isUserRejection(err) };

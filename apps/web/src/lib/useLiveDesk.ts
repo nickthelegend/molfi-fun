@@ -1,5 +1,6 @@
 "use client";
 
+import type { SignerInterface } from "starknet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CallData } from "starknet";
 import { MARKETS, ROUND_SECONDS, newSecret, type MarketDef, type PositionSecret } from "@molfi/sdk";
@@ -8,6 +9,8 @@ import {
   blockingReason,
   connectTo,
   reconnect,
+  connectPrivy,
+  privyAccountAddress,
   routeNote,
   routesFor,
   shieldedBalances,
@@ -552,6 +555,35 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     }
   }, [refresh]);
 
+  /**
+   * Connect the account behind a Privy session.
+   *
+   * The address is derived rather than taken from Privy: `wallet.address` is counterfactual
+   * and belongs to no account class, so molfi computes where an OpenZeppelin account holding
+   * that public key would live and uses that. Deterministic, so the same login lands on the
+   * same address from any device.
+   *
+   * The account may not be deployed yet — a Starknet account is an address until someone pays
+   * to make it a contract — and that is deliberately not this function's problem. It connects;
+   * `deployIfNeeded` below is what makes it able to act.
+   */
+  const connectWithPrivy = useCallback(
+    async (publicKey: string, signer: SignerInterface) => {
+      try {
+        const address = privyAccountAddress(publicKey);
+        const c = await connectPrivy(address, publicKey, signer);
+        connectionRef.current = c;
+        setState((s) => ({ ...s, connection: c, blocked: blockingReason(c), error: null }));
+        void refresh();
+        return c;
+      } catch (e) {
+        setState((s) => ({ ...s, error: errorText(e) }));
+        throw e;
+      }
+    },
+    [refresh],
+  );
+
   const disconnect = useCallback(() => {
     connectionRef.current = null;
     setState((s) => ({ ...s, connection: null, blocked: null, shielded: null }));
@@ -809,6 +841,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     routes,
     routeNote,
     connect,
+    connectWithPrivy,
     disconnect,
     shield,
     unshield,
