@@ -129,10 +129,20 @@ function Inner({ children }: { children: (wallet: Wallet) => React.ReactNode }) 
   }, [getAccessToken, identityToken]);
 
   useEffect(() => {
-    // The identity token arrives a beat after `authenticated` does, and the wallet lookup
-    // needs it — without waiting, the first attempt always creates a second wallet.
-    if (authenticated && identityToken && !wallet && !claiming) void claim();
-  }, [authenticated, identityToken, wallet, claiming, claim]);
+    /**
+     * Fire on `authenticated`. Never wait for the identity token.
+     *
+     * This used to read `authenticated && identityToken`, on the reasoning that the lookup
+     * needed the token and it arrived a beat later. Identity tokens turn out to be a per-app
+     * Privy setting that this app does not have switched on, so `identityToken` was always
+     * null, the effect never ran, and a visitor who had **successfully logged in** watched
+     * "OPENING YOUR WALLET…" forever. Nothing errored; nothing was even requested.
+     *
+     * The server resolves the wallet from an idempotent create keyed on the user id, so the
+     * token is an optimisation rather than a requirement — sent when present, never waited on.
+     */
+    if (authenticated && !wallet && !claiming && !error) void claim();
+  }, [authenticated, identityToken, wallet, claiming, error, claim]);
 
   if (!ready) {
     return (

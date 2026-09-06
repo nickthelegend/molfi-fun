@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callerOf, privy, privyConfigured, starknetWalletOf } from "@/lib/privy-server";
+import { callerOf, privy, privyConfigured, walletFor } from "@/lib/privy-server";
 
 /**
  * The caller's Starknet wallet, created on first ask.
@@ -23,30 +23,16 @@ export async function POST(req: Request) {
   const caller = await callerOf(req);
   if (!caller) return no(401, "sign in first — this needs a live Privy session");
 
-  /**
-   * Idempotent by user, not by call.
-   *
-   * A visitor who reloads the console has to land on the same address, or the STRK they
-   * funded a minute ago belongs to a wallet they can no longer reach. The identity token's
-   * linked accounts are the record of what this user already has.
-   */
-  if (caller.wallet) {
-    return NextResponse.json(
-      { wallet: caller.wallet, created: false },
-      { headers: { "cache-control": "no-store" } },
-    );
-  }
-
   try {
-    const wallet = await privy.wallets().create({
-      chain_type: "starknet",
-      owner: { user_id: caller.userId },
-    });
+    /**
+     * Idempotent by user, not by call — enforced by Privy rather than by us.
+     *
+     * A visitor who reloads has to land on the same address, or the STRK they funded a minute
+     * ago belongs to a wallet they can no longer reach.
+     */
+    const wallet = await walletFor(caller);
     return NextResponse.json(
-      {
-        wallet: { id: wallet.id, address: wallet.address, publicKey: wallet.public_key },
-        created: true,
-      },
+      { wallet, created: !caller.wallet },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (e) {

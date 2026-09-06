@@ -100,3 +100,36 @@ export function starknetWalletOf(user: unknown): StarknetWallet | null {
   }
   return null;
 }
+
+/**
+ * This user's Starknet wallet, resolved without needing an identity token.
+ *
+ * The identity token was originally the only way to find an existing wallet, and requiring it
+ * broke the entire login: identity tokens are a per-app Privy setting, this app does not have
+ * them enabled, so `useIdentityToken()` returned nothing, the client's effect never fired, and
+ * a **successfully authenticated** visitor sat on "OPENING YOUR WALLET…" forever. The bug was
+ * invisible until the email round trip could actually be completed.
+ *
+ * `create` takes an **idempotency key**, which is the primitive that was wanted all along: the
+ * same key returns the same wallet instead of making a second one. Keyed on the Privy user id,
+ * so "create this user's wallet" and "fetch this user's wallet" are one call that is safe to
+ * repeat — from any browser, on any device, after any reload.
+ *
+ * The identity token stays supported and is preferred when present: it answers from the user's
+ * own linked accounts with no write at all.
+ */
+export async function walletFor(caller: Caller): Promise<StarknetWallet> {
+  if (!privy) throw new Error("wallets are not configured on this deployment");
+  if (caller.wallet) return caller.wallet;
+
+  const wallet = await privy.wallets().create({
+    chain_type: "starknet",
+    owner: { user_id: caller.userId },
+    idempotency_key: `starknet:${caller.userId}`,
+  });
+  return {
+    id: wallet.id,
+    address: wallet.address,
+    publicKey: wallet.public_key ?? "",
+  };
+}

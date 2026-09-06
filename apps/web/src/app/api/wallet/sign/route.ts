@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callerOf, privy, privyConfigured } from "@/lib/privy-server";
+import { callerOf, privy, privyConfigured, walletFor } from "@/lib/privy-server";
 
 /**
  * Sign one hash, with the caller's own wallet.
@@ -29,8 +29,6 @@ export async function POST(req: Request) {
 
   const caller = await callerOf(req);
   if (!caller) return no(401, "sign in first — this needs a live Privy session");
-  if (!caller.wallet) return no(409, "no Starknet wallet on this account yet");
-
   let body: { hash?: unknown };
   try {
     body = await req.json();
@@ -43,7 +41,9 @@ export async function POST(req: Request) {
   if (!FELT.test(hash)) return no(400, "hash must be a felt: 0x and up to 64 hex digits");
 
   try {
-    const result = await privy.wallets().rawSign(caller.wallet.id, { params: { hash } });
+    // Resolved from the caller's own session, never from the request body.
+    const wallet = await walletFor(caller);
+    const result = await privy.wallets().rawSign(wallet.id, { params: { hash } });
     return NextResponse.json(
       { signature: result.signature },
       { headers: { "cache-control": "no-store" } },
