@@ -316,13 +316,36 @@ export async function send(call: Call | Call[], label: string, attempts = 3): Pr
      * cycle reads the chain and sees whatever actually happened, which is the only source
      * that knows.
      */
+    let receipt: Awaited<ReturnType<typeof provider.waitForTransaction>>;
     try {
-      await provider.waitForTransaction(hash, { retryInterval: 2_000 });
-      console.log(`  ${label} → ${hash}`);
-      return hash;
+      receipt = await provider.waitForTransaction(hash, { retryInterval: 2_000 });
     } catch (e) {
       throw new Error(`${label} was submitted as ${hash} but could not be confirmed: ${reason(e)}`);
     }
+
+    /**
+     * Accepted is not the same as succeeded.
+     *
+     * A reverted transaction is included in a block, has a hash, and charges its fee in
+     * full. `waitForTransaction` resolves for it perfectly happily. Without this check the
+     * keeper counted one as a relay, wrote an `ok` row to the ledger with the hash attached,
+     * and reported a price it had not moved — the failure mode that costs the fee *and* the
+     * truth. Caught the day it first mattered: a relay reverted on
+     * `Insufficient max L2Gas` and was logged as `relayed BTC/USD → 0x76ade8c…`.
+     */
+    const r = receipt as unknown as {
+      execution_status?: string;
+      revert_reason?: string;
+      value?: { execution_status?: string; revert_reason?: string };
+    };
+    const status = r.execution_status ?? r.value?.execution_status;
+    if (status === "REVERTED") {
+      const why = (r.revert_reason ?? r.value?.revert_reason ?? "no reason given").trim();
+      throw new Error(`${label} reverted on chain as ${hash}: ${reason(new Error(why))}`);
+    }
+
+    console.log(`  ${label} → ${hash}`);
+    return hash;
   }
   throw new Error(last);
 }

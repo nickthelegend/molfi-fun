@@ -49,24 +49,44 @@ test("the relay the keeper refused for a day is affordable", () => {
 
 test("whenever a bound is produced at all, it fits the balance and covers the fee", () => {
   const est = consistent(RELAY);
-  // From a balance twenty-five times the fee down to one that barely covers it. At the very
-  // top of that range a refusal is the right answer — the spendable share is below the fee by
-  // a wei of integer division — so the invariant is about the bounds it *does* return.
   let produced = 0;
-  for (const pct of [1n, 10n, 25n, 50n, 75n, 85n, 90n, 91n, 92n, 93n]) {
+  for (const pct of [1n, 10n, 25n, 40n, 55n, 65n]) {
     const balance = (est.fee * 100n) / pct;
-    let total: bigint;
-    try {
-      total = boundTotal(boundsFrom(est, balance));
-    } catch (e) {
-      assert.equal((e as Error).name, "Unaffordable", `at ${pct}% it failed for the wrong reason`);
-      continue;
-    }
+    const total = boundTotal(boundsFrom(est, balance));
     produced += 1;
     assert.ok(total <= balance, `at ${pct}% utilisation the bound ${total} exceeded ${balance}`);
     assert.ok(total >= est.fee, `at ${pct}% the bound ${total} fell under the fee ${est.fee}`);
   }
-  assert.ok(produced >= 8, `only ${produced} of ten balances produced a bound at all`);
+  assert.equal(produced, 6);
+});
+
+test("a balance that cannot cover the gas floor is refused, not shaved to fit", () => {
+  const est = consistent(RELAY);
+  // Above roughly 68% utilisation the floor no longer fits inside the spendable share. The
+  // transaction would revert on Insufficient max L2Gas and pay its fee to do it, so the
+  // refusal is the cheaper answer.
+  for (const pct of [75n, 85n, 92n]) {
+    const balance = (est.fee * 100n) / pct;
+    assert.throws(
+      () => boundsFrom(est, balance),
+      (e: unknown) => (e as Error).name === "Unaffordable",
+      `at ${pct}% utilisation it should have refused`,
+    );
+  }
+});
+
+test("the L2 amount always covers validation, which the estimate leaves out", () => {
+  const est = consistent(RELAY);
+  // Measured on the reverted relay: the node estimated 1,422,912 L2 gas with SKIP_VALIDATE
+  // and execution used 1,742,400 — 22.5% more. Any bound this returns has to clear that.
+  const ACTUAL_WITH_VALIDATION = 1_742_400n;
+  for (const pct of [1n, 25n, 50n, 65n]) {
+    const b = boundsFrom(est, (est.fee * 100n) / pct);
+    assert.ok(
+      b.l2_gas.max_amount >= ACTUAL_WITH_VALIDATION,
+      `at ${pct}% the L2 bound ${b.l2_gas.max_amount} would revert against ${ACTUAL_WITH_VALIDATION}`,
+    );
+  }
 });
 
 test("with room to spare the bound is the fee plus the margin, not the margin squared", () => {
@@ -88,8 +108,9 @@ test("amounts carry a margin of their own, so a re-execution has somewhere to go
 
 test("prices are never bounded below what the node quoted", () => {
   const est = consistent(RELAY);
-  // A balance that only just covers the fee leaves no room for price headroom.
-  const b = boundsFrom(est, (est.fee * 100n) / 90n);
+  // The tightest balance that still produces a bound leaves the least room for price
+  // headroom; even there the price may not fall under spot, or it cannot be included.
+  const b = boundsFrom(est, (est.fee * 100n) / 65n);
   assert.ok(b.l2_gas.max_price_per_unit >= est.l2.price, "a bound under spot cannot be included");
 });
 

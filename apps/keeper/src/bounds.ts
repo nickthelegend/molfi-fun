@@ -37,7 +37,19 @@ export const SPENDABLE = 92n; // percent
  * re-execution against a different block, and everything `cap` allows above that goes to the
  * prices.
  */
-export const AMOUNT_MARGIN = 115n; // percent
+export const AMOUNT_MARGIN = 150n; // percent
+
+/**
+ * The amount bound is never trimmed below this, whatever the balance says.
+ *
+ * The node estimates with `SKIP_VALIDATE`, so its L2 figure leaves out the account's
+ * `__validate__` — and that is not the rounding error it sounds like. Measured on this
+ * account: estimate 1,422,912 L2 gas, actual 1,742,400, a **22% shortfall**. The first relay
+ * sent with a 15% amount margin reverted on `Insufficient max L2Gas` and paid its fee anyway.
+ * Below this floor the transaction cannot execute, so the honest answer is a refusal rather
+ * than a bound that will burn the fee to fail.
+ */
+export const AMOUNT_FLOOR = 135n; // percent
 
 export class Unaffordable extends Error {
   /**
@@ -101,10 +113,12 @@ export function boundsFrom(est: BareEstimate, balance: bigint): ResourceBounds {
     amount = padAmount;
     price = (v) => (v * cap) / paddedTotal;
   } else {
-    // Give back amount margin until the padded total fits, never below what was measured.
+    // Give back amount margin until the padded total fits — but never below the floor, which
+    // is what execution actually needs once validation is counted.
     amount = (v) => {
       const scaled = (padAmount(v) * cap) / paddedTotal;
-      return scaled > v ? scaled : v;
+      const floor = (v * AMOUNT_FLOOR) / 100n;
+      return scaled > floor ? scaled : floor;
     };
     price = (v) => v;
   }
@@ -123,14 +137,16 @@ export function boundsFrom(est: BareEstimate, balance: bigint): ResourceBounds {
    * pushed it over, trim the largest resource's amount until it is not — and if even the
    * measured cost cannot fit, say so rather than sending something that will be refused.
    */
-  while (boundTotal(bounds) > affordable && bounds.l2_gas.max_amount > est.l2.amount) {
+  const l2Floor = (est.l2.amount * AMOUNT_FLOOR) / 100n;
+  while (boundTotal(bounds) > affordable && bounds.l2_gas.max_amount > l2Floor) {
     bounds.l2_gas.max_amount -= 1n;
   }
-  if (boundTotal(bounds) > affordable && spotTotal <= affordable) {
+  if (boundTotal(bounds) > affordable) {
+    // Drop the price headroom before touching the amount floor: a bound at spot is still
+    // includable, a bound below the gas the call needs is not.
     bounds.l2_gas.max_price_per_unit = est.l2.price;
-    bounds.l2_gas.max_amount = est.l2.amount;
-    bounds.l1_gas.max_amount = est.l1.amount;
-    bounds.l1_data_gas.max_amount = est.data.amount;
+    bounds.l1_gas.max_price_per_unit = est.l1.price;
+    bounds.l1_data_gas.max_price_per_unit = est.data.price;
   }
   if (boundTotal(bounds) > affordable) throw new Unaffordable(boundTotal(bounds), balance);
   return bounds;
