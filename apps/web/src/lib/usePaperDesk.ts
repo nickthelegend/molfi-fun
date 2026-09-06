@@ -119,7 +119,11 @@ export function usePaperDesk(initialMarketKey = "BTC") {
   const [oracleError, setOracleError] = useState<string | null>(null);
 
   const engineRef = useRef<PaperEngine | null>(null);
-  const feedRef = useRef<PaperFeed | null>(null);
+  /**
+   * One feed per market, keyed by market. Kept for the selected market and for any market
+   * that still has a position riding; the tick loop drops the rest.
+   */
+  const feedsRef = useRef<Map<string, PaperFeed>>(new Map());
   const historyRef = useRef<PricePoint[]>([]);
   const lastSettledRef = useRef<PaperTicket | null>(null);
   const [ready, setReady] = useState(false);
@@ -128,12 +132,19 @@ export function usePaperDesk(initialMarketKey = "BTC") {
 
   if (!engineRef.current) engineRef.current = new PaperEngine();
 
-  // Rebuild the feed when the market changes; the engine (and balance) persists.
+  /**
+   * Build the new market's feed on a switch, and keep the old ones running.
+   *
+   * A feed used to be torn down the moment the desk changed market, which left any position
+   * still open on the old one with no price of its own — so it settled against whatever the
+   * new market happened to be showing. Feeds are cheap (a start price and a thousand
+   * replayed returns), and one is kept for as long as the market it belongs to has a
+   * position riding on it. `#prune` drops the rest.
+   */
   useEffect(() => {
     let cancelled = false;
     setReady(false);
     setPriceError(null);
-    feedRef.current = null;
 
     void (async () => {
       try {
@@ -173,7 +184,7 @@ export function usePaperDesk(initialMarketKey = "BTC") {
         const step = ROUND_SECONDS[0] / HISTORY;
         const firstAt = engineRef.current!.now - HISTORY * step;
         back.forEach((price, i) => seeded.push({ at: firstAt + i * step, price }));
-        feedRef.current = feed;
+        feedsRef.current.set(market.key, feed);
         historyRef.current = seeded;
         setReady(true);
         forceRender((n) => n + 1);
@@ -235,11 +246,27 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     if (!running) return;
     const id = setInterval(() => {
       const engine = engineRef.current!;
-      const feed = feedRef.current;
+      const feed = feedsRef.current.get(market.key);
       if (!feed) return; // no real price yet — the clock does not run on nothing
 
-      const price = feed.step(secondsPerTick);
-      const settled = engine.tick(price, secondsPerTick);
+      /**
+       * Step every feed a position depends on, not only the one on screen.
+       *
+       * The selected market drives the chart; the others exist purely so that a position
+       * left behind by a market switch still has its own tape to settle against. A feed
+       * nobody is watching and nobody has a position on is dropped.
+       */
+      const needed = new Set<string>([market.key, ...engine.openTickets.map((t) => t.marketKey)]);
+      const prices: Record<string, bigint> = {};
+      for (const [key, f] of feedsRef.current) {
+        if (!needed.has(key)) {
+          feedsRef.current.delete(key);
+          continue;
+        }
+        prices[key] = f.step(secondsPerTick);
+      }
+      const price = prices[market.key] ?? feed.price;
+      const settled = engine.tick(prices, secondsPerTick);
       if (settled.length > 0) lastSettledRef.current = settled[settled.length - 1];
 
       const h = historyRef.current;
@@ -249,10 +276,10 @@ export function usePaperDesk(initialMarketKey = "BTC") {
       forceRender((n) => n + 1);
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [running, secondsPerTick]);
+  }, [running, secondsPerTick, market.key]);
 
   const engine = engineRef.current!;
-  const spot = feedRef.current?.price ?? 0n;
+  const spot = feedsRef.current.get(market.key)?.price ?? 0n;
 
   const fire = useCallback(
     (low: bigint, high: bigint, stake: bigint): FireResult => {
@@ -288,7 +315,7 @@ export function usePaperDesk(initialMarketKey = "BTC") {
   const state: DeskState = {
     oracle,
     oracleError,
-    ready: ready && feedRef.current !== null,
+    ready: ready && feedsRef.current.has(market.key),
     priceError,
     markSource,
     market,

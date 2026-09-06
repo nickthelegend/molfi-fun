@@ -264,10 +264,27 @@ export class PaperEngine {
   }
 
   /** Advance the desk clock and settle anything whose cutoff has arrived. */
-  tick(spot: bigint, seconds = 1): PaperTicket[] {
+  /**
+   * Advance the clock and settle whatever came due, each against its own market.
+   *
+   * `spot` used to be a single price, and every due ticket was settled against it — so
+   * switching the desk from STRK to BTC with a position open settled that STRK band against
+   * a number near eighty thousand. It lost, every time, and the tape recorded the loss as
+   * real. A ticket carries the market it was opened on; the price it settles against has to
+   * come from that market or it is not a settlement, it is a coin toss the house wins.
+   *
+   * A market with no price on hand settles nothing. The ticket stays open until one arrives,
+   * which is the same thing the contract does when the oracle is stale: waiting is a state,
+   * and guessing is not.
+   */
+  tick(spot: bigint | Readonly<Record<string, bigint>>, seconds = 1): PaperTicket[] {
     this.now += seconds;
-    const due = this.tickets.filter((t) => t.status === "open" && this.now >= t.expiresAt);
-    for (const t of due) this.#settle(t, spot);
+    const priceFor = (key: string): bigint | undefined =>
+      typeof spot === "bigint" ? spot : spot[key];
+    const due = this.tickets.filter(
+      (t) => t.status === "open" && this.now >= t.expiresAt && priceFor(t.marketKey) !== undefined,
+    );
+    for (const t of due) this.#settle(t, priceFor(t.marketKey)!);
     return due;
   }
 
