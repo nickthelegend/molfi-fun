@@ -316,9 +316,34 @@ export async function send(call: Call | Call[], label: string, attempts = 3): Pr
      * cycle reads the chain and sees whatever actually happened, which is the only source
      * that knows.
      */
+    /**
+     * Bounded. An unbounded wait is how a keeper stops being a keeper.
+     *
+     * `waitForTransaction` polls until the transaction is accepted, and with no timeout that
+     * is *until forever* if it never is. Observed in production: a cycle entered this call and
+     * never left. `setInterval` kept starting new cycles, so the counter climbed while
+     * `lastCycleAt` stood still — the desk went dark for seven minutes with two thousand STRK
+     * in the account and nothing wrong with it. The retry loop also printed a status line per
+     * poll, which crossed Railway's 500-lines-per-second limit and took the logs out with it,
+     * so the one place that could have explained the stall was the first casualty.
+     *
+     * Ninety seconds is well past Sepolia's block time and well short of a cycle. Past it the
+     * transaction is reported against its hash rather than waited on, which is the same rule
+     * this function already applies to a failed confirmation: the next cycle reads the chain
+     * and sees whatever actually happened.
+     */
+    const CONFIRM_TIMEOUT_MS = 90_000;
     let receipt: Awaited<ReturnType<typeof provider.waitForTransaction>>;
     try {
-      receipt = await provider.waitForTransaction(hash, { retryInterval: 2_000 });
+      receipt = await Promise.race([
+        provider.waitForTransaction(hash, { retryInterval: 4_000 }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`not confirmed within ${CONFIRM_TIMEOUT_MS / 1000}s`)),
+            CONFIRM_TIMEOUT_MS,
+          ),
+        ),
+      ]);
     } catch (e) {
       throw new Error(`${label} was submitted as ${hash} but could not be confirmed: ${reason(e)}`);
     }
