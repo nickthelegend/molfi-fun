@@ -200,7 +200,7 @@ Every read path, every UI path and every already-settled market is fully testabl
 
 | # | Item | Correct means |
 | --- | --- | --- |
-| I1 | Double-click FIRE | Two clicks do not open two positions from one intent, and the second is refused or ignored cleanly. |
+| I1 | Double-click FIRE | Paper desk: each press opens a position, because stacking is the advertised product ("top up as often as you like") and no money is at stake. Live desk: FIRE is disabled while a transaction is pending and sends are queued, so two presses cannot collide on a nonce or spend twice from one intent. |
 | I2 | Refresh mid-transaction | Nothing is lost that cannot be recovered; a secret is retained unless the send provably failed. |
 | I3 | Back mid-flow | Browser back from any page lands somewhere valid with no error. |
 | I4 | Offline | Going offline shows the offline banner and the desk says it cannot read, rather than showing stale data as live. |

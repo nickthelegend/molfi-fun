@@ -60,3 +60,37 @@ test("every explanation is one short line", () => {
   assert.ok(got.length <= 220, `too long: ${got.length}`);
   assert.ok(!got.includes("\n"));
 });
+
+/**
+ * The shape starknet.js v10 actually throws, captured from a real failed send against
+ * Sepolia: an `RpcError` whose own `message` is the request, with the explanation nested
+ * under `baseError.data.execution_error` behind a stack of contract-address frames.
+ */
+const realRpcError = () =>
+  Object.assign(new Error('RPC: starknet_estimateFee with params {\n  "request": [\n {"sender_address": "0x7"}\n]\n}'), {
+    request: {},
+    baseError: {
+      code: 41,
+      message: "Transaction execution error",
+      data: {
+        transaction_index: 0,
+        execution_error:
+          "Contract address= 0x788e6, Class hash= 0x5b4b5, Selector= 0x15d40, Nested error: Contract address= 0x788e6, Class hash= 0x5b4b5, Selector= 0x15d40, Nested error: Failed to deserialize param #4",
+      },
+    },
+  });
+
+test("the explanation comes from baseError, not from the request the outer error prints", () => {
+  const got = reason(realRpcError());
+  assert.equal(got, "Transaction execution error — Failed to deserialize param #4");
+  assert.ok(!got.includes("starknet_estimateFee"), "the request must not become the explanation");
+  assert.ok(!got.includes("Contract address"), "the call stack is not the reason");
+});
+
+test("reducing an already-reduced message leaves it alone", () => {
+  // `send` reduces and rethrows as a plain Error, and its caller reduces again. The second
+  // pass used to turn a good explanation into "unknown, and the node said nothing readable".
+  const once = reason(realRpcError());
+  assert.equal(reason(new Error(once)), once);
+  assert.equal(reason(new Error("STALE_PRICE")), "STALE_PRICE");
+});
