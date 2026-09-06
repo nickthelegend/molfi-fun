@@ -159,9 +159,9 @@ Nothing here is a code change. It is the evidence the whole project exists to pr
 
 | # | Task | State |
 | --- | --- | --- |
-| 4.1 | Record a **3-minute demo video**. `strk20.json.demo_video` is an empty string — this is a hard submission requirement and the single cheapest unmet one. | NOT STARTED |
-| 4.2 | Suggested cut: the leak-surface table on `/privacy` → the action list a wallet actually receives → open a position on the console → the cutoff ring draining → settlement → recompute it on `/m/<id>` with the copyable curl. | NOT STARTED |
-| 4.3 | Put the video URL in `strk20.json.demo_video`. | NOT STARTED |
+| 4.1 | Record a **3-minute demo video**. `strk20.json.demo_video` is an empty string — a hard submission requirement. | **NOT DONE — needs a person.** Recording, narrating and uploading a video is not something this agent can do. Everything it needs to show is live and working right now on the paper desk, including the narrated run built this session (5.4), which walks the whole loop by itself and settles in about twenty seconds. |
+| 4.2 | Suggested cut: the leak-surface table on `/privacy` → the action list a wallet actually receives → **the narrated run** (menu → "Show me how it works, narrated") which covers band, fire, cutoff and settlement in six captioned steps → recompute a settled market on `/m/<id>` with the copyable curl. | **READY TO SHOOT** — every beat exists and was verified on production this session. |
+| 4.3 | Put the video URL in `strk20.json.demo_video`. | **BLOCKED on 4.1** — one string edit once the video exists. |
 | 4.4 | Confirm `demo_url` resolves and every page it links loads without a wallet. | DONE — re-check after any redeploy |
 
 ### Phase 5 — Demo-readiness features · **NOT STARTED**
