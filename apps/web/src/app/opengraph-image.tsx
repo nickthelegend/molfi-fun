@@ -1,4 +1,6 @@
 import { ImageResponse } from "next/og";
+import { NETWORKS } from "@molfi/sdk";
+import { NETWORK, bandIsOnChain } from "@/lib/rpc";
 
 /**
  * The social preview, drawn rather than shipped as a binary.
@@ -8,12 +10,33 @@ import { ImageResponse } from "next/og";
  * saying in a link preview — that the price is an order book — because that is the
  * claim, and a screenshot of a dark rectangle would not carry it.
  */
+/**
+ * Read the chain, so the card cannot promise what the contract does not keep.
+ *
+ * `edge` and a request-time read rather than a build-time constant: this is the first and
+ * often only thing anyone sees of molfi, and it used to assert "your band and your size stay
+ * hidden until you claim" while `/privacy` and `/verify` both carried a red box saying the
+ * deployed class stores `band_low` and `band_high` in the clear. The two honest pages
+ * retracted the claim and the shareable one kept making it.
+ */
 export const runtime = "edge";
+export const dynamic = "force-dynamic";
 export const alt = "molfi — a handheld console for taking price-range positions nobody can see";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OpengraphImage() {
+export default async function OpengraphImage() {
+  const market = NETWORKS[NETWORK].market;
+  // null means the class could not be read: unknown is not the same as safe, so an
+  // unreadable class gets the cautious line rather than the confident one.
+  const bandLeaks = market ? await bandIsOnChain(market) : null;
+  const claim = bandLeaks === false
+    ? "your band and your size stay hidden until you claim"
+    : "your size stays hidden; on the class deployed today, your band does not";
+  const tone = bandLeaks === false
+    ? { text: "#3ddc84", border: "#24a35a" }
+    : { text: "#ff9f0a", border: "#8a5f06" };
+
   return new ImageResponse(
     (
       <div
@@ -72,14 +95,14 @@ export default function OpengraphImage() {
           <div
             style={{
               display: "flex",
-              color: "#3ddc84",
+              color: tone.text,
               fontSize: 23,
-              border: "1px solid #24a35a",
+              border: `1px solid ${tone.border}`,
               borderRadius: 999,
               padding: "10px 22px",
             }}
           >
-            your band and your size stay hidden until you claim
+            {claim}
           </div>
           <div style={{ display: "flex", color: "#5c5c5c", fontSize: 23 }}>
             STRK20 privacy pool · Starknet
