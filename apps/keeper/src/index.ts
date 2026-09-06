@@ -519,12 +519,29 @@ createServer(async (req, res) => {
        * a field nothing checked. One stalled cycle is tolerated — the balance can dip and
        * recover between rounds — but two in a row is the desk going dark.
        */
+      /**
+       * Starting is not the same as stalled, and conflating them is a deadlock.
+       *
+       * `recent` requires at least one completed cycle, so a freshly booted keeper answered
+       * **503 before its first cycle had run**. Railway health-checks a new deployment
+       * immediately, got that 503, retried for five minutes and killed the replica — every
+       * time. The process could never become healthy because it was never allowed to live
+       * long enough to do the thing that would make it healthy, and the deploy that carried
+       * the fix for a stalled keeper was the one that could not ship.
+       *
+       * A process gets one full cycle plus a margin to prove itself. Inside that window it is
+       * `starting` and reports 200 with the reason; outside it, the stall rules below apply
+       * exactly as before.
+       */
+      const starting =
+        state.cycles === 0 && Date.now() - Date.parse(state.startedAt) < CYCLE_MS * 2;
       const recent = state.cycles > 0 && lagMs !== null && lagMs < CYCLE_MS * 3;
       const listing = state.stalledCycles < 2;
-      const healthy = recent && listing;
+      const healthy = starting || (recent && listing);
       return json(healthy ? 200 : 503, {
         ok: healthy,
         // Say which half failed, so a 503 does not need a log to interpret.
+        starting: starting || undefined,
         unhealthy: healthy
           ? null
           : !recent
