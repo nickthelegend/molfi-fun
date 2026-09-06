@@ -471,3 +471,29 @@ checked per item, including under injected failure, where the live console rende
 | K4 | claim from the browser | **PASS** | browser — wallet signed claim_position, balance +6.2345 = 5 x 1.2469 |
 | K5 | shield / unshield | **UNTESTED** | STRK20 pool actions — blocked by D10, not by the browser |
 | K6 | wrong-network wallet | **PASS** | browser — refused, naming both chains  [BUG FIXED] |
+
+
+---
+
+# The privacy flow, checked properly
+
+The question this project exists to answer, so it gets its own section. Checked against the
+**live Sepolia deployment**, not devnet.
+
+| # | Item | Status | Evidence |
+| --- | --- | --- | --- |
+| P1 | The deployed contract exposes `privacy_invoke` | **PASS** | Read from the class ABI at `0x03b00e6e…b068` |
+| P2 | It is bound to the real STRK20 pool | **PASS** | `pool()` returns `0x0254a6b2…cfe0d91`, the official Sepolia pool |
+| P3 | molfi's private action list parses in the real pool | **PASS** | `pool-probe.mjs` — the enum parses, replay protection is satisfied, validation reaches `SUBCHANNEL_NOT_FOUND` (no note), which is as far as anything gets without a deposit |
+| P4 | A STRK20 wallet is offered the private route | **PASS** | Browser, production: a wallet advertising Wallet API 0.10.3 gets `VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE BAND` |
+| P5 | Capability is detected without a consent prompt | **PASS** | `wallet_supportedWalletApi` only; `strk20Balances` is never called to feature-detect |
+| P6 | A non-STRK20 wallet is not offered it | **PASS** | Browser: a wallet advertising 0.8.0 gets no pool route |
+| P7 | The band is hidden on the public route too | **PASS** | Unit-tested: neither band edge nor the secret appears in `open_position` calldata |
+| P8 | An actual private trade, end to end | **UNTESTED** | Needs a wallet holding a shielded note. No public prover endpoint exists, and the wallet — not molfi — is the component that proves |
+
+**What this means.** The private order flow is deployed, wired, and reachable: a visitor with
+Ready or Xverse on Sepolia is shown the pool route and the console will build the sandwich
+for their wallet to prove and submit. molfi never holds a viewing key and never proves
+anything itself, which is what the STRK20 guidance requires of a dapp. What has not happened
+is a human with a funded privacy wallet pressing the key — P8 — and nothing in this
+repository can supply that.
