@@ -16,7 +16,11 @@ import { useCallback, useEffect, useRef } from "react";
  */
 type Voice = "fire" | "win" | "loss" | "tick" | "key" | "reject";
 
-export function useSound(enabled: boolean) {
+/**
+ * @param level 0–1 output level from the bottom rail. Every note is scaled by it, because a
+ *              volume control that only chooses between "on" and "off" is a second mute.
+ */
+export function useSound(enabled: boolean, level = 1) {
   const ctxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
@@ -25,6 +29,16 @@ export function useSound(enabled: boolean) {
       ctxRef.current = null;
     };
   }, []);
+
+  /**
+   * The level, read at play time rather than closed over.
+   *
+   * `note` is memoised and the voices are memoised on it; threading the level through the
+   * dependency arrays would rebuild the whole sound engine on every drag of the volume rail,
+   * which is a lot of churn to change one multiplier.
+   */
+  const levelRef = useRef(level);
+  levelRef.current = Math.max(0, Math.min(1, level));
 
   const ctx = useCallback(() => {
     if (!enabled) return null;
@@ -58,7 +72,7 @@ export function useSound(enabled: boolean) {
       // A short attack and an exponential tail: square waves clipped hard sound like a
       // click rather than a note.
       amp.gain.setValueAtTime(0.0001, t0);
-      amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.008);
+      amp.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain * levelRef.current), t0 + 0.008);
       amp.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
 
       osc.connect(amp).connect(c.destination);

@@ -70,7 +70,7 @@ export function PlayScreen() {
   const desk = usePaperDesk(prefs.market);
   const { state, setMarketKey, setTier, setRunning, fire, reset } = desk;
   const band = useBand(state.market, state.tier, state.spot);
-  const play = useSound(prefs.sound);
+  const play = useSound(prefs.sound, prefs.volume);
 
   const [stakeStep, setStakeStep] = useState(2); // $1.5
   const [screen, setScreen] = useState<"range" | "positions">("range");

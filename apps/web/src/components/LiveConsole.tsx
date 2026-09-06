@@ -20,6 +20,7 @@ import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
 import { useBand } from "@/lib/useBand";
 import { usePrefs } from "@/lib/usePrefs";
+import { useSound } from "@/lib/useSound";
 import { ADDRESSES, activeNetwork, explorerTx, shortAddress } from "@/lib/chain";
 import { DeviceFrame } from "./device/DeviceFrame";
 import { RangeChart } from "./device/RangeChart";
@@ -122,6 +123,15 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
   const [tier, setTier] = useState(0);
   const [stakeStep, setStakeStep] = useState(3);
   const { prefs, set: setPref } = usePrefs();
+  /**
+   * The live desk was silent.
+   *
+   * The paper desk rings on every outcome and the real one — the desk where the money is
+   * actually at stake, and where a transaction can take twenty seconds to land — said
+   * nothing at all. Same voices, same rail, so switching between them does not switch the
+   * console's behaviour.
+   */
+  const play = useSound(prefs.sound, prefs.volume);
   const [flash, setFlash] = useState<string | null>(null);
   /**
    * The route the next position takes, or null to take the most private one available.
@@ -255,8 +265,10 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
     }
     try {
       const hash = await live.fire(target.id, band.low, band.high, stake, route ?? undefined);
+      play("fire");
       say(`OPENED ${hash.slice(0, 10)}…`);
     } catch (e) {
+      play("reject");
       say(errorFlash(e));
     }
   }, [readyToAct, live, band.band, band.low, band.high, target, stake, route, say]);
@@ -526,8 +538,14 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                       if (!(await readyToAct())) return;
                       await live
                         .settle(state.dueMarkets[0].id)
-                        .then((h) => say(`SETTLED · ${h.slice(0, 10)}…`))
-                        .catch((e) => say(errorFlash(e)));
+                        .then((h) => {
+                          play("key");
+                          say(`SETTLED · ${h.slice(0, 10)}…`);
+                        })
+                        .catch((e) => {
+                          play("reject");
+                          say(errorFlash(e));
+                        });
                     })()
                   }
                   disabled={Boolean(state.pending)}
@@ -545,8 +563,16 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                       if (!(await readyToAct())) return;
                       await live
                         .claim(claimable[0])
-                        .then((h) => say(`CLAIMED · ${h.slice(0, 10)}…`))
-                        .catch((e) => say(errorFlash(e)));
+                        .then((h) => {
+                          // A claim is the only moment on this desk that pays, so it gets
+                          // the voice that says so rather than a key click.
+                          play("win", 1);
+                          say(`CLAIMED · ${h.slice(0, 10)}…`);
+                        })
+                        .catch((e) => {
+                          play("reject");
+                          say(errorFlash(e));
+                        });
                     })()
                   }
                   disabled={Boolean(state.pending)}
