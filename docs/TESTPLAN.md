@@ -30,9 +30,9 @@ Every read path, every UI path and every already-settled market is fully testabl
 | A4 | `/` live strip on a dead API | With `/api/markets` failing, prints the route-named error in caps, not a blank or a fake number. |
 | A5 | `/` doors navigate | Live → `/live`, Private → `/privacy`, Who runs it → `/keeper`, all 200. |
 | A6 | `/` START → `/play` | Navigates to the console. |
-| A7 | `/live` renders | 200; open markets first, settled below, each with id, pair, round, cutoff or settled price, publishers, print age, staked, bankroll. |
+| A7 | `/live` renders | 200; the last settled price as the masthead with its publisher count and print age, then any open rounds with a ticking cutoff, then every result newest-first. No operator fields anywhere on the page — no staked, bankroll, reserved, paid or raw cutoff timestamp. |
 | A8 | `/live` numbers match chain | Every settled price on the page equals `get_market`'s `settled_price` for that id read directly from a public node. |
-| A9 | `/live` recompute link | Each card links to `/m/<id>` and that page 200s. |
+| A9 | `/live` recompute link | Each result links to `/m/<id>` and that page 200s; the masthead's CHECK THIS PRICE points at the market whose price it shows. |
 | A10 | `/privacy` renders | 200; the two routes, the HIDDEN / PUBLIC, AND IT HAS TO BE / WHAT AN OBSERVER COULD STILL INFER groups, and live totals read from the chain. |
 | A11 | `/privacy` action list | Renders the real `openActions` array for a real market id, with a withdraw leg and an invoke leg, a placeholder secret marked as one, and a stake the market could cover. |
 | A12 | `/privacy` closed-round notice | When the subject market's window has closed, says so explicitly rather than implying it is live. |
@@ -390,6 +390,34 @@ Chased to ground rather than recorded, because a false FAIL is as expensive as a
 chain, which needs the declare. The rest are the fifteen already recorded above: the wallet
 flows, `quote_offsets`/`open_position`/`claim_position` (not on the deployed class), OS-level
 `prefers-reduced-motion`, and a listing round landing.
+
+## `/live` rebuilt after the run
+
+The page shipped as an operator inventory: a "Markets, resolving." masthead, an empty
+"Nothing open" card as its first section, and `staked` / `bankroll` / `owed to positions` /
+`paid` / `cutoff` / `in` on the face of every card. Those are the house's numbers. A visitor
+reads them and learns nothing about whether molfi works.
+
+Rebuilt around the evidence: the last settled price at 44px with the publisher count and the
+print age behind it, the open rounds with a clock, and every result newest-first with its
+recompute link. Sections that would be empty are not rendered at all.
+
+Re-verified on production at `molfi.fun/live` after the deploy:
+
+- **A7 PASS** — masthead reads `BTC/USD closed at 79,969.08`, "Settled 6h ago on a median of
+  10 publishers. The print was 6m 54s old…". A DOM scan for `staked`, `bankroll`, `cutoff`,
+  `owed to positions`, `Markets, resolving` and `Nothing open` returns nothing. No `Open now`
+  section, because nothing is open — the empty card is gone rather than restyled.
+- **A8 PASS** — all 23 settled rows re-read from `starknet-sepolia-rpc.publicnode.com`, a node
+  molfi does not use (the app reads Cartridge). Price, publisher count and print age match the
+  rendered page on every one of the 23.
+- **A9 PASS** — `/m/26` … `/m/48` all 200; `/m/999` still 404. The masthead's CHECK THIS PRICE
+  resolves to `/m/48`, which is market #48, the one it quotes.
+- **I6 unchanged** — the no-results branch is a sentence ("No round has closed yet.") rather
+  than an empty frame, but it cannot be exercised against a contract with 49 markets on it.
+  Recorded as reasoned, not observed.
+- Zero console errors and zero failed requests on the page load; mobile at 375×812 has no
+  horizontal overflow.
 
 ## Confirmations
 
