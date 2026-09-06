@@ -433,3 +433,94 @@ Re-verified on production at `molfi.fun/live` after the deploy:
 - **No credential** in any of six API responses.
 - 88 Cairo · 84 SDK · 12 keeper tests green; three packages typecheck clean; `api:check`
   passes in full against production.
+
+---
+
+# Results — third full run
+
+Executed against `https://molfi.fun` in a real browser, item by item, reading the console and
+the network log on every item. Contract reads were re-checked against
+`starknet-sepolia-rpc.publicnode.com`, a node molfi does not use, so no number below rests on
+molfi's own infrastructure agreeing with itself.
+
+**187 items · 175 PASS · 0 FAIL outstanding · 12 UNTESTABLE (each named below, with why).**
+
+Nine defects were found and fixed during the run, then re-verified on production from the top.
+
+## What failed, and what was done about it
+
+| # | Failure | Root cause | Fix |
+| --- | --- | --- | --- |
+| C37 | Switching market with a position open settled that position against the **other market's** price — a STRK band resolved against ~79,000 and lost by six orders of magnitude, written to the tape as a real loss with that price beside it | `PaperEngine.tick` took one `spot` for the whole book and `#settle` ignored each ticket's `marketKey`; the desk also tore down a market's feed the moment you switched away, so the abandoned position had no tape of its own | `tick` takes a price per market and settles each ticket against the one it was opened on; a market with no price on hand settles nothing and the position waits. The desk keeps a feed alive for every market that still has a position and drops the rest. Five tests pin it |
+| A20 | The social card — the first and often only thing anyone sees — asserted "your band and your size stay hidden until you claim" while `/privacy` and `/verify` both carried a red box saying the deployed class stores `band_low` and `band_high` in the clear | The claim was a hardcoded string; the two honest pages read the ABI, the shareable one did not | The card reads `bandIsOnChain` at request time like they do. A class without the band restores the green line with no code change; an unreadable class gets the cautious wording |
+| A4 | With `/api/markets` down, the front page's live strip went on painting the last good round count and settlement age indefinitely | The error branch was gated on `!data`, so a failure was only ever shown if the **first** read failed | A failed read wins over the numbers. Now prints `API/MARKETS RETURNED 502` / `… DID NOT ANSWER IN 15S` |
+| A13 | `/keeper` printed neither the keeper's address nor the persisted ledger, and reported "settled 0" under a heading reading "everything it has done" — on a keeper that has settled 45 markets | The page showed only this-process counters, which reset on every restart | Address linked to the explorer, lifetime ledger (`45 of 55` settled, `40 of 51` listed, `255 of 900` relayed …) and the this-process counters shown separately, each labelled with the span it covers |
+| A15 | The "check it yourself" curl said felts **9 and 10** are the settled price. Running the page's own instructions verbatim returned 6.09e39 for a price of 79,969.08 | Off by one — the note was written 1-indexed, the decoder is 0-indexed | Both read one named constant, `SETTLED_PRICE_AT`, and the note says "counting from zero" |
+| K7 | The printed `starknet_getEvents` scan started at block 0 and came back with an empty page and a continuation token — the node answers in 81,920-block windows and the contract was deployed at 14,605,143 | `"block_number":0` | The scan starts at the contract's first event block, recorded in the network config; one run now returns 50 real events. The page explains why |
+| N4 | Every page load painted a red `KEEPER STOPPED` with "the keeper did not answer" until the first fetch resolved — on a healthy keeper, on every navigation | `k` starts null and null was treated as "unreachable" | Not-read-yet is a fourth state: a grey `KEEPER READING…` |
+| C21, C22 | Tapping the `$5` quick stake printed "$5, ▲ $2, ▼ $1" — the detents either side of $1.50 — and one notch of the knob then dropped the stake to $2. The knob announced "3 of 6" to a screen reader | The readout and the knob both read `stakeStep`, which a quick stake left where it was | The hints are read off the displayed stake; a quick stake parks the knob at the nearest detent; the knob carries `aria-valuetext` with the figure on screen |
+| E8 | Add funds told the demo desk there was nothing to fund, so a visitor who had spent the opening balance had only RESET DEMO DESK — which discards the tape, the open positions and the session P&L they came to look at | The sheet had no paper path at all | A real paper top-up on the engine's own balance, labelled as paper, keeping the tape |
+
+Two more, found in passing and fixed with them:
+
+- **Achievements** offered "Full spread — play every round length, 3s to 15m" against a console
+  that lists three: it could never be earned and described a control nobody could find. The
+  target is now read off `ROUND_SECONDS`.
+- **How it works** explained the pricing using "a three-second round", a round the desk has not
+  offered since the design changed.
+
+## Untestable, and why
+
+Twelve items. None of them is a judgement call — each needs a thing that does not exist here.
+
+**No Starknet wallet extension in this browser (9):** `D13` connect-and-approve, `D14`
+capability detection against a real wallet, `D15` opening a real position, `D16` secret
+survives a reload mid-send, `D17` pressing SETTLE (the key's *appearance* and gating were
+verified — it reads `SETTLE ETH/USD · 1 DUE`), `D18` claiming, `D19` network mismatch, `D20`
+the explorer link on a real hash, and `I2` refreshing mid-transaction.
+
+**No open market to size against (2):** `D8` the capacity line and `D9` the capacity-aware
+ladder. The keeper stopped listing when its balance fell below the floor, so the desk correctly
+reads `NO OPEN MARKET` and there is no rail to measure. Both are exercised by the SDK's
+`maxStakeFor` tests.
+
+**No position exists on chain (1):** `K6`, the revealed/withheld columns for a real
+commitment. `open_position` is not on the deployed class, so nobody can create one.
+
+## The two standing failures in `pnpm verify`
+
+Both are external and neither can be closed from this repository:
+
+- **D13 — the deployed class stores the band.** `Position` has `band_low` and `band_high`. The
+  contract in this repo replaced them with reach ratios; declaring it costs about 60 STRK,
+  which has not been paid. Every honesty surface in the app already says so, and each one is
+  computed from the ABI so they retract themselves the moment a class without the band is live.
+- **E1 — the relay is stale.** The keeper holds 0.0808 STRK and one relay estimates at 0.0927.
+  It refuses before signing and names both numbers, which is the correct behaviour; it cannot
+  relay until it is funded. The Foundation agent faucet is on a hard 24h per-address cooldown
+  until 2026-09-06T23:07Z and farming fresh addresses to get round it is abuse of a shared
+  resource, so the keeper waits.
+
+`D11`/`D12` in `pnpm verify` are the same declare, counted there rather than here.
+
+## Confirmations
+
+- **Zero console errors and zero failed requests** on `/`, `/live`, `/privacy`, `/keeper`,
+  `/verify`, `/m/48`, `/m/49`, `/m/99999`, `/m/abc`, `/nope` and `/play`, each loaded in a
+  fresh tab, plus the whole console walk-through and every menu sheet. The only non-2xx
+  responses anywhere were the ones deliberately provoked.
+- **Every settled price on `/live` re-read from an independent public node.** All 23 rows
+  match on price, publisher count and print age.
+- **The contract's own quote agrees with the TypeScript kernel to the basis point** on nine
+  combinations — three markets × three reaches — called against the deployed `quote_band`.
+- **Solvency holds on all 49 markets**: `paid + reserved ≤ staked + bankroll`, and
+  `accounted_for` equals `staked + bankroll − paid` exactly.
+- **Zero mocks, stubs, fixtures or fallback data** in the 13 JavaScript chunks the production
+  console actually loads. The three `console.log` hits in that bundle are inside Next.js's own
+  router and starknet.js's logger; molfi's source and the SDK contain none, and no
+  `debugger`, `data-debug`, TODO, FIXME or HACK.
+- **No credential in any route response**, checked across six of them.
+- **Glass text is the permitted grey and nothing dimmer** (`#8a8a8a`), with amber, green, red
+  and white as signal; no emoji on the device surface.
+- **89 SDK · 12 keeper · 88 Cairo tests green**; three packages typecheck clean; `api:check`
+  passes in full against production.
