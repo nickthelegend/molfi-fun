@@ -1,315 +1,265 @@
 # molfi — build plan
 
-A builder agent should be able to pick any single task below and start cold. Every task says
-what to change and what "done" looks like. Nothing here is built in this pass; this is the
-map, and the gap list at the end is deliberately unflattering.
+**Read this first.** The project is feature-complete and deployed, and **nobody can trade it.**
+Two funding-shaped blockers stall everything: the class deployed to Sepolia predates the public
+trading route, and the keeper is out of STRK so the relay is stale and no market settles or
+lists. Every phase below is ordered around clearing those two, because until they clear, more
+features do not move the project forward.
+
+Status of the live system, measured rather than remembered (`pnpm verify`, 2026-09-06):
+**34/37 PASS · 1 FAIL · 2 UNTESTED.** 49 markets listed, 48 settled, **0 STRK ever staked**.
 
 ---
 
-## 1. What done and winning actually mean
+## 1. What "done" and "winning" mean here
 
 ### The product
 
-**molfi is a prediction market where nobody can see your position until it settles.** You pick
-a price range on an asset, pick how long it has to hold, and stake on it. Your range and your
-size are a commitment, never an address.
+A prediction market where **your position is a commitment, never an address**. You pick a price
+band, pick how long it must hold, and stake on it. The band is never sent to the chain — what
+the contract is told is how far the band reaches from its own midpoint, a pair of ratios with
+the price divided out, which prices the position exactly and says nothing about what it
+predicts.
 
-### Why this is a STRK20 submission rather than a market that happens to use a pool
+### Why privacy is load-bearing, not decorative
 
-The hackathon rewards privacy that is load-bearing. Here it is: **on a public chain your order
-is a signal before it is a trade.** Anyone watching can price against it, crowd it, or get
-there first — which is the reason informed flow stays off-chain. Take the privacy away and
-molfi is a worse version of every public prediction market. That is the test the pitch has to
-pass, and it passes it.
+On a public chain your order is a signal before it is a trade: anyone watching can price
+against it, crowd it, or get there first. Remove the privacy and molfi is a worse version of
+every public prediction market. That is the test the pitch has to pass, and it is the reason
+this is a STRK20 submission rather than a market that happens to use a pool.
 
-### Done
+### Done means
 
-1. A trader opens a position through their **own privacy wallet**. The dapp never sees a
-   viewing key. (Docs are explicit: *"Do not ask a normal dapp user for their viewing key."*)
-2. Opening a position runs the pool sandwich: pool withdraws to molfi's **anonymizer contract**,
-   the contract parks the stake against a commitment and returns an **empty span**.
-3. A market settles against a **fresh Pragma median** at a stated block.
-4. Claiming a win runs the sandwich again: the contract approves the pool and returns an
-   `OpenNoteDeposit` crediting the winner's open note.
-5. Anyone can recompute a settled market from published data and check it against what the
-   contract paid — no account, no wallet, no position.
-6. The console is genuinely good: 3D device, a dial that shifts markets, real prices.
+1. A trader opens a position through **their own privacy wallet**. The dapp never sees a
+   viewing key — the wallet proves, molfi does not.
+2. Opening runs the pool sandwich: the pool withdraws to molfi's anonymizer, the contract parks
+   the stake against a Poseidon commitment and returns an empty span.
+3. Markets settle against a **fresh Pragma median** at a stated block, unattended.
+4. Claiming runs the sandwich again, returning an `OpenNoteDeposit` that credits the winner.
+5. A stranger with no wallet and no position can recompute a settled market from published data
+   and check it against what the contract paid.
+6. **At least one real position has been opened and claimed end to end.** Today: zero.
 
-### Winning
+### Winning means (the hackathon's own bar)
 
-- **Three mainnet transactions through the pool** at
-  `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`, in `strk20.json`.
-- Contracts listed in `strk20.json`.
-- A 3-minute demo video and a reachable `demo_url`.
-- The privacy claim states its own edges. Every project claims privacy; almost none print what
-  stays public.
+| Requirement | State |
+| --- | --- |
+| Three **mainnet** transactions through the pool `0x040337b1…6ffe812a` | **NOT STARTED** — nothing is deployed to mainnet |
+| Contracts listed in `strk20.json` | Sepolia contracts listed; mainnet fields empty |
+| A 3-minute demo video | **`demo_video` is an empty string** |
+| A reachable `demo_url` | DONE — `https://molfi.fun` |
+| The privacy claim states its own edges | DONE — `/privacy` prints the leak surface per route |
 
 ### Explicitly not goals
 
-Sub-accounts (Wallet API route does not exist yet — SDK only), running our own prover, a
-bridge, or an order book. Each widens the pitch and none of them is the thing being judged.
+Sub-accounts (the Wallet API route does not exist — SDK only), running a prover, a bridge, an
+order book, a token. Each widens the pitch and none is what is being judged. `docs/IDEAS.md`
+Tier 4 (71–100) is the recorded list of things deliberately not built.
 
 ---
 
-## 2. Architecture, decided
+## 2. The two blockers, stated once
 
-The docs prescribe the route and there is no judgement call left in it:
+Everything in Phases 1–3 depends on one or both.
 
-> *"For private DeFi integrations, expect both a Starknet Wallet API flow and an app-specific
-> anonymizer contract."*
+**B-1 · The deployed Sepolia class predates the public trading route.**
+Probed against the live ABI. The deployed class has `privacy_invoke`, `settle`, `fund_market`,
+`create_market`, `get_market`, `get_table`, `get_position`, `quote_band`, `accounted_for`,
+`pool`, `oracle`. It does **not** have `open_position`, `claim_position`, `quote_offsets`,
+`owner` or `set_oracle`. The source in `cairo/src/market.cairo` has all of them and 81 tests
+pass against it. Fixing this needs a declare: **9,752 Sierra felts ≈ 57 STRK on mainnet, ~60 on
+Sepolia.** No change to this repository can clear it.
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| User keys | **Starknet Wallet API** | Recommended route for private dapps. Wallet owns viewing keys, notes, proving, submission. |
-| Contract | **Anonymizer with `privacy_invoke`** | The pool's only way to call an app atomically. |
-| Shape | **Stateful, escrow-like** | Open parks funds and returns an empty span; settle credits an `OpenNoteDeposit`. The Escrow helper is the exact template. |
-| Price | **Pragma** (`get_data_median`) | Verified live on mainnet. Pyth is deployed on Starknet and returns no prices — see gaps. |
-| Chain | **Mainnet** | Pragma Sepolia is dead and the submission wants mainnet transactions. |
+**B-2 · The keeper is out of STRK.**
+Balance `0.0808 STRK` against a `0.8 STRK` listing floor. It stops listing before it can strand
+an unfunded market (correct), but it also cannot pay for a relay, so the on-chain print is
+5,871–15,882s stale, `settle` refuses with `STALE_PRICE`, and one market sits past its cutoff
+unsettled. `pnpm verify` E1 fails for exactly this reason. Cost measured today: **~0.5 STRK per
+market listed** (`create_market` writes the whole 17-knot pricing table — 18M L2 gas), plus
+~0.1 STRK per relay and per settle.
 
-### The round length is forced by the oracle
-
-XORR's thesis was three-second rounds on a 300ms chain. **Pragma updates every 7–10 minutes**,
-so a three-second round cannot be settled honestly. molfi rounds are **minutes to hours**. This
-is not a preference; it is what the data source supports, and building the short-round UI
-anyway would be a demo that cannot settle.
+**Funding decision a builder should make before spending anything:** the prize requires
+*mainnet* transactions, and mainnet needs the ~57 STRK declare regardless. Sepolia's declare is
+valuable but optional. **If STRK is scarce, mainnet wins.** Mainnet also needs no relay (Pragma
+publishes there) and can run 4-hour rounds, so its keeper burn is a fraction of Sepolia's.
 
 ---
 
 ## 3. Phases
 
-### Phase 1 — Cairo: the market contract  ·  **DONE**
+### Phase 0 — Restore the live Sepolia demo · **BLOCKED (B-2)**
 
-The submission is a contract. Everything else is a client for it.
-
-| # | Task | State |
-| --- | --- | --- |
-| 1.1 | Scaffold `cairo/` with Scarb + snforge; depend on the `privacy` package for `OpenNoteDeposit` and `INVOKE_SELECTOR`. | **DONE** |
-| 1.2 | Port `Pricing.sol` to `pricing.cairo` — integer only, same truncating division, so the TS kernel mirrors it exactly. | **DONE** |
-| 1.3 | Parity harness: run `packages/sdk/src/pricing.ts` and the Cairo library over thousands of inputs, assert identical output. XORR's `test/parity.ts` is the template. | **DONE** |
-| 1.4 | `MarketRegistry`: create a market (pair id, band, open block, cutoff block, oracle), list open markets, freeze at cutoff. | **DONE** |
-| 1.5 | `MolfiAnonymizer.privacy_invoke` — **operation 0, open**: store `poseidon(POSITION_TAG, secret, market_id, band_lo, band_hi)`, park the stake, **return an empty span**. | **DONE** |
-| 1.6 | `privacy_invoke` — **operation 1, claim**: recompute the commitment from the preimage, check the market settled and the band contains the settled price, mark claimed, approve the pool, return one `OpenNoteDeposit`. | **DONE** |
-| 1.7 | Assert the caller is the pool on every `privacy_invoke` path. | **DONE** |
-| 1.8 | Double-claim protection: the `claimed` flag flips exactly once. | **DONE** |
-| 1.9 | `settle(market_id)` — permissionless. Read Pragma `get_data_median`, reject a print older than `MAX_PRICE_AGE` or with fewer than 3 publishers, store price + timestamp + sources. | **DONE** |
-| 1.10 | Payout maths: multiplier from the pricing library, protocol fee in bps, conservation assert (paid ≤ staked). | **DONE** |
-| 1.11 | snforge suite: open, settle inside band, settle outside band, claim, double claim, claim before settle, stale oracle, single-source oracle, non-pool caller. | **DONE** |
-| 1.12 | Measure Sierra size and declare cost before any mainnet spend. | **DONE** |
-
-### Phase 2 — Oracle and market data  ·  **DONE** except the server route
+The public demo currently shows a desk with nothing open and a stale oracle. Cheapest possible
+fix; do this before anything cosmetic.
 
 | # | Task | State |
 | --- | --- | --- |
-| 2.1 | Pragma adapter: addresses, pair-id encoding, response decode, freshness rules. | **DONE** |
-| 2.2 | Adapter tests including the Sepolia failure (recent print, one publisher). | **DONE** — 44 tests |
-| 2.3 | Live read verified against mainnet and Sepolia. | **DONE** |
-| 2.4 | Recalibrate the probability tables for minute-to-hour rounds. The shipped tables are MON/BTC/ETH on three-second rounds and are wrong for this horizon. | **DONE** |
-| 2.5 | Replace `orderbook.ts` (Kuru CLOB) with a Pragma-backed price source, or delete it. | **DONE** |
-| 2.6 | Strip `MON-USD` from markets; define the molfi set (BTC/USD, ETH/USD, STRK/USD). | **DONE** |
-| 2.7 | Server-side price route so the browser never holds an RPC key, with the freshness verdict included. | **DONE** — plus an RPC proxy, so the browser holds no key at all |
+| 0.1 | Fund `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f` with ≥ 30 STRK. `scripts/faucet.mjs <addr>` drips 5/24h; the 100 STRK form is Turnstile-gated and 3,000 needs a GitHub sign-in — both are human steps. | BLOCKED |
+| 0.2 | Confirm the relay catches up: `curl -s molfi.fun/api/health` reports every pair `settleable: true`. | BLOCKED on 0.1 |
+| 0.3 | Confirm market 49 settles and a new round lists: `/api/markets` shows 3 open. | BLOCKED on 0.1 |
+| 0.4 | Re-run `pnpm verify`; E1 must turn PASS. | BLOCKED on 0.1 |
+| 0.5 | Raise `KEEPER_BANKROLL` to ≥ `2` STRK so a market can cover a stake worth firing. At the live value the desk can sell ~0.2 STRK of exposure, which reads as broken even when it works. **Edit the Railway variable, not the code**: `apps/keeper/src/index.ts` defaults to `0.2` STRK but the deployed service overrides it to `0.05`. Project `cf1bcefd-0fad-490a-af41-158e1c375255`, service `b081214d-69ef-43cf-83da-638a165af468`. | BLOCKED on 0.1 |
 
-### Phase 3 — Wallet and pool integration  ·  **DONE**
+### Phase 1 — Put the trading route on Sepolia · **BLOCKED (B-1)**
 
 | # | Task | State |
 | --- | --- | --- |
-| 3.1 | Wallet connect: `get-starknet` picker, detect privacy capability, refuse gracefully when absent. | **DONE** — get-starknet v6 + `WalletAccountV6` |
-| 3.2 | Detect and surface registration state; a user with no viewing key cannot hold a private balance. | **DONE** — capabilities are probed, not assumed |
-| 3.3 | Shield flow — public STRK into the pool, with the public leg named as public. | **DONE** |
-| 3.4 | Open-position flow via `strk20InvokeTransaction`. | **DONE** — no open note; the helper returns an empty span |
-| 3.5 | Claim flow: same sandwich, operation 1, credits the winner's open note. | **DONE** — opens the note first, references `${openNoteIds[0]}` |
-| 3.6 | Unshield flow — private balance back to a public address. | **DONE** |
-| 3.7 | Shielded balance display, read through the wallet, never by holding a key. | **DONE** — unknown renders as unknown, never as zero |
-| 3.8 | Dry-run before every invoke. | **DONE** — `strk20PrepareInvoke` where the wallet supports it |
-| 3.9 | Position secrets: generated client-side, offered as a file download at creation. | **DONE** — written to disk *before* the transaction is offered |
-| 3.10 | Wrong-network guard. | **DONE** |
+| 1.1 | Fund a deployer with ≥ 65 STRK on Sepolia and set `DEPLOYER_ADDRESS`. | BLOCKED |
+| 1.2 | `pnpm preflight --network sepolia` — must be clear, including affordability. | BLOCKED on 1.1 |
+| 1.3 | `node --experimental-strip-types scripts/deploy.mjs --network sepolia` — declares the current class and deploys `MolfiMarket`, writing `deployments/sepolia.json`. | BLOCKED on 1.1 |
+| 1.4 | Update `MOLFI_MARKET.sepolia` in `packages/sdk/src/networks.ts` to the new address. Exactly one line changes. | BLOCKED on 1.3 |
+| 1.5 | Set `MOLFI_MARKET` on the Railway keeper service to the new address and redeploy. | BLOCKED on 1.3 |
+| 1.6 | Redeploy the web app (`npx vercel --prod --yes`) so `/live`, `/m/<id>` and the console read the new contract. | BLOCKED on 1.4 |
+| 1.7 | Confirm the direct-route probe flips: the live desk stops saying "POOL ONLY HERE" and offers both routes to a capable wallet. `useLiveDesk` probes `quote_offsets`; no code change needed. | BLOCKED on 1.6 |
+| 1.8 | Re-run `pnpm verify`; D11 and D12 must leave UNTESTED. | BLOCKED on 1.6 |
 
-**The one thing not yet proven:** the pool sandwich has never run against the real pool. The
-calldata order follows the escrow helper in the docs and the local run drives `privacy_invoke`
-directly, with the deploying account standing in for the pool — so the contract's side is
-exercised for real and the *pool's* deserialization is not. `strk20PrepareInvoke` is a dry run
-against the live pool and is the cheapest way to settle it; it needs a funded mainnet account.
+### Phase 2 — Prove a trade, both routes · **BLOCKED (Phase 1)**
 
-### Phase 4 — The console  ·  **DONE**
-
-The whole `apps/web` from `nickthelegend/xorr-monad` was brought in and ported, rather than
-rebuilt: the device frame, the range chart, the boot sequence, the controls, the menu system,
-the paper desk. What was Monad-specific was replaced rather than reskinned.
+Nothing here is a code change. It is the evidence the whole project exists to produce.
 
 | # | Task | State |
 | --- | --- | --- |
-| 4.1 | Scaffold `apps/web` as the console app. | **DONE** |
-| 4.2 | Port `Console3D` + `DeviceFrame` — procedural geometry, no CDN decoders. | **DONE** |
-| 4.3 | Port `RangeChart`, `CutoffRing`, `Odometer`, `BootSequence`, `Controls`. | **DONE** — the ring counts time, not blocks |
-| 4.4 | The dial shifts markets. | **DONE** |
-| 4.5 | Second axis: round length, over the horizons Pragma can settle. | **DONE** — 15m / 1h / 4h |
-| 4.6 | Band painting — drag the range, live multiplier from the kernel. | **DONE** |
-| 4.7 | Live price with a visible staleness state. | **DONE** — the oracle strip is on the deck, not in a sheet |
-| 4.8 | Position list: open, settled, claimable. | **DONE** — from local secrets joined to chain state, because the chain cannot list them |
-| 4.9 | Boot sequence and motion honouring `prefers-reduced-motion`. | **DONE** |
-| 4.10 | Mobile: usable at 380px. | **DONE** — the layout is a handheld device and always was |
+| 2.1 | Open a position via the **direct** route from a funded Starknet account through molfi.fun. Record the tx hash. | BLOCKED |
+| 2.2 | Let it settle; claim it if it wins. Confirm the payout equals `stake × multiplier` exactly. | BLOCKED on 2.1 |
+| 2.3 | Open a position via the **pool** route from a STRK20-capable wallet. Record the tx hash. | BLOCKED |
+| 2.4 | Claim the pool position; confirm the `OpenNoteDeposit` credits the note. | BLOCKED on 2.3 |
+| 2.5 | Confirm `/api/markets` shows non-zero `staked`, and `/privacy` stops reading "0.0000 STRK staked". | BLOCKED on 2.1 |
+| 2.6 | Confirm the mid-transaction reload path on a real send: refresh during signing, verify the secret survives and the position appears. | BLOCKED on 2.1 |
 
-Sheets with no counterpart were removed rather than reskinned: no vault (the market contract
-is its own bankroll), no MON swap (the stake token *is* the gas token), no Kuru book (there is
-no CLOB behind the mark), and **no player leaderboard** — the chain cannot attribute a win to
-an address, so a ranking would be a table of guesses. The board ranks markets instead.
-
-### Phase 5 — The verifier  ·  **DONE**
+### Phase 3 — Mainnet, and the submission's actual bar · **NOT STARTED**
 
 | # | Task | State |
 | --- | --- | --- |
-| 5.1 | `auditMarket()` in the SDK. | **DONE** — 11 checks, each carrying both answers and why it matters |
-| 5.2 | `/m/<id>` — the contract's answer beside the recomputed one. | **DONE** — also `/api/audit/<id>` as JSON |
-| 5.3 | Tamper test: altering a market must flag exactly the affected checks. | **DONE** — a single changed table knot, a dipped table, a stale print, a thin print, an insolvent market, an undisclosed fee |
-| 5.4 | Works for a stranger — no wallet, no position. | **DONE** — server-rendered from contract calls |
+| 3.1 | Fund a mainnet deployer with ≥ 60 STRK; set `DEPLOYER_ADDRESS`. | NOT STARTED |
+| 3.2 | `pnpm preflight` (defaults to mainnet). Currently clear with 2 warnings, both about the unset deployer. | IN PROGRESS — passes except affordability |
+| 3.3 | `scripts/deploy.mjs --network mainnet`. Deploys `MolfiMarket` only — **`PriceRelay` must not be deployed to mainnet**; markets settle against Pragma directly. | NOT STARTED |
+| 3.4 | Set `MOLFI_MARKET.mainnet` in `networks.ts`. | NOT STARTED |
+| 3.5 | List and fund one mainnet market per pair at **tier 2 (4h)** — mainnet needs no relay and long rounds cut keeper burn to roughly one listing and one settle per pair per 4 hours. | NOT STARTED |
+| 3.6 | Execute **three transactions through the mainnet pool** `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. Suggested: shield, open a position, claim it. | NOT STARTED |
+| 3.7 | `pnpm submission` — defaults to mainnet, fills `strk20.json` from `deployments/mainnet.json`, verifies every address holds a contract before recording it, and refuses outright to fill from a devnet deployment. | NOT STARTED |
+| 3.8 | Verify `strk20.json` names mainnet, lists the mainnet contracts, and lists the three pool transactions. | NOT STARTED |
 
-Building it found two things the contract was not recording. It did not store its round
-length, so the check that matters most — that it prices with the table molfi published —
-could never run; and it did not store when it settled, so the freshness check compared the
-print against the cutoff and reported a negative age for markets that had settled correctly.
-Both are now stored.
-
-### Phase 6 — Deploy and submit
+### Phase 4 — Submission artifacts · **NOT STARTED**
 
 | # | Task | State |
 | --- | --- | --- |
-| 6.1 | Mainnet preflight, read-only. | **DONE** — `pnpm preflight`, and it is currently clear |
-| 6.2 | Deploy the anonymizer to mainnet. **Spends real money — human decision.** | **DONE ON SEPOLIA**, blocked on mainnet. `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953` — nine markets listed and funded with 1 STRK each, on a real public chain, through the same script mainnet would use. Mainnet needs a funded account; both configured accounts hold 0 there. |
-| 6.3 | Three real mainnet transactions through the pool; hashes into `strk20.json`. | **PARTIAL, and much larger than before.** Seven verified Sepolia transactions are in `strk20.json`, which carries a `network` field so they cannot be mistaken for mainnet. They are direct calls to molfi's contract, not calls *through* the pool — driving the pool needs a registered account holding a note, which needs a real deposit. `pnpm pool:probe` confirms the transaction shape is accepted by the deployed pool on both networks. |
-| 6.4 | Deploy the console; set the repo Website field so `demo_url` is auto-detected. | **DONE** — https://molfi.fun on Vercel, verified with `pnpm api:check` against the live domain. Repo Website field set. |
-| 6.5 | Fill `contracts` in `strk20.json`. | **TOOLED, and fillable from Sepolia today** — `pnpm submission --network mainnet` fills it from `deployments/mainnet.json`, verifies every address holds a contract and every transaction actually succeeded, and refuses a devnet deployment outright |
-| 6.6 | Record the 3-minute demo. | BLOCKED — a person has to narrate it. There is something to record: the console is live on a real public-chain deployment, and `/m/1` recomputes a real market from the chain. |
-| 6.7 | Full test plan across every page, endpoint and contract path. | **DONE for contract and API** — `pnpm api:check` green against the live public site backed by the real Sepolia contract, `pnpm e2e:devnet` green for the full open/settle/claim cycle. The UI is being rebuilt separately. |
+| 4.1 | Record a **3-minute demo video**. `strk20.json.demo_video` is an empty string — this is a hard submission requirement and the single cheapest unmet one. | NOT STARTED |
+| 4.2 | Suggested cut: the leak-surface table on `/privacy` → the action list a wallet actually receives → open a position on the console → the cutoff ring draining → settlement → recompute it on `/m/<id>` with the copyable curl. | NOT STARTED |
+| 4.3 | Put the video URL in `strk20.json.demo_video`. | NOT STARTED |
+| 4.4 | Confirm `demo_url` resolves and every page it links loads without a wallet. | DONE — re-check after any redeploy |
 
-**Live, and settling.** `0x03b00e6e0efd3d35aeb6885ccb5e21a32f5f68a54222094196a7264da158b068`
-reads the price relay at `0x0275a7fdecdb539060b1e7cb2c857f88d505ed0a6c0ea2aafbbcc383456dfcbb`,
-which republishes mainnet Pragma's median. A keeper on Railway relays, settles and opens the
-next round every minute, writing every transaction to Postgres. Six markets have settled
-unattended against 10–12 publisher prices; `/live` shows them, `/keeper` shows who did it and
-what it cannot do, and `/m/<id>` recomputes any of them from published data with all eleven
-checks passing.
+### Phase 5 — Demo-readiness features · **NOT STARTED**
 
-**Superseded — the first Sepolia deployment:** `0x02229b526282bfc2eb32ed48159f9955fc04abc1f66431809d4b5ee1ac62e953`, nine
-markets funded with 1 STRK each, contract ledger and token balance agreeing exactly. The
-console at https://molfi.fun serves it, and `/api/audit/1` recomputes it.
-Those markets can never settle — Pragma Sepolia stopped publishing months ago — so the
-deployment proves the deploy path and the contract, not trading.
+The ranked list is `docs/IDEAS.md`. Tier 1 items 4, 6, 7, 9, 11, 12, 13, 14 are built. These
+six remain, in rank order. **1–3 are blocked on Phase 2** — they render a real position, and no
+real position exists.
 
-**Preflight against mainnet, today:** the node is on `SN_MAIN`, the STRK20 pool is deployed at
-the address in the config, STRK is where it should be, all three Pragma pairs are settleable
-(10–12 publishers, ~8 minutes old), and the contract is 6,899 Sierra felts — 8% of the declare
-limit. The only thing missing is a funded deployer, which is the part that costs money.
+| # | Task | State |
+| --- | --- | --- |
+| 5.1 | **Idea 1 — the observer's view.** For a real position, show side by side what the chain reveals (commitment, reach ratios, stake, owner) and what it cannot (the band), read live from Sepolia. | BLOCKED on 2.1 |
+| 5.2 | **Idea 2 — anonymity set per market.** Count open positions sharing an indistinguishable reach; print it on `/m/<id>` and the console. | BLOCKED on 2.1 |
+| 5.3 | **Idea 3 — `/verify`.** Paste any commitment, get the full audit. The verifier is per-market today (`/api/audit/<id>`); this is the per-position one a trader wants. Reuse `readPosition` in `apps/web/src/lib/market-reads.ts`. | BLOCKED on 2.1 |
+| 5.4 | **Idea 5 — guided demo run.** One key drives connect → band → fire → settle → claim with narration. Judges have four minutes. | NOT STARTED |
+| 5.5 | **Idea 8 — the settlement moment.** The band resolves, the ring completes, the payout counts up. `settleFlash` and the 620ms expanding ring exist in `RangeChart`; the payout count-up does not. | NOT STARTED |
+| 5.6 | **Idea 10 — position export/import in the UI.** The secret is the only key to the payout; recovery must be a first-class flow, not console-only. | NOT STARTED |
 
-**What a mainnet deploy costs, and why it is not one transaction:** one declare, one deploy,
-then nine `create_market` calls and nine `fund_market` calls — because a market that is not
-funded can sell nothing at all. Plus the bankroll itself, which is real STRK sitting behind
-the markets.
+### Phase 6 — Keeper economics, so it does not stall again · **NOT STARTED**
+
+Measured today: ~0.5 STRK per listing, ~0.1 per relay, ~0.1 per settle. At 15-minute rounds
+across three pairs that is roughly 4 STRK/hour — faster than any faucet.
+
+| # | Task | State |
+| --- | --- | --- |
+| 6.1 | Batch relays, settles and listings into one transaction each, with per-item fallback when the batch exceeds the account's fee bounds. | DONE |
+| 6.2 | Throttle relays by print age (`KEEPER_RELAY_MIN_AGE`, default 420s) rather than republishing on every Pragma tick. | DONE |
+| 6.3 | **Make `create_market` stop re-writing the pricing table per market.** It is 18M L2 gas and the dominant cost; the table is immutable per (pair, tier). Store it once and reference it. Contract change → needs a declare, so fold it into Phase 1/3. | NOT STARTED |
+| 6.4 | Move Sepolia to tier 1 (1h) or tier 2 (4h) rounds if funding stays tight; 15-minute rounds are a demo luxury costing 4× tier 1. Railway var `KEEPER_TIER` (`0`=15m, `1`=1h, `2`=4h), currently `0`. | NOT STARTED |
+| 6.5 | Add a keeper alert when `stoppedListing` has been set for more than one cycle, so the desk going quiet is noticed rather than discovered. | NOT STARTED |
+
+### Phase 7 — Verification and hygiene · **IN PROGRESS**
+
+| # | Task | State |
+| --- | --- | --- |
+| 7.1 | 81 Cairo tests (`pnpm test:cairo`). | DONE |
+| 7.2 | 84 SDK tests + 9 keeper tests (`pnpm test`). | DONE |
+| 7.3 | Three packages typecheck clean (`pnpm typecheck`). | DONE |
+| 7.4 | `pnpm api:check` — every endpoint including failure paths. | DONE |
+| 7.5 | `pnpm verify` — 37 checks against the real network. **34 PASS, 1 FAIL, 2 UNTESTED.** | IN PROGRESS |
+| 7.6 | `docs/TESTPLAN.md` — 156 items executed in a real browser. 143 PASS, 13 untestable, 0 outstanding FAIL. | DONE |
+| 7.7 | No mocks, stubs, fixtures, TODOs or debug leftovers in shipped source. | DONE |
+| 7.8 | Re-run 7.1–7.6 after every phase above; treat any regression as blocking. | NOT STARTED |
+| 7.9 | Update `README.md` "Live right now" and the networks table once mainnet exists. It currently says the market contract has "68 tests" — the real number is 81. | NOT STARTED |
+| 7.10 | Update `docs/API.md` if Phase 1 changes any response shape. | NOT STARTED |
 
 ---
 
 ## 4. Gaps — the honest list
 
-### Still open
+Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 
-| # | Gap | Blocks | Note |
-| --- | --- | --- | --- |
-| G11 | **`strk20.json` has no `demo_video`.** | 6.6 | Everything else in it is filled and verified: the live market and the relay as `contracts`, thirteen transactions each checked against its receipt — including three real settlements pulled from the keeper's ledger — and `demo_url` reachable. The video needs a person to narrate it. |
-| G20 | **Nothing has been staked into a live market.** | the pitch's strongest demo | Fourteen markets have settled with `staked: 0`, because opening a position requires the pool sandwich and that requires a registered account holding a note (G16). The settlement machinery is proven; the *trading* machinery is proven only on devnet. |
-| G16 | **The pool sandwich has never run against the real pool.** | 6.3 | Narrowed three times, not closed. `pnpm pool:probe` compiles molfi's exact action list against the deployed pool on mainnet and Sepolia: it parses, satisfies replay protection, and stops at `SUBCHANNEL_NOT_FOUND` — a note that does not exist, because the probe has no account. Reading the deployed pool's own class settled the shape: `InvokeExternalInput` is `{contract_address, calldata}` and carries no token or amount, so the stake must arrive by a separate `Withdraw` action in the same transaction — which `openActions` now sends, and which its absence had silently omitted. What remains untested is whether the pool deserializes our calldata into `privacy_invoke`'s parameters in the order the escrow helper implies. `strk20PrepareInvoke` dry-runs that for free; it needs a wallet on a funded account. |
-| G19 | **The relay has one publisher, and that publisher is us.** | nothing, but it is a real limitation | It cannot launder a price's age — it serves Pragma's timestamp, not its own — and it cannot move a pair backwards in time. It can still stop publishing, and then Sepolia markets stall exactly as they did before. Stated on `/keeper` and `/live` rather than buried. |
-| G17 | **No mainnet deployer.** | 6.2 | Both configured accounts hold 0 STRK on mainnet. `ghost_deployer` holds 119 STRK on **Sepolia**, which is why the contract is deployed and funded there. Mainnet preflight is otherwise clear. This is the money decision, and it is the user's. |
-| G18 | **The Alchemy key's app does not have Starknet Mainnet enabled.** | nothing, but it should be fixed | Every request to it returns 403, so the live deployment is running on the public fallback — which works and is rate limited. One toggle at https://dashboard.alchemy.com/apps/jxx5a0i4bn502vc1/networks. `/api/health` reports which endpoint answered, so this is visible rather than silent. |
+### Blocking — the product does not work without these
 
-### Closed
-
-| # | Gap | How |
+| Gap | Evidence | Blocks |
 | --- | --- | --- |
-| G1 | No Cairo contract | `MolfiMarket`, 50 tests, 6,899 Sierra felts — 8% of the declare limit |
-| G2 | Pyth does not work on Starknet | Pragma instead. Recorded because the trap is that Pyth *looks* wired up: deployed on both networks, answering, and every feed returns `None`. |
-| G4 | Pragma updates every 7–10 minutes | Rounds are 15m / 1h / 4h. The contract refuses a round shorter than one publish interval, so the constraint is enforced rather than remembered. |
-| G5 | No wallet connect | get-starknet v6 + `WalletAccountV6`, with capabilities probed rather than assumed |
-| G6 | Tables calibrated for the wrong instrument | Refitted on 129,600 real minute closes per market. The 24h round was fitted and then cut: out of sample it claimed 65% and delivered 33%. |
-| G7 | `orderbook.ts` is Kuru-specific | Deleted. The oracle strip replaced it — the thing that actually settles every position. |
-| G8 | Monad/MON references | Swept. What remains is comments explaining what changed and why. |
-| G9 | No console app | The whole xorr-monad `apps/web` brought in and ported |
-| G10 | No verifier | `auditMarket()`, `/m/<id>`, `/api/audit/<id>`, 11 checks with tamper tests |
-| G12 | Game leftovers on disk | Deleted, along with the CrewKill keeper, its Postgres and its docker-compose |
-| G13 | Hub nav 404s | Fixed |
-| G14 | `packages/protocol` is 39 lines | Folded into the SDK. Splitting it had produced two copies of the Pragma addresses. |
-| G3 | Pragma Sepolia is dead | **CLOSED, by routing around it.** `PriceRelay` republishes mainnet Pragma's median onto Sepolia and the deployment reads that instead. Six markets have settled there against real 10–12 publisher prices. The relay is a testnet stand-in with one publisher and says so on every page that shows it; mainnet reads Pragma directly. |
-| G15 | No CI | TypeScript, Cairo, Sierra size, and a parity job that regenerates the kernel vectors and asserts Cairo still agrees |
+| **The deployed Sepolia contract has no trading route.** `open_position`, `claim_position`, `quote_offsets`, `owner`, `set_oracle` are absent from the live class. | Probed the deployed ABI directly; `pnpm verify` D11/D12 UNTESTED | 1.3, 2.1–2.6, 5.1–5.3 |
+| **Nobody has ever opened a position.** `staked` is 0 across all 49 markets. The core claim is unproven on chain. | `/api/markets`, total staked 0 | 2.1, 5.1, 5.2, 5.3 |
+| **The keeper cannot pay for gas.** 0.0808 STRK; relay stale by up to 15,882s; one market past cutoff unsettled; listing stopped. | `pnpm verify` E1 FAIL; `/api/keeper` | 0.1–0.5 |
+| **Nothing is deployed to mainnet**, and the prize requires three mainnet pool transactions. | `networks.ts` `MOLFI_MARKET.mainnet = null`; preflight confirms no contract there | 3.1–3.8 |
+| **`strk20.json.demo_video` is empty**, and it names `"network": "sepolia"` rather than mainnet. | The file itself | 4.1, 4.3, 3.7 |
 
-### Found by running it, not by reading it
+### Real, non-blocking
 
-Each of these was invisible to the test suite and surfaced only by deploying the contract and
-driving it over a real RPC, or by reading the deployed pool rather than the docs about it:
+| Gap | Evidence | Blocks |
+| --- | --- | --- |
+| `create_market` re-writes the 17-knot pricing table for every market — 18M L2 gas, ~0.5 STRK, the dominant keeper cost. | Measured on tx `0x6bb5ff59…` | 6.3 |
+| Market bankroll is 0.05 STRK, so the desk can sell only ~0.2 STRK of exposure. The console now says so honestly, but it is not a tradeable size. | `KEEPER_BANKROLL`; the capacity line reads "DESK COVERS 0.202 STRK" | 0.5 |
+| Six Tier-1 demo features unbuilt (observer's view, anonymity set, `/verify`, guided run, settlement moment, export/import). | `docs/IDEAS.md` | 5.1–5.6 |
+| `README.md` says the Cairo suite has 68 tests; it has 81. | `snforge test` | 7.9 |
+| No alerting when the keeper stops listing. It went quiet for hours today and was found by hand. | Railway logs | 6.5 |
+| Sepolia rounds are 15 minutes, which is a demo luxury at 4× the keeper cost of tier 1. | `KEEPER_TIER=0` | 6.4 |
 
-- **A position could be opened backed by nothing.** The contract took the stake `amount` from
-  calldata on trust. The pool's `InvokeExternalInput` carries no token and no amount, so the
-  tokens arrive by a separate action and the contract has no way to know from the call itself
-  that they did — anyone able to reach `privacy_invoke` could record a position backed by
-  nothing and later claim a payout funded by the bankroll and by other people's stakes. The
-  stake is now measured against a per-token ledger: `balance_of` less what was already
-  accounted for is exactly what arrived. Same reason `fund_market` was already written that
-  way; the input side simply had not been.
-- **The open action never moved the stake.** It sent only an invoke. The pool's ABI says an
-  invoke cannot carry a transfer, so a withdraw leg is required and was missing.
+### Untestable, not gaps — recorded so they are not re-litigated
 
-- **Conservation made it impossible to pay the first winner in a market.** `paid <= staked`
-  means the only money present is the winner's own stake, and any multiplier above 1.00x
-  exceeds it. Every honest market would have failed at its first payout. Markets now carry a
-  bankroll, and reserve the full payout at open rather than checking at claim.
-- **The contract would sell a band at 0.97x** — a guaranteed loss even when you win. The
-  multiplier floor was enforced only by the desk, and a trader does not have to use the desk.
-- **The app read `Position` at the wrong offsets**, reporting a 1 STRK stake as eight
-  trillion. A `u256` is two felts and a `u128` is one; assuming one felt per field produces
-  plausible nonsense rather than an error.
-- **`stake=10` on the quote endpoint meant ten wei.** The unit was inferred from whether the
-  string contained a dot.
-- **The health and price routes read Pragma's mainnet address** from the address book instead
-  of the network's configured oracle, so a local run reported its own oracle as down.
+| Item | Why |
+| --- | --- |
+| Sub-accounts | The Wallet API route does not exist; SDK-only. Explicitly out of scope. |
+| Running a prover | No public STRK20 prover endpoint exists. |
+| OS-level `prefers-reduced-motion` | Cannot be emulated by the browser tooling. The CSS rule is present and correct; the in-app toggle is verified. |
+| `/favicon.ico` 404 | Next serves `/icon.svg` via `<link rel="icon">`; no browser in testing requested `.ico`. |
 
-### Not gaps, recorded so they are not re-litigated
+### Checked and clean — do not spend time re-auditing
 
-- The pricing kernel is mirrored TS ↔ Cairo and pinned by generated vectors, including the
-  shipped BTC 15m calibration rather than only the normal fixture.
-- The commitment derivation is pinned from both sides by a fixed vector: starknet.js computes
-  it and Cairo looks a real position up by it. If those two disagreed, every position would
-  open fine and none could ever be found again.
-- The house edge is 4%, and the *effective* edge measured out of sample is 9–31% depending on
-  the market. That is disclosed rather than shrunk, because closing it would mean modelling a
-  win rate at or below the realised one — the direction that drains the vault.
+- **No mocks, stubs, fakes, dummies, fixtures or placeholder data** in `apps/web/src`,
+  `packages/sdk/src` or `apps/keeper/src`. `StubOracle`/`StubToken` exist only in
+  `cairo/tests/`, `cairo/src/devnet.cairo` and the devnet branch of `scripts/deploy.mjs`;
+  `scripts/verify.mjs` G1 enforces this on every run.
+- **No `TODO`, `FIXME`, `HACK`, `XXX`, `console.log`, `debugger` or `data-debug`** in shipped
+  source. The only matches in the repo are the test plan describing the rule and the verifier
+  implementing it.
+- **No secrets in any API response** — scanned `/api/rpc`, `/api/config`, `/api/health`,
+  `/api/keeper`, `/api/markets` for the Alchemy key, the database URL and the keeper key.
+- **The browser cannot send a transaction through the RPC proxy** — all three write methods
+  return 403.
+- **The shipped app matches the deployed ABI**: `openActions` builds
+  `privacy_invoke(operation:u8, market_id:u64, band_low:u256, band_high:u256, token, amount:u128, secret, note_id)`
+  — ten felts, verified felt by felt — and the console probes for and suppresses the route the
+  deployed contract lacks.
 
 ---
 
 ## 5. Order of execution
 
-Phases 1 through 5 are done. What is left is one decision and the work that follows it.
+1. **Fund the keeper** (0.1). Cheapest, and it restores the public demo to a working state.
+2. **Record the demo video** (4.1) — the only hard submission requirement that costs nothing
+   but time, and it can be recorded against the Sepolia desk once Phase 0 clears.
+3. **Decide where the declare goes.** If STRK is scarce, mainnet (Phase 3) before Sepolia
+   (Phase 1) — the prize requires mainnet, mainnet needs no relay, and its 4-hour rounds are
+   cheap to keep alive.
+4. **Deploy, then trade** (Phase 1 or 3, then Phase 2). One real position turns three of the
+   project's strongest unbuilt features from blocked to buildable.
+5. **`pnpm submission`** (3.7) and check `strk20.json`.
+6. **Phase 5 features**, top of the ranked list down, as time allows.
+7. **Phase 6.3** (the table rewrite) only if a declare is happening anyway — it is a contract
+   change and cannot ship without one.
 
-1. **Fund a mainnet deployer.** The only step that costs money, and the only thing left
-   between here and a complete submission. `pnpm preflight` is clear otherwise, and the
-   identical script has now run end to end on Sepolia — so what remains is the same
-   sequence against a chain where the oracle is alive.
-2. **Dry-run the pool sandwich** with `strk20PrepareInvoke` before submitting anything. It
-   costs nothing and it is what remains of G16 — whether the pool deserializes our calldata
-   into `privacy_invoke`'s parameters the way the escrow helper's example implies. The
-   transaction shape itself is no longer a guess: it came from the deployed pool's class.
-3. **Deploy**, list and fund the markets, then open, settle and claim one real position.
-   `--resume` makes a half-finished run recoverable rather than a stranded contract.
-4. **Fill `strk20.json`** with `pnpm submission --network mainnet`. The deploy script
-   records every hash it sends, and the filler verifies each receipt before recording it —
-   a reverted transaction still has a hash, so listing them unchecked would let a failed run
-   look like a successful one.
-5. **Record the demo.** The console is already deployed at
-   https://molfi.fun and `strk20.json` carries it as `demo_url`.
-
-The risk worth naming, now that the code is done: **the parameter *order* inside the invoke
-calldata is still inferred from one documented example.** The transaction shape around it is
-not — that came from reading the pool's own deployed class. If the order is wrong the dry run
-says so in seconds, and the fix is a reorder in one Cairo signature and one array. If it is
-right, nothing else stands between this and a working mainnet settlement.
-
-**Also still true:** Pragma Sepolia is dead, re-verified this pass — BTC's last print is 329
-days old, ETH and STRK have one publisher each. So a Sepolia deploy would list markets that
-can never settle. It would still exercise the pool's *open* leg, which never touches the
-oracle, and that is the cheapest remaining way to close G16 if a funded Sepolia account
-appears before a mainnet one.
+Re-run `pnpm verify` and `pnpm test` after every phase. The bar is 37/37 with no UNTESTED.
