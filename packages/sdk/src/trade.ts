@@ -13,7 +13,13 @@
  */
 
 import { CallData, type Call } from "starknet";
-import { commitmentOf, u256Parts, type PositionSecret } from "./positions.ts";
+import {
+  commitmentOf,
+  commitmentOfDirection,
+  u256Parts,
+  type DirectionSecret,
+  type PositionSecret,
+} from "./positions.ts";
 import { offsetsOf } from "./pricing.ts";
 
 /** The three contracts a trade touches. */
@@ -41,6 +47,58 @@ export function reachOf(s: PositionSecret): [bigint, bigint] {
  * a standing invitation, and there is no reason to leave one behind for a position that is
  * opened once.
  */
+/**
+ * Open a direction ticket: approve the stake, then commit to a bit nobody can read.
+ *
+ * The same two-call shape as `openCalls` and for the same reason — the contract measures what
+ * arrived rather than believing the calldata, so the approve is not optional. What differs is
+ * everything the contract is told: a round id, a commitment, and a stake. No direction, no
+ * reference, no band. The bit lives inside the hash until the ticket is claimed.
+ */
+export function openDirectionCalls(
+  a: TradeAddresses & { upDownMarket: string },
+  s: DirectionSecret,
+  stake: bigint,
+): Call[] {
+  return [
+    {
+      contractAddress: a.token,
+      entrypoint: "approve",
+      calldata: CallData.compile([a.upDownMarket, ...u256Parts(stake)]),
+    },
+    {
+      contractAddress: a.upDownMarket,
+      entrypoint: "open_ticket",
+      calldata: CallData.compile([
+        s.roundId,
+        commitmentOfDirection(s),
+        ...u256Parts(stake),
+      ]),
+    },
+  ];
+}
+
+/**
+ * Claim a settled direction ticket, revealing the bit for the first time.
+ *
+ * The direction goes on chain here and only here. The contract recomputes the commitment from
+ * `(secret, round_id, direction)` and finds nothing if any of the three is wrong — which is
+ * also what a stranger guessing looks like, so a wrong guess and a wrong owner are the same
+ * answer.
+ */
+export function claimDirectionCalls(
+  a: { upDownMarket: string },
+  s: DirectionSecret,
+): Call[] {
+  return [
+    {
+      contractAddress: a.upDownMarket,
+      entrypoint: "claim_ticket",
+      calldata: CallData.compile([s.roundId, s.secret, s.direction === "up" ? 0 : 1]),
+    },
+  ];
+}
+
 export function openCalls(a: TradeAddresses, s: PositionSecret, stake: bigint): Call[] {
   const [lowOff, highOff] = reachOf(s);
   return [

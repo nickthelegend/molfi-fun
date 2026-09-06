@@ -19,6 +19,7 @@ import {
   outcomeOf,
 } from "../src/direction.ts";
 import { commitmentOf, commitmentOfDirection } from "../src/positions.ts";
+import { claimDirectionCalls, openDirectionCalls } from "../src/trade.ts";
 
 test("the multiplier is two, less the edge, exactly", () => {
   // The same three the contract asserts.
@@ -101,4 +102,40 @@ test("the commitment is stable — the same preimage always resolves to the same
   const a = commitmentOfDirection({ secret: "0xa", roundId: 3, direction: "down" });
   const b = commitmentOfDirection({ secret: "0xa", roundId: 3, direction: "down" });
   assert.equal(a, b);
+});
+
+test("the direction calls send a commitment and a stake, and nothing else", () => {
+  // The whole privacy claim for this game, asserted on the bytes that go to the chain.
+  const a = { pool: "0x1", token: "0x2", market: "0x3", upDownMarket: "0x4" };
+  const s = { secret: "0xabc", roundId: 5, direction: "up" as const };
+  const calls = openDirectionCalls(a, s, 2n * 10n ** 18n);
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].entrypoint, "approve");
+  assert.equal(calls[1].entrypoint, "open_ticket");
+
+  const sent = (calls[1].calldata as string[]).map(String);
+  // round id, commitment, stake low, stake high. Four felts, and not one of them is the
+  // direction — a fifth felt here would be the bit going to the chain in the clear.
+  assert.equal(sent.length, 4);
+  assert.equal(sent[0], "5");
+  assert.equal(sent[1], BigInt(commitmentOfDirection(s)).toString());
+
+  // The same round and stake with the other direction differs only in the commitment, so an
+  // observer comparing two opens learns nothing but that they are different tickets.
+  const down = openDirectionCalls(a, { ...s, direction: "down" }, 2n * 10n ** 18n);
+  const sentDown = (down[1].calldata as string[]).map(String);
+  assert.equal(sentDown[0], sent[0]);
+  assert.equal(sentDown[2], sent[2]);
+  assert.notEqual(sentDown[1], sent[1]);
+});
+
+test("the claim reveals the direction, and only then", () => {
+  const s = { secret: "0xabc", roundId: 5, direction: "down" as const };
+  const [call] = claimDirectionCalls({ upDownMarket: "0x4" }, s);
+  assert.equal(call.entrypoint, "claim_ticket");
+  const sent = (call.calldata as string[]).map(String);
+  assert.equal(sent[0], "5");
+  assert.equal(sent[1], String(BigInt("0xabc")));
+  assert.equal(sent[2], "1", "down is felt 1, matching direction_felt in updown.cairo");
 });
