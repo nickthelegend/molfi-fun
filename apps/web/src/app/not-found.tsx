@@ -14,7 +14,6 @@ export const metadata = {
 
 const DOORS = [
   { href: "/", label: "HOME", sub: "the console" },
-  { href: "/live", label: "LIVE", sub: "every market" },
   { href: "/privacy", label: "PRIVATE", sub: "what leaks" },
   { href: "/verify", label: "VERIFY", sub: "check a position" },
 ];
@@ -37,7 +36,7 @@ export default function NotFound() {
         </h1>
         <p className="mt-3 text-[13px] leading-relaxed text-white/55">
           If you were checking a market, the id has to be one this contract actually listed —
-          markets are numbered from one, and <span className="mono text-white/75">/live</span>{" "}
+          markets are numbered from one, and <span className="mono text-white/75">/m/&lt;id&gt;</span>{" "}
           lists every one of them with the price it settled at.
         </p>
 

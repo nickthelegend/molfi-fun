@@ -1,4 +1,5 @@
 "use client";
+import { CoinMark } from "@/components/CoinMark";
 
 /** Small raised key on the shell. Follows the cabinet's colourway. */
 export function RailKey({
@@ -235,9 +236,15 @@ export function MarketChip({
   onClick,
 }: {
   symbol: string;
+  /**
+   * Kept for the chart and the band, which tint themselves per market. The chip itself draws
+   * the project's own mark now — a coloured disc identifies nothing, and BTC and ETH have had
+   * the same two shapes for a decade.
+   */
   tone: string;
   onClick?: () => void;
 }) {
+  void tone;
   return (
     <button
       onClick={onClick}
@@ -246,14 +253,7 @@ export function MarketChip({
       className="key flex items-center gap-1.5 rounded-full bg-[#141414] py-[3px] pl-[3px] pr-2"
       style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,.07)" }}
     >
-      <span
-        aria-hidden
-        className="h-[19px] w-[19px] rounded-full"
-        style={{
-          background: `radial-gradient(circle at 32% 26%, ${tone}, rgba(0,0,0,0.62))`,
-          boxShadow: "inset 0 -1px 3px rgba(0,0,0,0.55)",
-        }}
-      />
+      <CoinMark coin={symbol} size={19} />
       <span className="mono text-[9.5px] tracking-[0.15em] text-white">{symbol}</span>
       <span className="text-[8px] text-dim" aria-hidden>
         ▾

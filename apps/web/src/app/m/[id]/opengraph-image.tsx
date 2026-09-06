@@ -135,9 +135,9 @@ export default async function MarketOpengraphImage({
           />
           <Stat k="ROUND" v={market ? `${Math.round(market.roundSeconds / 60)}m` : "—"} />
           {/* An invitation to recompute a market that was never listed is an invitation to
-              nothing; that card points at /live instead, which does exist. */}
+              nothing; that card points at the console instead, which does exist. */}
           <div style={{ display: "flex", marginLeft: "auto", color: "#5c5c5c", fontSize: 22 }}>
-            {market ? `recompute it yourself · molfi.fun/m/${id}` : "every market · molfi.fun/live"}
+            {market ? `recompute it yourself · molfi.fun/m/${id}` : "molfi.fun"}
           </div>
         </div>
       </div>

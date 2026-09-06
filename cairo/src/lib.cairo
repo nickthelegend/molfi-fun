@@ -13,6 +13,9 @@ pub mod pricing;
 pub mod objects;
 pub mod market;
 
+/// The direction game: up or down, with the bit committed rather than stored.
+pub mod updown;
+
 /// Stand-ins for the pool's oracle and token, for local runs only. Never deployed publicly.
 pub mod devnet;
 

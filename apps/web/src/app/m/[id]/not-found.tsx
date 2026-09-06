@@ -26,16 +26,16 @@ export default function MarketNotFound() {
         <p className="mt-3 text-[15px] font-semibold">That market is not on this contract</p>
         <p className="mt-3 text-[13px] leading-relaxed text-white/50">
           {NETWORKS[NETWORK].market
-            ? "Markets are numbered from one, in the order they were listed. /live lists every one of them with the price it settled at."
+            ? "Markets are numbered from one, in the order they were listed. Each one has its own page with the price it settled at and every check recomputed."
             : `molfi's market contract is not deployed on ${NETWORK} yet, so there is nothing to verify.`}
         </p>
 
         <div className="mt-5 flex gap-2">
           <Link
-            href="/live"
+            href="/play"
             className="flex-1 rounded-full bg-amber-2 py-3 text-[13px] font-extrabold text-black"
           >
-            EVERY MARKET
+            PLAY THE GAME
           </Link>
           <Link
             href="/verify"

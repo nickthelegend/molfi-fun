@@ -72,7 +72,7 @@ export function LiveStrip() {
 
   return (
     <Link
-      href="/live"
+      href="/play"
       className="mono mt-5 flex h-[30px] items-center justify-center gap-2 rounded-lg bg-[#141414] px-3 text-[9px] leading-none tracking-[0.1em] text-white/40 transition-colors hover:bg-[#1b1b1b] hover:text-white/60"
     >
       {failed || !data ? (

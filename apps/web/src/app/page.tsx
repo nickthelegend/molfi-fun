@@ -78,7 +78,6 @@ export default function Home() {
             * for a connection before it has earned one.
             */}
           <nav className="mt-7 grid grid-cols-3 gap-2">
-            <Door href="/live" label="Live" sub="watch one settle" />
             <Door href="/privacy" label="Private" sub="what leaks" />
             <Door href="/keeper" label="Who runs it" sub="nobody has to" />
           </nav>

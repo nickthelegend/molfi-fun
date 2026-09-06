@@ -65,7 +65,7 @@ export async function GET(req: Request) {
      * used to read every one of them on every request. At forty-four that is a second; the
      * keeper adds roughly three hundred a day, so it is a wall rather than a slope, and the
      * first symptom would have been the console quietly failing to load markets in a week's
-     * time. `/live` had already been bounded for exactly this reason; this route had not.
+     * time. The console had already been bounded for exactly this reason; this route had not.
      *
      * The window is the recent tail because that is all any caller renders. Anything older
      * is reachable by id — the verifier reads the chain directly, and a stored position

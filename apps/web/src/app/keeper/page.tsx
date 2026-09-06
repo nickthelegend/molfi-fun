@@ -157,10 +157,10 @@ export default async function KeeperPage() {
 
         <div className="mt-4 flex gap-3">
           <Link
-            href="/live"
+            href="/play"
             className="flex-1 rounded-full bg-amber-2 py-3 text-center text-[13px] font-extrabold text-black"
           >
-            WATCH THEM SETTLE
+            PLAY THE GAME
           </Link>
           <Link
             href="/play"

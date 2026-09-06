@@ -31,7 +31,7 @@ export function DeviceFrame({
   onVolume: (v: number) => void;
 }) {
   return (
-    <div className="mx-auto w-full max-w-[414px] px-3 py-4">
+    <div className="mx-auto w-full max-w-[460px] px-3 py-4">
       <div className="shell rounded-[32px] p-[10px]">
         {/* bezel → glass */}
         <div className="recess rounded-[22px] p-[9px]">{glass}</div>

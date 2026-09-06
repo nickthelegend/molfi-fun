@@ -94,18 +94,14 @@ export default async function VerifyPage() {
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-white/55">
             That is the same list anyone watching this market already has. It is why the band
-            being in storage matters, and why the totals on{" "}
-            <Link href="/live" className="text-amber underline">
-              /live
-            </Link>{" "}
-            are public on purpose while the positions behind them are not.
+            being in storage matters, and why a market&apos;s totals are public on purpose
+            while the positions behind them are not.
           </p>
         </section>
 
-        <nav className="mt-3 grid grid-cols-3 gap-2">
+        <nav className="mt-3 grid grid-cols-2 gap-2">
           {[
             { href: "/privacy", label: "What leaks" },
-            { href: "/live", label: "Every market" },
             { href: "/play", label: "The console" },
           ].map((d) => (
             <Link
