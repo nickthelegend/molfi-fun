@@ -124,21 +124,35 @@ it holds. They agree by construction, and if they ever did not, the contract is 
 
 ## GET `/api/markets`
 
-Every market the contract holds, read from `market_count` and `get_market`.
+The newest markets the contract holds, read from `market_count` and `get_market`.
 
 ```jsonc
 {
   "deployed": true,
+  "network": "sepolia",
   "contract": "0x…",
-  "markets": [{
-    "id": 1, "pair": "BTC/USD", "known": true,
-    "cutoffAt": 1788624079, "roundSeconds": 900,
-    "isSettled": true, "settledPrice": "7970000000000", "settledSources": 11,
+  "count": 49,          // every market the contract has ever listed
+  "chainNow": 1788675123, // the chain's clock at the head block, not this server's
+  "markets": [{         // newest first, and at most 60 of them
+    "id": 49, "pair": "BTC/USD", "known": true,
+    "cutoffAt": 1788624079, "roundSeconds": 900, "token": "0x…",
+    "sigma1e4": "171077", "houseEdgeBps": "400",
+    "isSettled": true, "settledPrice": "7970000000000",
+    "settledAt": 1788624100, "settledBlockAt": 1788624441, "settledSources": 11,
     "staked": "1000000000", "paid": "1250700000",
     "bankroll": "1000000000000", "reserved": "0"
   }]
 }
 ```
+
+**`markets` is a window, not the whole list.** `count` is the true total and the array holds
+at most the newest sixty. Reading every market meant one `get_market` per market on every
+poll, which is a request count that grows without bound against a contract that only ever
+gains markets. Anything that needs an older one asks for it by id.
+
+`chainNow` is there because deadlines are block timestamps. A console deciding what is due
+from `Date.now()` hides settlements the contract already accepts, and offers opens it will
+refuse, whenever the two clocks disagree.
 
 `deployed: false` carries a `reason` and an empty list — "not deployed" and "no markets open"
 are different facts and are reported differently.
@@ -248,6 +262,40 @@ desk and has no market to be down. Returns 503 only when something is genuinely 
 `answeredBy` distinguishes "working" from "working on the backup because the configured key
 is pointed at a network it cannot serve" — a distinction that otherwise survives to
 production.
+
+---
+
+## GET `/api/keeper`
+
+What the keeper is doing, proxied from the service itself. Nothing here is required to read
+a market or recompute a settlement — it exists so that "this settles itself" is checkable
+rather than asserted.
+
+```jsonc
+{
+  "configured": true,   // false, with a `reason`, when no keeper URL is set for this deployment
+  "reachable": true,
+  "ok": false,          // mirrors the keeper's own /health
+  "unhealthy": "has not listed a round for 3 cycles: balance … is below the floor …",
+  "network": "sepolia",
+  "market": "0x…", "relay": "0x…", "keeper": "0x…",
+  "cycleSeconds": 120,
+  "lagMs": 58776,       // since the last completed cycle
+  "cycles": 31, "relayed": 7, "settled": 3, "listed": 3,
+  "balance": "80843186574050224",
+  "stoppedListing": "balance … is below the floor …",  // null when it is listing
+  "stalledCycles": 3,
+  "lastError": null,
+  "ledger": { "relay": { "total": 242, "ok": 240, "last": "…" }, "settle": { … } }
+}
+```
+
+`ok` is false on either of two counts: no cycle within three cycle periods, or two
+consecutive cycles unable to list. A keeper that is up, cycling, and unable to open a single
+round is the failure that looks like health, so it is reported as a failure —
+`unhealthy` says which half.
+
+`balance` is null when it could not be read. Unknown is not zero.
 
 ---
 
