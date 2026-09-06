@@ -29,6 +29,7 @@ import { BandControl } from "./device/BandControl";
 import { StatusBar } from "./device/StatusBar";
 import { Knob } from "./device/Knob";
 import { BlueKey, DeckKey, FireKey, KeyFrame, MarketChip } from "./device/Controls";
+import { isDirection } from "@/lib/positions";
 
 /**
  * A thrown error, as a line the console can show.
@@ -412,9 +413,14 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                 high={band.high}
                 multiplierBps={band.multiplierBps}
                 progress={0}
+                /* Range positions only: a direction ticket has no band, and drawing one as a
+                   zero-height rectangle at the reference is a line that means nothing. */
                 openBands={state.positions
-                  .filter((p) => p.market && !p.market.isSettled)
-                  .map((p) => ({ low: p.bandLow, high: p.bandHigh }))}
+                  .flatMap((p) =>
+                    p.market && !p.market.isSettled && !isDirection(p)
+                      ? [{ low: p.bandLow, high: p.bandHigh }]
+                      : [],
+                  )}
                 onDragEdge={band.setEdge}
               />
             ) : (

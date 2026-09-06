@@ -42,6 +42,10 @@ export const ADDRESSES = {
   oracle: addr(activeNetwork.oracle),
   /** molfi's anonymizer. Null until it is deployed on this network. */
   market: addr(process.env.NEXT_PUBLIC_MARKET ?? activeNetwork.market),
+  /** The direction game. Null on a network where it is not deployed, which is honest. */
+  upDownMarket: addr(process.env.NEXT_PUBLIC_UPDOWN ?? activeNetwork.upDownMarket),
+  /** The network's own name, so a refusal can say which chain it is talking about. */
+  name: activeNetwork.name,
 };
 
 /** True only when there is a real deployment to talk to. */

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { MARKETS, fmtCountdown, fmtMultiplier, fmtPrice, fmtStrk, parseStrk } from "@molfi/sdk";
 import { ADDRESSES, explorerTx, shortAddress } from "@/lib/chain";
-import { exportPosition, forget, importPosition } from "@/lib/positions";
+import { exportPosition, forget, importPosition, isDirection } from "@/lib/positions";
 import type { LivePosition } from "@/lib/useLiveDesk";
 
 /**
@@ -200,8 +200,10 @@ function Positions({
                     precision is chosen for reading a price, not a band, and the tightest
                     bands are narrower than it — a receipt whose two numbers are the same
                     number is not a receipt. */}
-                {fmtPrice(p.bandLow, bandDp(p))} – {fmtPrice(p.bandHigh, bandDp(p))} ·{" "}
-                {fmtStrk(BigInt(p.stake), 2)} STRK
+                {isDirection(p)
+                  ? `${p.direction === "up" ? "▲ UP" : "▼ DOWN"}`
+                  : `${fmtPrice(p.bandLow, bandDp(p))} – ${fmtPrice(p.bandHigh, bandDp(p))}`}{" "}
+                · {fmtStrk(BigInt(p.stake), 2)} STRK
                 {p.onChain?.exists
                   ? ` · pays ${fmtMultiplier(p.onChain.multiplierBps)}`
                   : p.onChain
@@ -268,7 +270,13 @@ function Positions({
 }
 
 /** Enough decimals that a band's two edges are visibly different numbers. */
-function bandDp(p: LivePosition): number {
+/**
+ * Enough decimals that a band's two edges are not printed as the same number.
+ *
+ * Only meaningful for a range position; a direction ticket has no band and the caller
+ * narrows before asking.
+ */
+function bandDp(p: LivePosition & { bandLow: bigint; bandHigh: bigint }): number {
   const base = MARKETS.find((m) => m.label === p.pair)?.dp ?? 2;
   for (let d = base; d <= 8; d += 1) {
     if (fmtPrice(p.bandLow, d) !== fmtPrice(p.bandHigh, d)) return d;

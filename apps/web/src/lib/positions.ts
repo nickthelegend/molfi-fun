@@ -1,6 +1,11 @@
 "use client";
 
-import { commitmentOf, type PositionSecret } from "@molfi/sdk";
+import {
+  commitmentOf,
+  commitmentOfDirection,
+  type DirectionSecret,
+  type PositionSecret,
+} from "@molfi/sdk";
 
 /**
  * The positions this browser knows about.
@@ -21,7 +26,18 @@ const KEY = "molfi.positions.v1";
 /** Which way into the market this position was opened. They claim differently. */
 export type Route = "pool" | "direct";
 
-export interface StoredPosition extends PositionSecret {
+/**
+ * What both games store, and the fields that differ.
+ *
+ * A discriminated union rather than one struct with optional halves. A range position is
+ * priced by a band and a direction ticket has none, so a single shape would carry `bandLow`
+ * on every direction entry — a number that has to be *something*, is meaningless, and which
+ * the next reader has no way to know to ignore. The `game` tag makes the compiler ask.
+ *
+ * `game` is optional on the range arm because every position stored before the direction game
+ * existed has no tag, and those are all range positions. Absent reads as "range".
+ */
+export interface StoredCommon {
   commitment: string;
   /**
    * Recorded rather than inferred.
@@ -41,7 +57,25 @@ export interface StoredPosition extends PositionSecret {
   txHash?: string;
   /** Set once the payout has been claimed, so the list stops offering the button. */
   claimedTxHash?: string;
+  /** The secret is the only key to the payout, in both games. */
+  secret: string;
 }
+
+export interface StoredRange extends StoredCommon, PositionSecret {
+  game?: "range";
+}
+
+export interface StoredDirection extends StoredCommon {
+  game: "direction";
+  roundId: number;
+  direction: "up" | "down";
+}
+
+export type StoredPosition = StoredRange | StoredDirection;
+
+/** Narrowing helper, so readers ask once instead of testing the tag by hand everywhere. */
+export const isDirection = (p: StoredPosition): p is StoredDirection =>
+  p.game === "direction";
 
 type Listener = (positions: StoredPosition[]) => void;
 const listeners = new Set<Listener>();
@@ -53,13 +87,17 @@ function read(): StoredPosition[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Array<Record<string, unknown>>;
     // Bands are bigints and JSON has no bigints, so they round-trip as strings.
-    return parsed.map((p) => ({
+    return parsed.map((p) =>
+      p.game === "direction"
+        ? (p as unknown as StoredPosition)
+        : ({
       ...(p as unknown as StoredPosition),
       bandLow: BigInt(String(p.bandLow)),
       bandHigh: BigInt(String(p.bandHigh)),
       // Positions stored before molfi had a public route were all pool positions.
-      route: (p.route === "direct" ? "direct" : "pool") as Route,
-    }));
+            route: (p.route === "direct" ? "direct" : "pool") as Route,
+          } as StoredPosition),
+    );
   } catch {
     // A corrupt store must not take the app down with it. Losing the index is bad; losing
     // the ability to open the page and export what is left is worse.
@@ -73,11 +111,11 @@ function write(positions: StoredPosition[]): void {
     window.localStorage.setItem(
       KEY,
       JSON.stringify(
-        positions.map((p) => ({
-          ...p,
-          bandLow: p.bandLow.toString(),
-          bandHigh: p.bandHigh.toString(),
-        })),
+        positions.map((p) =>
+          isDirection(p)
+            ? p
+            : { ...p, bandLow: p.bandLow.toString(), bandHigh: p.bandHigh.toString() },
+        ),
       ),
     );
   } catch {
@@ -135,12 +173,24 @@ export function exportPosition(p: StoredPosition, extra: Record<string, unknown>
           note: "This file is the only way to claim this molfi position. Nobody can recover it for you — not molfi, not the pool.",
           ...extra,
           pair: p.pair,
-          marketId: p.marketId,
-          route: p.route,
           roundSeconds: p.seconds,
           secret: p.secret,
-          bandLow: p.bandLow.toString(),
-          bandHigh: p.bandHigh.toString(),
+          /**
+           * The half of the receipt that differs by game.
+           *
+           * A range position needs its band and its route to be claimable; a direction ticket
+           * needs its round and its side. Writing both shapes' fields and leaving half of them
+           * blank would produce a file that looks complete and cannot claim anything.
+           */
+          ...(isDirection(p)
+            ? { game: "direction", roundId: p.roundId, direction: p.direction }
+            : {
+                game: "range",
+                marketId: p.marketId,
+                route: p.route,
+                bandLow: p.bandLow.toString(),
+                bandHigh: p.bandHigh.toString(),
+              }),
           commitment: p.commitment,
           stake: p.stake,
           openedAt: new Date(p.openedAt * 1000).toISOString(),
@@ -188,5 +238,42 @@ export function importPosition(json: string): StoredPosition {
   };
   const existing = read();
   if (!existing.some((p) => p.commitment === commitment)) write([...existing, entry]);
+  return entry;
+}
+
+/**
+ * Store a direction ticket. Same contract as `remember`, different shape.
+ *
+ * The secret is written **before** the transaction is sent, for the reason the range game
+ * learned the expensive way: it is the only thing that can ever claim the payout, and a send
+ * that looks like a failure is not proof that nothing reached the chain.
+ */
+export function rememberDirection(
+  secret: DirectionSecret,
+  meta: { pair: string; seconds: number; stake: bigint; txHash?: string },
+): StoredDirection {
+  const entry: StoredDirection = {
+    game: "direction",
+    /**
+     * Direct, always — for now.
+     *
+     * `updown.cairo` does have a pool route: a ticket opened by the pool records a zero owner
+     * and is claimed by whoever holds the secret, exactly as the range game does. molfi does
+     * not offer it yet because the pool's action list for `open_ticket` has not been built,
+     * and recording "pool" for a ticket opened directly would make the claim take the wrong
+     * branch and fail by name.
+     */
+    route: "direct",
+    secret: secret.secret,
+    roundId: secret.roundId,
+    direction: secret.direction,
+    commitment: commitmentOfDirection(secret),
+    pair: meta.pair,
+    seconds: meta.seconds,
+    stake: meta.stake.toString(),
+    openedAt: Math.floor(Date.now() / 1000),
+    txHash: meta.txHash,
+  };
+  write([...read(), entry]);
   return entry;
 }

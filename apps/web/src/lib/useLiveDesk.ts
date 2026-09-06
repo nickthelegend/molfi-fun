@@ -3,7 +3,16 @@
 import type { SignerInterface } from "starknet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CallData } from "starknet";
-import { MARKETS, ROUND_SECONDS, newSecret, type MarketDef, type PositionSecret } from "@molfi/sdk";
+import {
+  MARKETS,
+  ROUND_SECONDS,
+  claimDirectionCalls,
+  newSecret,
+  openDirectionCalls,
+  type DirectionSecret,
+  type MarketDef,
+  type PositionSecret,
+} from "@molfi/sdk";
 import { ADDRESSES, LIVE_CONFIGURED, liveBlockedReason, provider } from "./chain";
 import {
   blockingReason,
@@ -33,7 +42,9 @@ import {
   exportPosition,
   forget,
   markClaimed,
+  isDirection,
   remember,
+  rememberDirection,
   subscribe,
   type StoredPosition,
 } from "./positions";
@@ -73,8 +84,15 @@ export interface LiveMarket {
   houseEdgeBps: number;
 }
 
-/** A stored position, joined with whatever the chain says about it. */
-export interface LivePosition extends StoredPosition {
+/**
+ * A stored position, joined with whatever the chain says about it.
+ *
+ * An intersection rather than `extends`, because `StoredPosition` is a union of the two games
+ * and an interface extending a union does not distribute over it — every field of both arms
+ * becomes unreachable. `A & B` over a union does distribute, so a reader that has narrowed on
+ * `game` still sees the right half.
+ */
+export type LivePosition = StoredPosition & {
   onChain: {
     exists: boolean;
     claimed: boolean;
@@ -84,7 +102,7 @@ export interface LivePosition extends StoredPosition {
   market: LiveMarket | null;
   /** True when the market has settled and the settled price landed inside the band. */
   won: boolean | null;
-}
+};
 
 export interface LiveState {
   ready: boolean;
@@ -357,7 +375,9 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       // it is a plain `starknet_call` from whatever node the browser is using.
       const positions: LivePosition[] = await Promise.all(
         allPositions().map(async (p) => {
-          let market = markets.find((x) => x.id === p.marketId) ?? null;
+          // A direction ticket belongs to a round on the other contract, so it has no entry
+          // in this list. Its own round is read by the console from /api/rounds.
+          let market = isDirection(p) ? null : markets.find((x) => x.id === p.marketId) ?? null;
           let onChain: LivePosition["onChain"] = null;
           try {
             // Through the app's own route, like the market list. It decodes the struct in
@@ -410,9 +430,18 @@ export function useLiveDesk(market: MarketDef, tier: number) {
             // A position that could not be read is shown as unknown, not as absent. Those
             // are different facts and only one of them means "this does not exist".
           }
+          /**
+           * Whether this position is in the money, for the games that can say.
+           *
+           * A range position wins on the settled price landing inside its band, inclusive at
+           * both edges — the same comparison the contract makes, so the desk and the chain
+           * agree. A direction ticket's outcome depends on its round's reference, which lives
+           * on the other contract and is not in `markets`; it reads `null` here rather than
+           * guessing, and the console resolves it from the round.
+           */
           const won =
-            market?.isSettled && market.settledPrice > 0n
-              ? market.settledPrice > p.bandLow && market.settledPrice < p.bandHigh
+            !isDirection(p) && market?.isSettled && market.settledPrice > 0n
+              ? market.settledPrice >= p.bandLow && market.settledPrice <= p.bandHigh
               : null;
           return { ...p, onChain, market, won };
         }),
@@ -714,6 +743,64 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     [addresses, market.label, tier, refresh],
   );
 
+  /**
+   * Open a direction ticket against the up/down contract.
+   *
+   * A separate function from `fire` rather than a branch inside it, because almost nothing is
+   * shared: a different contract, a different commitment domain, no band, no route choice —
+   * the direction game has no pool leg, so there is only the direct route to offer.
+   *
+   * The secret is stored before the transaction is sent and kept unless the send is *certain*
+   * not to have reached the chain, which is the same rule `fire` learned the hard way: a
+   * dropped connection between the wallet accepting and the response arriving makes a
+   * successful open look like a failure, and the secret it would have discarded is the only
+   * thing that could ever claim the stake.
+   */
+  const fireDirection = useCallback(
+    (roundId: number, direction: "up" | "down", stake: bigint) =>
+      queued(async () => {
+        const c = connectionRef.current;
+        if (!c || !addresses) throw new Error("connect a wallet first");
+        if (!ADDRESSES.upDownMarket) {
+          throw new Error(`the direction game is not deployed on ${ADDRESSES.name}`);
+        }
+
+        const secret: DirectionSecret = { secret: newSecret(), roundId, direction };
+        const entry = rememberDirection(secret, {
+          pair: market.label,
+          seconds: ROUND_SECONDS[tier] ?? 0,
+          stake,
+        });
+
+        setState((s) => ({ ...s, pending: "opening" }));
+        const r = await submitDirect(
+          c,
+          openDirectionCalls(
+            { ...addresses, upDownMarket: ADDRESSES.upDownMarket },
+            secret,
+            stake,
+          ),
+        );
+        if (r.ok) await provider.waitForTransaction(r.txHash!).catch(() => undefined);
+        setState((s) => ({
+          ...s,
+          pending: null,
+          lastTx: r.ok ? { hash: r.txHash!, label: "opened" } : s.lastTx,
+        }));
+        if (!r.ok) {
+          if (r.maybeSubmitted === false) forget(entry.commitment);
+          throw new Error(
+            r.maybeSubmitted === false
+              ? r.error
+              : `${r.error} — your ticket may still have opened; it is saved and will appear if it did`,
+          );
+        }
+        void refresh();
+        return r.txHash!;
+      }),
+    [addresses, market.label, tier, refresh],
+  );
+
   /** Claim a settled winning position into an open note the wallet then owns. */
   /**
    * Claim a settled winning position.
@@ -729,11 +816,22 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         const c = connectionRef.current;
         if (!c || !addresses) throw new Error("connect a wallet first");
         setState((s) => ({ ...s, pending: "claiming" }));
-        const r =
-          p.route === "direct"
+        /**
+         * Which game first, then which route.
+         *
+         * A direction ticket is claimed on the other contract entirely, and it has no pool
+         * leg yet — so the route question, which is about how a *range* position gets its
+         * payout back, does not arise for it.
+         */
+        const r = isDirection(p)
+          ? await submitDirect(
+              c,
+              claimDirectionCalls({ upDownMarket: ADDRESSES.upDownMarket! }, p),
+            )
+          : p.route === "direct"
             ? await submitDirect(c, claimCalls(addresses, p))
             : await submit(c, claimActions(addresses, p, c.address));
-        if (r.ok && p.route === "direct") {
+        if (r.ok && (isDirection(p) || p.route === "direct")) {
           await provider.waitForTransaction(r.txHash!).catch(() => undefined);
         }
         setState((s) => ({
@@ -846,6 +944,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     shield,
     unshield,
     fire,
+    fireDirection,
     claim,
     settle,
     quoteOnChain,
