@@ -183,13 +183,73 @@ function transient(why: string): boolean {
  * transactions at about 0.1 STRK each, which on a faucet-funded keeper is the difference
  * between a desk that stays open and one that runs dry inside an hour.
  */
+/**
+ * Fee bounds the account can actually pay, rather than the default headroom.
+ *
+ * The chain validates against the *bound*, not the eventual fee, and the bound carries
+ * padding. An account can therefore be refused a transaction whose real cost it could
+ * comfortably pay, which is a procedural refusal rather than a real one — so the bound is
+ * capped at what the balance covers, and never dropped below the estimate itself.
+ *
+ * When the bare estimate is already unaffordable this throws before anything is signed,
+ * naming both numbers. That is worth more than it sounds: the alternative is the node's
+ * "Account validation failed — Resources bounds ({ l1_gas: … }) exceed balance (…)", which
+ * says the same thing in two hundred characters of gas dictionaries, after a nonce and a
+ * round trip have been spent finding out.
+ *
+ * Measured on Sepolia while writing this: one relay estimated at 0.09319 STRK against a
+ * 0.08084 balance. The shortfall there is real and no bound can close it — the keeper needs
+ * funding, not a tighter margin. The capping matters for the case one notch less bad, where
+ * the fee fits and the padding does not.
+ *
+ * Passing explicit bounds also means `execute` does not estimate again, so this costs no
+ * extra round trip.
+ */
+const FEE_MARGIN = 1.5;
+/** Never offer the whole balance: the account still needs to pay for the next one. */
+const SPENDABLE = 0.92;
+
+async function boundsFor(call: Call | Call[], nonce: bigint) {
+  const est = await account.estimateInvokeFee(call, { nonce });
+  const estimated = est.overall_fee;
+  const balance = await strkBalance(account.address);
+  const affordable = (balance * BigInt(Math.round(SPENDABLE * 100))) / 100n;
+
+  if (estimated > affordable) {
+    throw new Error(
+      `cannot afford this: the fee alone is ${estimated} and the balance is ${balance}`,
+    );
+  }
+
+  const padded = (estimated * BigInt(Math.round(FEE_MARGIN * 100))) / 100n;
+  const cap = padded <= affordable ? padded : affordable;
+  // Scale the estimate's own resource bounds to the cap, keeping their shape.
+  const scale = (v: bigint) => (estimated === 0n ? v : (v * cap) / estimated);
+  const rb = est.resourceBounds;
+  return {
+    l1_gas: {
+      max_amount: BigInt(rb.l1_gas.max_amount),
+      max_price_per_unit: BigInt(rb.l1_gas.max_price_per_unit),
+    },
+    l1_data_gas: {
+      max_amount: BigInt(rb.l1_data_gas.max_amount),
+      max_price_per_unit: BigInt(rb.l1_data_gas.max_price_per_unit),
+    },
+    l2_gas: {
+      max_amount: BigInt(rb.l2_gas.max_amount),
+      max_price_per_unit: scale(BigInt(rb.l2_gas.max_price_per_unit)),
+    },
+  };
+}
+
 export async function send(call: Call | Call[], label: string, attempts = 3): Promise<string> {
   let last = "";
   for (let i = 0; i < attempts; i += 1) {
     let hash: string | null = null;
     try {
       if (nextNonce === null) await syncNonce();
-      const sent = await account.execute(call, { nonce: nextNonce! });
+      const resourceBounds = await boundsFor(call, nextNonce!);
+      const sent = await account.execute(call, { nonce: nextNonce!, resourceBounds });
       hash = sent.transaction_hash;
       nextNonce! += 1n;
     } catch (e) {
