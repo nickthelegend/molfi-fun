@@ -3,6 +3,7 @@
 import { PrivyProvider, useIdentityToken, usePrivy } from "@privy-io/react-auth";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { MARKETS } from "@molfi/sdk";
 import { CoinMark, StarknetSpark } from "@/components/CoinMark";
 import { PrivySigner } from "@/lib/privy-signer";
 import { prepareAccount, type PrepareStage } from "@/lib/prepare-account";
@@ -356,11 +357,13 @@ function Shell({ children }: { children: React.ReactNode }) {
           </h1>
 
           <div className="mt-4 flex items-center gap-2">
-            {["BTC", "ETH", "STRK"].map((c) => (
-              <CoinMark key={c} coin={c} size={26} />
+            {/* Derived from MARKETS, not written out — this said "THREE MARKETS" for a while
+                after there were nine, which is the failure mode of a hand-typed count. */}
+            {MARKETS.slice(0, 4).map((m) => (
+              <CoinMark key={m.key} coin={m.key} size={26} />
             ))}
             <span className="mono ml-1 text-[9.5px] tracking-[0.14em] text-white/30">
-              THREE MARKETS
+              {MARKETS.length} MARKETS
             </span>
           </div>
 
