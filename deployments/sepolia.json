@@ -1,8 +1,8 @@
 {
   "network": "sepolia",
-  "deployedAt": "2026-09-05T19:22:45.562Z",
-  "classHash": "0x070c273cafaa5a09eaf21d1dea59f7f09eeecce443a2319b3ed59d12eaf6c092",
-  "market": "0x03b00e6e0efd3d35aeb6885ccb5e21a32f5f68a54222094196a7264da158b068",
+  "deployedAt": "2026-09-06T15:22:00.000Z",
+  "classHash": "0x05a01fe31524058700b76f8999450458809629684d18c36024d3ebcc4b5d722a",
+  "market": "0x053b17219aa45008548e3633b9fcd78ec9540b00d71fd34ec6217599d3298f1f",
   "oracle": "0x0275a7fdecdb539060b1e7cb2c857f88d505ed0a6c0ea2aafbbcc383456dfcbb",
   "token": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
   "pool": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
@@ -14,78 +14,40 @@
     "relay that republishes mainnet Pragma's median. One publisher \u2014 us. Every relayed value",
     "carries the mainnet block it was read at. On mainnet molfi reads Pragma directly."
   ],
-  "markets": [
-    {
-      "pair": "BTC/USD",
-      "seconds": 900,
-      "cutoffAt": 1788636968
-    },
-    {
-      "pair": "ETH/USD",
-      "seconds": 900,
-      "cutoffAt": 1788636968
-    },
-    {
-      "pair": "STRK/USD",
-      "seconds": 900,
-      "cutoffAt": 1788636968
-    }
-  ],
+  "markets": [],
   "transactions": [
-    "0x03432a79c0c477d0099a83f009834169d590daf392d7e95fe61c659cc753c149",
-    "0x05d3135098cde734a96a4e300e9f68dfdaa06c5e596b547dbb60ab259043e21c",
-    "0x0469b3e19e21debd07973f68e8b4368ab1d43f08901b2251baf7a0cd7a621c87",
-    "0x06b35226ee9ddc45303248ccdfa4c1c4f1bd45b48ae88b2b9925839c800d35e6",
-    "0x05dffec7f92277fdbae1911c75e98c43b3604276170123feda3bf5fa8a75b2dd",
-    "0x067b6564b05e4efb97b4a9093bff338a45cddd3fe5436993ae029591097149db",
-    "0x006c2b6a1adfb6f199284a55a7bdaeb98702a424c06362d2aea54e4713285a31",
-    "0x02b94eb867a1974f967b474fdd33d17544e0c12b242c83ff8a8ee2bbd5d8528e",
-    "0x0635b61c7b2306b6152c8657244b07ef7e972455d9ea0a54948d5b0f74f9b6e1",
-    "0x03e265bf2638ed57e34d750e0e37f7640fa9575a0295c7f53fc2d01199e713a0"
+    "0x0276c9724a72f624139663d33c0195f2416b5d740809042deef4d25df85778fa",
+    "0x026e7bdce6dd89fce776d01db7437d062822ac802aa80bc6df2cebe67761fd40",
+    "0x040a174c1b66eb8d4857f44d715090e17513524a206956963c6a40fbd077b90d",
+    "0x0100c1d5df0a7f85f943ead6a3e960a5e8270a910daa8545b0cbde1f95167bd0"
   ],
   "transactionLog": [
     {
-      "hash": "0x03432a79c0c477d0099a83f009834169d590daf392d7e95fe61c659cc753c149",
+      "hash": "0x0276c9724a72f624139663d33c0195f2416b5d740809042deef4d25df85778fa",
+      "what": "declare MolfiMarket \u2014 the class that stores reach ratios, not the band"
+    },
+    {
+      "hash": "0x026e7bdce6dd89fce776d01db7437d062822ac802aa80bc6df2cebe67761fd40",
       "what": "deploy MolfiMarket"
     },
     {
-      "hash": "0x05d3135098cde734a96a4e300e9f68dfdaa06c5e596b547dbb60ab259043e21c",
-      "what": "listed BTC/USD 900s"
+      "hash": "0x040a174c1b66eb8d4857f44d715090e17513524a206956963c6a40fbd077b90d",
+      "what": "declare UpDownMarket \u2014 the direction game"
     },
     {
-      "hash": "0x0469b3e19e21debd07973f68e8b4368ab1d43f08901b2251baf7a0cd7a621c87",
-      "what": "listed ETH/USD 900s"
-    },
-    {
-      "hash": "0x06b35226ee9ddc45303248ccdfa4c1c4f1bd45b48ae88b2b9925839c800d35e6",
-      "what": "listed STRK/USD 900s"
-    },
-    {
-      "hash": "0x05dffec7f92277fdbae1911c75e98c43b3604276170123feda3bf5fa8a75b2dd",
-      "what": "sent bankroll for market 1"
-    },
-    {
-      "hash": "0x067b6564b05e4efb97b4a9093bff338a45cddd3fe5436993ae029591097149db",
-      "what": "funded market 1"
-    },
-    {
-      "hash": "0x006c2b6a1adfb6f199284a55a7bdaeb98702a424c06362d2aea54e4713285a31",
-      "what": "sent bankroll for market 2"
-    },
-    {
-      "hash": "0x02b94eb867a1974f967b474fdd33d17544e0c12b242c83ff8a8ee2bbd5d8528e",
-      "what": "funded market 2"
-    },
-    {
-      "hash": "0x0635b61c7b2306b6152c8657244b07ef7e972455d9ea0a54948d5b0f74f9b6e1",
-      "what": "sent bankroll for market 3"
-    },
-    {
-      "hash": "0x03e265bf2638ed57e34d750e0e37f7640fa9575a0295c7f53fc2d01199e713a0",
-      "what": "funded market 3"
+      "hash": "0x0100c1d5df0a7f85f943ead6a3e960a5e8270a910daa8545b0cbde1f95167bd0",
+      "what": "deploy UpDownMarket"
     }
   ],
   "complete": true,
   "oracleIsRelay": true,
-  "firstEventBlock": 14605143
+  "firstEventBlock": 14605143,
+  "supersedes": {
+    "classHash": "0x070c273cafaa5a09eaf21d1dea59f7f09eeecce443a2319b3ed59d12eaf6c092",
+    "market": "0x03b00e6e0efd3d35aeb6885ccb5e21a32f5f68a54222094196a7264da158b068",
+    "markets": 3,
+    "note": "Superseded 2026-09-06. Its Position struct stored band_low and band_high in the clear, so a market's positions could be enumerated and read. 52 markets settled against it and their history stays at this address."
+  },
+  "upDownClassHash": "0x04e1b77a5dcca83a0319103381bdd3abf656bdf2c8b73cbd9ac07c9734f49020",
+  "upDownMarket": "0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9"
 }
