@@ -71,6 +71,15 @@ const state = {
   listed: 0,
   balance: null as string | null,
   stoppedListing: null as string | null,
+  /**
+   * Cycles in a row that ended with the desk unable to list, and when the run began.
+   *
+   * A keeper that answers, reports no error and has quietly stopped listing is the failure
+   * that looks like health — it is how this desk went dark for hours and was found by hand
+   * rather than by a monitor.
+   */
+  stalledCycles: 0,
+  stalledSince: null as string | null,
 };
 
 const log = (s: string) => console.log(`[${new Date().toISOString()}] ${s}`);
@@ -252,10 +261,29 @@ async function openNewRounds(): Promise<void> {
     // Stop listing before the account cannot fund what it lists. Settling still runs: it is
     // cheaper, and leaving markets unsettled is the worse failure.
     state.stoppedListing = `balance ${balance} is below the floor ${LOW_BALANCE}`;
+    state.stalledCycles += 1;
+    if (state.stalledCycles === 1) {
+      state.stalledSince = new Date().toISOString();
+      // Once, at the edge, not every cycle: a row per cycle would bury the transition that
+      // matters under a thousand identical ones.
+      await db.record({
+        kind: "stall", network: NETWORK, pair: null, marketId: null, txHash: null,
+        ok: false, detail: `stopped listing — ${state.stoppedListing}`,
+      });
+    }
     log(`not listing: ${state.stoppedListing}`);
     return;
   }
+  if (state.stalledCycles > 0) {
+    await db.record({
+      kind: "stall", network: NETWORK, pair: null, marketId: null, txHash: null,
+      ok: true,
+      detail: `listing again after ${state.stalledCycles} cycle(s) stopped since ${state.stalledSince}`,
+    });
+  }
   state.stoppedListing = null;
+  state.stalledCycles = 0;
+  state.stalledSince = null;
 
   /**
    * Re-read immediately before listing, and decide the whole round from that one snapshot.
@@ -445,11 +473,26 @@ createServer(async (req, res) => {
   try {
     if (url.pathname === "/health" || url.pathname === "/") {
       const lagMs = state.lastCycleAt ? Date.now() - Date.parse(state.lastCycleAt) : null;
-      // Healthy means "has run recently", not "is running". A process that is up and stuck
-      // is the failure a health check exists to catch.
-      const healthy = state.cycles > 0 && lagMs !== null && lagMs < CYCLE_MS * 3;
+      /**
+       * Healthy means "is doing its job", not "is running".
+       *
+       * A process that is up and stuck is the failure a health check exists to catch, and so
+       * is one that is cycling happily while unable to list a single round. The desk went
+       * quiet for hours reporting `ok: true` throughout, because "stopped listing" lived in
+       * a field nothing checked. One stalled cycle is tolerated — the balance can dip and
+       * recover between rounds — but two in a row is the desk going dark.
+       */
+      const recent = state.cycles > 0 && lagMs !== null && lagMs < CYCLE_MS * 3;
+      const listing = state.stalledCycles < 2;
+      const healthy = recent && listing;
       return json(healthy ? 200 : 503, {
         ok: healthy,
+        // Say which half failed, so a 503 does not need a log to interpret.
+        unhealthy: healthy
+          ? null
+          : !recent
+            ? `no cycle in ${lagMs}ms, on a ${CYCLE_MS}ms loop`
+            : `has not listed a round for ${state.stalledCycles} cycles: ${state.stoppedListing}`,
         network: NETWORK,
         market: MARKET,
         relay: RELAY,

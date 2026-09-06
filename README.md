@@ -78,7 +78,7 @@ by ten to twelve independent publishers. Nothing on those pages needs a wallet.
 
 | Path | What it is |
 | --- | --- |
-| [`cairo/`](cairo) | `MolfiMarket`, the anonymizer the pool invokes, and `PriceRelay`. 68 tests. |
+| [`cairo/`](cairo) | `MolfiMarket`, the anonymizer the pool invokes, and `PriceRelay`. 88 tests. |
 | [`packages/sdk/`](packages/sdk) | The pricing kernel, mirrored by the Cairo one and pinned to it by generated vectors. Also the oracle adapter, the verifier, and the network wiring. |
 | [`apps/web/`](apps/web) | The console, the verifier pages, and the API. |
 | [`apps/keeper/`](apps/keeper) | Relays the price, settles what is due, opens the next round. |

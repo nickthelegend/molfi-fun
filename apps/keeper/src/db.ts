@@ -15,7 +15,8 @@ import pg from "pg";
  */
 
 export interface Action {
-  kind: "relay" | "settle" | "list" | "fund";
+  /** `stall` marks a transition into or out of not being able to list, never a steady state. */
+  kind: "relay" | "settle" | "list" | "fund" | "stall";
   network: string;
   pair: string | null;
   marketId: number | null;

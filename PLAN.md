@@ -94,7 +94,7 @@ fix; do this before anything cosmetic.
 
 | # | Task | State |
 | --- | --- | --- |
-| 0.1 | Fund `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f` with ≥ 30 STRK. `scripts/faucet.mjs <addr>` drips 5/24h; the 100 STRK form is Turnstile-gated and 3,000 needs a GitHub sign-in — both are human steps. | BLOCKED |
+| 0.1 | Fund `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f` with ≥ 30 STRK. | **BLOCKED** — faucet agent API attempted 2026-09-06 06:45, answered `ADDRESS_COOLDOWN`, **16.5h remaining**. No other account holds STRK (keeper 0.0800, `account-1` 0, `e2e-stranger` 0). Dripping to a second address to dodge the per-address cooldown is abuse of a shared testnet and was not done. The 100 STRK form is Turnstile-gated and 3,000 needs a GitHub sign-in — both human steps. |
 | 0.2 | Confirm the relay catches up: `curl -s molfi.fun/api/health` reports every pair `settleable: true`. | BLOCKED on 0.1 |
 | 0.3 | Confirm market 49 settles and a new round lists: `/api/markets` shows 3 open. | BLOCKED on 0.1 |
 | 0.4 | Re-run `pnpm verify`; E1 must turn PASS. | BLOCKED on 0.1 |
@@ -172,7 +172,7 @@ across three pairs that is roughly 4 STRK/hour — faster than any faucet.
 | --- | --- | --- |
 | 6.1 | Batch relays, settles and listings into one transaction each, with per-item fallback when the batch exceeds the account's fee bounds. | DONE |
 | 6.2 | Throttle relays by print age (`KEEPER_RELAY_MIN_AGE`, default 420s) rather than republishing on every Pragma tick. | DONE |
-| 6.3 | **Make `create_market` stop re-writing the pricing table per market.** It is 18M L2 gas and the dominant cost; the table is immutable per (pair, tier). Store it once and reference it. Contract change → needs a declare, so fold it into Phase 1/3. | NOT STARTED |
+| 6.3 | **Make `create_market` stop re-writing the pricing table per market.** | **DONE** — tables are content-addressed by the Poseidon hash of their knots; the first market to carry one stores it, later markets store a pointer. Measured with a matched benchmark pair: **607,150 l2_gas and 1,536 l1_data_gas saved per repeat listing** (~0.018 STRK). The class grows 9,752 → 10,037 felts so the declare goes **57 → 60 STRK**; break-even is ~167 repeat listings, about fourteen hours at three pairs and fifteen-minute rounds. **Ships only with the next declare (Phase 1/3).** |
 | 6.4 | Move Sepolia to tier 1 (1h) or tier 2 (4h) rounds if funding stays tight; 15-minute rounds are a demo luxury costing 4× tier 1. Railway var `KEEPER_TIER` (`0`=15m, `1`=1h, `2`=4h), currently `0`. | NOT STARTED |
 | 6.5 | Add a keeper alert when `stoppedListing` has been set for more than one cycle, so the desk going quiet is noticed rather than discovered. | NOT STARTED |
 
@@ -211,7 +211,7 @@ Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 
 | Gap | Evidence | Blocks |
 | --- | --- | --- |
-| `create_market` re-writes the 17-knot pricing table for every market — 18M L2 gas, ~0.5 STRK, the dominant keeper cost. | Measured on tx `0x6bb5ff59…` | 6.3 |
+| ~~`create_market` re-writes the pricing table for every market~~ — **closed, and the premise was wrong.** The 18M L2 gas figure was a three-call batch (create + transfer + fund) including per-transaction overhead; the table write is ~607k of it. Deduplicated anyway: net positive after ~167 listings. | Benchmarked in `cairo/tests/test_market.cairo` | 6.3 — closed |
 | Market bankroll is 0.05 STRK, so the desk can sell only ~0.2 STRK of exposure. The console now says so honestly, but it is not a tradeable size. | `KEEPER_BANKROLL`; the capacity line reads "DESK COVERS 0.202 STRK" | 0.5 |
 | Six Tier-1 demo features unbuilt (observer's view, anonymity set, `/verify`, guided run, settlement moment, export/import). | `docs/IDEAS.md` | 5.1–5.6 |
 | `README.md` says the Cairo suite has 68 tests; it has 81. | `snforge test` | 7.9 |
