@@ -32,4 +32,5 @@ export * from "./networks.ts";
 export * from "./positions.ts";
 export * from "./trade.ts";
 export * from "./decode.ts";
+export * from "./pool-actions.ts";
 export * from "./audit.ts";

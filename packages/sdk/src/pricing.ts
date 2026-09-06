@@ -287,3 +287,31 @@ export function sigmaForSeconds(
   }
   return { sigma1e4: sigmas[0], tableTier: 0 };
 }
+
+/**
+ * The largest stake a market can still sell at a given multiplier.
+ *
+ * `open_position` reserves the whole payout up front and refuses anything the market cannot
+ * already cover: `reserved + payout <= staked + amount + bankroll`. Solved for `amount`,
+ * with `payout = amount * multiplier / 10_000`, that is
+ *
+ *   amount * (multiplier - 10_000) / 10_000 <= staked + bankroll - reserved
+ *
+ * so the answer is the free backing scaled by how much of the payout the trader is not
+ * funding themselves. A multiplier at or below 1x is refused elsewhere for being a losing
+ * proposition, and is treated here as unbounded rather than dividing by zero.
+ *
+ * This existed only in Cairo, which meant the console cheerfully offered a 50 STRK stake
+ * into a market holding a 0.05 STRK bankroll and let the chain deliver the news as
+ * `MARKET_CANNOT_COVER_PAYOUT` after the user had signed. The rule belongs where the size is
+ * chosen, not only where it is enforced.
+ */
+export function maxStakeFor(
+  m: { staked: bigint; bankroll: bigint; reserved: bigint },
+  multiplierBps: bigint,
+): bigint {
+  const free = m.staked + m.bankroll - m.reserved;
+  if (free <= 0n) return 0n;
+  if (multiplierBps <= BPS) return free * BPS; // effectively unbounded; nothing to reserve
+  return (free * BPS) / (multiplierBps - BPS);
+}

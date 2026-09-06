@@ -1,6 +1,18 @@
 import Link from "next/link";
-import { MARKETS, POSITION_TAG, fmtStrk, secondsLabel } from "@molfi/sdk";
-import { NETWORK } from "@/lib/rpc";
+import {
+  MARKETS,
+  MAX_MULTIPLIER_BPS,
+  NETWORKS,
+  POSITION_TAG,
+  decodePrint,
+  fmtStrk,
+  maxStakeFor,
+  pairId,
+  secondsLabel,
+} from "@molfi/sdk";
+import { hash } from "starknet";
+import { NETWORK, ORACLE_ADDRESS, call } from "@/lib/rpc";
+import { PrivateOrder } from "@/components/PrivateOrder";
 import { marketAddress, readMarket, readMarketCount } from "@/lib/market-reads";
 
 /**
@@ -23,18 +35,123 @@ export const metadata = {
     "Exactly what an observer can and cannot learn from a molfi position, with the chain data behind each claim.",
 };
 
+
+/**
+ * The oracle's last median for a pair, as a plain integer.
+ *
+ * The privacy page needs a real price to draw a real band around; this is the same read the
+ * health route makes. Returns null rather than throwing, because a page whose job is to
+ * explain the design must still render when a node is having a bad minute.
+ */
+async function lastPrint(pair: string): Promise<bigint | null> {
+  if (!ORACLE_ADDRESS) return null;
+  try {
+    const raw = await call(ORACLE_ADDRESS, hash.getSelectorFromName("get_data_median"), [
+      "0x0",
+      "0x" + pairId(pair).toString(16),
+    ]);
+    const price = decodePrint(raw).raw;
+    return price > 0n ? price : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function PrivacyPage() {
   const address = marketAddress();
+
+  /**
+   * Addresses read from the SDK, not from the browser's chain module.
+   *
+   * `lib/chain` is a client module. Imported into a server component its exports arrive as
+   * client references, so `ADDRESSES` was plain `undefined` here and the guard below could
+   * never pass — the section did not render and nothing said why. The network table is the
+   * same source that module reads anyway.
+   */
+  const chain = NETWORKS[NETWORK];
   let totals = { markets: 0, staked: 0n, positions: "unknowable" as const };
+
+  /**
+   * A real market and a real band, so the action list below is the genuine article.
+   *
+   * The newest open market, priced around the midpoint of its own band — the same shape the
+   * console paints by default. If nothing is open the section is simply not rendered, rather
+   * than shown against a market that does not exist.
+   */
+  let order: {
+    marketId: number;
+    pair: string;
+    bandLow: bigint;
+    bandHigh: bigint;
+    stake: bigint;
+    open: boolean;
+  } | null = null;
 
   if (address) {
     try {
       const count = await readMarketCount(address);
-      let staked = 0n;
-      for (let id = 1; id <= Math.min(count, 24); id += 1) {
-        staked += (await readMarket(address, id)).staked;
+
+      /**
+       * One bounded read, used for both numbers on this page.
+       *
+       * It used to read twenty-four markets for the staked total and then up to twelve more
+       * looking for an open one. Against a slow node the whole block timed out and the page
+       * silently lost its live figures — the section explaining the integration simply did
+       * not render, with nothing to say why.
+       */
+      const recent = await Promise.all(
+        Array.from({ length: Math.min(count, 12) }, (_, i) => count - i)
+          .filter((id) => id >= 1)
+          .map((id) => readMarket(address, id)),
+      );
+
+      totals = {
+        markets: count,
+        staked: recent.reduce((t, m) => t + m.staked, 0n),
+        positions: "unknowable",
+      };
+
+      /**
+       * The market the action list is built against: the newest open one, or failing that
+       * simply the newest.
+       *
+       * Rounds are fifteen minutes and the keeper relists once the previous one settles, so
+       * there are stretches with nothing open. Requiring an open market meant this section
+       * vanished during them — a reader who happened to arrive in a gap saw no integration
+       * at all, which is a worse lie than showing a closed round and saying it is closed.
+       * Every field below is read from the chain either way; only whether the wallet would
+       * be able to submit it right now changes, and the section says which.
+       */
+      const now = Math.floor(Date.now() / 1000);
+      const live = recent.filter((m) => !m.isSettled && m.cutoffAt > now);
+      const subject = live[0] ?? recent[0];
+      if (subject) {
+        // An open market carries no settled price, so the band is drawn around the oracle's
+        // own last print for the pair — the same number the market will settle against.
+        const spot = await lastPrint(subject.pair);
+        if (spot) {
+          const half = (spot * subject.sigma1e4) / 100_000_000n;
+          order = {
+            marketId: subject.id,
+            pair: subject.pair,
+            bandLow: spot - half,
+            bandHigh: spot + half,
+            /**
+             * A size this market could actually sell.
+             *
+             * Priced at the widest multiplier the contract will ever quote, so the number is
+             * acceptable whatever band the reader would have picked. Showing a round 5 STRK
+             * against a desk carrying a 0.05 STRK bankroll would be an action list the chain
+             * rejects — the one thing this section must not be.
+             */
+            stake:
+              maxStakeFor(subject, MAX_MULTIPLIER_BPS) < 5n * 10n ** 18n
+                ? maxStakeFor(subject, MAX_MULTIPLIER_BPS)
+                : 5n * 10n ** 18n,
+            open: live.length > 0,
+          };
+        }
       }
-      totals = { markets: count, staked, positions: "unknowable" };
     } catch {
       // A dead node must not turn this page into an error. The claims below are properties
       // of the contract, not of whether we could read it just now.
@@ -80,6 +197,18 @@ export default async function PrivacyPage() {
             </div>
           </div>
         </header>
+
+        {order && order.stake > 0n && chain.privacyPool && chain.stakeToken && address ? (
+          <PrivateOrder
+            addresses={{ pool: chain.privacyPool, token: chain.stakeToken, market: address }}
+            marketId={order.marketId}
+            pair={order.pair}
+            bandLow={order.bandLow}
+            bandHigh={order.bandHigh}
+            stake={order.stake}
+            open={order.open}
+          />
+        ) : null}
 
         <Group title="Hidden" tone="green">
           <Row

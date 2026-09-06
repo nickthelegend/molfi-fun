@@ -9,6 +9,8 @@ import {
 } from "../src/generated/markets.ts";
 import { HOUSE_EDGE_BPS as EDGE_AT_FIT, SIGMA_SHADE, HORIZONS } from "../src/calibrate.ts";
 import { pairId } from "../src/pragma.ts";
+import { maxStakeFor, payoutFor } from "../src/pricing.ts";
+import { parseStrk } from "../src/format.ts";
 
 const btc = marketByKey("BTC")!;
 const SPOT = 79_751_52500000n; // BTC in Pragma's 8dp fixed point
@@ -156,4 +158,39 @@ test("round labels read as durations, not as decimals", () => {
 
 test("calibrated markets and display markets stay in step", () => {
   assert.equal(CALIBRATED_MARKETS.length, MARKETS.length);
+});
+
+/**
+ * `maxStakeFor` has to agree with the contract exactly, because the whole point of it is to
+ * stop the console offering a size `open_position` will refuse. The assertion in Cairo is
+ * `reserved + payout <= staked + amount + bankroll`; these check the boundary from both
+ * sides, since being one wei optimistic is the same bug as not having the function.
+ */
+const MULT = 12469n; // the multiplier a real Sepolia trade was actually sold at
+
+const covers = (m: { staked: bigint; bankroll: bigint; reserved: bigint }, amount: bigint) =>
+  m.reserved + payoutFor(amount, MULT) <= m.staked + amount + m.bankroll;
+
+test("maxStakeFor returns the largest stake the contract would accept", () => {
+  const m = { staked: 0n, bankroll: parseStrk(0.05), reserved: 0n };
+  const max = maxStakeFor(m, MULT);
+  assert.ok(max > 0n);
+  assert.ok(covers(m, max), "the reported maximum must itself be acceptable");
+  // `payout_for` truncates, so the exact boundary is fuzzy by a wei or two — but not by
+  // more than that, and a maximum that is off by a real amount is a maximum worth nothing.
+  assert.ok(!covers(m, max + 16n), "sixteen wei more must be refused");
+});
+
+test("maxStakeFor counts the stake already in the market as backing", () => {
+  const empty = { staked: 0n, bankroll: parseStrk(1), reserved: 0n };
+  const busy = { staked: parseStrk(3), bankroll: parseStrk(1), reserved: parseStrk(1) };
+  assert.ok(maxStakeFor(busy, MULT) > maxStakeFor(empty, MULT));
+  assert.ok(covers(busy, maxStakeFor(busy, MULT)));
+  assert.ok(!covers(busy, maxStakeFor(busy, MULT) + 16n));
+});
+
+test("maxStakeFor is zero when everything is already reserved", () => {
+  const one = parseStrk(1);
+  assert.equal(maxStakeFor({ staked: 0n, bankroll: one, reserved: one }, MULT), 0n);
+  assert.equal(maxStakeFor({ staked: 0n, bankroll: one, reserved: one * 2n }, MULT), 0n);
 });

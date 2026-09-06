@@ -9,6 +9,7 @@ import {
   fmtMultiplier,
   fmtPrice,
   fmtStrk,
+  maxStakeFor,
   parseStrk,
   payoutFor,
   roundLabel,
@@ -35,6 +36,36 @@ function errorFlash(e: unknown): string {
 
 /** Stakes the deck offers, in whole STRK. */
 const STAKE_STEPS = [1, 2, 5, 10, 25, 50].map((n) => parseStrk(n));
+
+/**
+ * The sizes this market can actually sell, given what it can cover.
+ *
+ * `open_position` reserves the whole payout at open and refuses anything the bankroll plus
+ * the stake cannot already back. The rail did not know that: it offered 1 to 50 STRK into
+ * markets holding a 0.05 STRK bankroll, so *every* detent reverted with
+ * `MARKET_CANNOT_COVER_PAYOUT` — after the wallet had been opened and the user had signed.
+ *
+ * So the ladder is the standard rail trimmed to what fits, and when nothing fits, six
+ * detents scaled to the desk itself. A small desk is a real constraint and the honest thing
+ * is to let it be traded at its real size, not to offer sizes it will refuse.
+ */
+/**
+ * A stake, at a precision that can show it.
+ *
+ * The rail used to be whole STRK only, so the readout was whole STRK too. On a desk whose
+ * whole bankroll is 0.05 STRK that printed every size as "0", which reads as a broken screen
+ * rather than as a small one.
+ */
+const fmtStake = (v: bigint) => fmtStrk(v, v > 0n && v < parseStrk(1) ? 3 : 0);
+
+function stakeLadder(capacity: bigint | null): bigint[] {
+  if (capacity === null) return STAKE_STEPS;
+  if (capacity <= 0n) return [];
+  const fits = STAKE_STEPS.filter((s) => s <= capacity);
+  if (fits.length > 0) return fits;
+  const scaled = [16n, 8n, 4n, 3n, 2n, 1n].map((d) => capacity / d).filter((v) => v > 0n);
+  return [...new Set(scaled)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
 const COIN_TONE: Record<string, string> = {
   BTC: "#f7931a",
   ETH: "#8098ee",
@@ -79,7 +110,7 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
   // placeholder to avoid a divide-by-zero produces a legal-looking but nonsense band
   // window, and the band then sticks at maximum width once the real price arrives.
   const band = useBand(market, tier, state.spot);
-  const stake = STAKE_STEPS[stakeStep - 1];
+
 
   const say = useCallback((m: string) => {
     setFlash(m);
@@ -112,6 +143,19 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
       Math.abs(m.cutoffAt - now - want) < Math.abs(best.cutoffAt - now - want) ? m : best,
     );
   }, [state.markets, market.label, tier, now]);
+
+  /**
+   * What the target market can still cover at the quoted multiplier, and the sizes that fit.
+   *
+   * Null while there is no market or no quote yet — unknown is not zero, and a rail that
+   * collapses to nothing every time a price read is in flight is worse than one that waits.
+   */
+  const capacity = useMemo(
+    () => (target && band.ready ? maxStakeFor(target, band.multiplierBps) : null),
+    [target, band.ready, band.multiplierBps],
+  );
+  const ladder = useMemo(() => stakeLadder(capacity), [capacity]);
+  const stake = ladder[Math.min(stakeStep, ladder.length) - 1] ?? 0n;
 
   const claimable = state.positions.filter((p) => p.won === true && !p.claimedTxHash);
 
@@ -158,6 +202,11 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
     }
     if (!band.band) {
       say("NO PRICE YET — THE BAND IS NOT SET");
+      return;
+    }
+    // The contract would refuse this anyway; refusing it here costs nobody a signature.
+    if (stake <= 0n) {
+      say("DESK CANNOT COVER ANY SIZE ON THIS BAND");
       return;
     }
     try {
@@ -218,7 +267,7 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
     <div className="tiled min-h-dvh">
       <DeviceFrame
         stakeStep={stakeStep}
-        maxStake={STAKE_STEPS.length}
+        maxStake={Math.max(ladder.length, 1)}
         onStakeStep={setStakeStep}
         soundOn={sound}
         onToggleSound={() => setSound((s) => !s)}
@@ -308,7 +357,7 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
             <div className="flex items-baseline justify-between">
               <span className="label">Pays</span>
               <span className="tnum text-[13px] text-white">
-                {fmtStrk(stake, 0)} <span className="text-dim">→</span>{" "}
+                {fmtStake(stake)} <span className="text-dim">→</span>{" "}
                 <span className="text-green">
                   {band.ready ? fmtStrk(payoutFor(stake, band.multiplierBps), 2) : "—"}
                 </span>
@@ -317,6 +366,16 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
             <div className="tnum glow-amber mt-1 text-[34px] font-bold leading-none text-amber">
               {band.ready ? fmtMultiplier(band.multiplierBps) : "—"}
             </div>
+            {/* The desk's own limit, shown only when it actually binds. A market that can
+                cover the whole rail has nothing to say here, and a permanent line reading
+                "capacity: plenty" is furniture. */}
+            {capacity !== null && capacity < STAKE_STEPS[STAKE_STEPS.length - 1] ? (
+              <p className="mono mt-1.5 text-[9px] leading-[1.45] tracking-[0.08em] text-amber-2/60">
+                {capacity > 0n
+                  ? `DESK COVERS ${fmtStake(capacity)} STRK AT THIS BAND`
+                  : "DESK IS FULL — NO SIZE AVAILABLE AT THIS BAND"}
+              </p>
+            ) : null}
             <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
               {/* What is actually hidden depends on the route, and saying "your band and
                   size stay hidden" on a direct trade would be a lie printed on the screen
