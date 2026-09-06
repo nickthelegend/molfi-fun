@@ -46,12 +46,14 @@ const TICK_MS = 100;
  */
 async function fetchRealTape(
   marketKey: string,
-): Promise<{ price: bigint; returns: number[] }> {
+): Promise<{ price: bigint; returns: number[]; source: string | null }> {
   const j = await fetchJson<{
     price?: string | null;
     returns?: number[];
     error?: string;
     markError?: string | null;
+    /** Which exchange the mark came from, e.g. `binance:BTCUSDT`. */
+    source?: string | null;
   }>(`/api/price?market=${encodeURIComponent(marketKey)}&history=1`);
   // `markError` is the exchange's own reason and is worth more than "price unavailable" —
   // a 451 means the region is geo-blocked, which is a different fix from a 500.
@@ -61,7 +63,7 @@ async function fetchRealTape(
     throw new Error(j.markError ?? j.error ?? "the price service returned no price");
   }
   if (!j.returns || j.returns.length < 8) throw new Error("no recent tape to replay");
-  return { price: BigInt(j.price), returns: j.returns };
+  return { price: BigInt(j.price), returns: j.returns, source: j.source ?? null };
 }
 
 /** How often the on-chain median is re-read. Pragma publishes far less often than this. */
@@ -75,6 +77,14 @@ export interface DeskState {
   ready: boolean;
   /** Non-null when the real price could not be fetched. */
   priceError: string | null;
+  /**
+   * Which exchange the mark is coming from, so the console can name it.
+   *
+   * The desk replays a real tape and the screen said "PRAGMA TAPE", which is the settlement
+   * oracle and not this number's source at all. A price with the wrong attribution is worse
+   * than one with none.
+   */
+  markSource: string | null;
   market: MarketDef;
   tier: number;
   spot: bigint;
@@ -114,6 +124,7 @@ export function usePaperDesk(initialMarketKey = "BTC") {
   const lastSettledRef = useRef<PaperTicket | null>(null);
   const [ready, setReady] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [markSource, setMarkSource] = useState<string | null>(null);
 
   if (!engineRef.current) engineRef.current = new PaperEngine();
 
@@ -126,8 +137,9 @@ export function usePaperDesk(initialMarketKey = "BTC") {
 
     void (async () => {
       try {
-        const { price: start, returns } = await fetchRealTape(market.key);
+        const { price: start, returns, source } = await fetchRealTape(market.key);
         if (cancelled) return;
+        setMarkSource(source);
 
         // Start somewhere different each session so two desks are not in lockstep.
         const offset = Math.floor(Math.random() * returns.length);
@@ -273,6 +285,7 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     oracleError,
     ready: ready && feedRef.current !== null,
     priceError,
+    markSource,
     market,
     tier,
     spot,

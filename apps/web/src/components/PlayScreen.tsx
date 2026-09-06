@@ -390,8 +390,20 @@ export function PlayScreen() {
             className={`screen overflow-hidden rounded-[15px] ${shaking ? "shake" : ""}`}
             onAnimationEnd={() => setShaking(false)}
           >
+            {/*
+              * Name the feed this price actually came from.
+              *
+              * This said "PRAGMA TAPE", which is the settlement oracle — a different feed,
+              * read from a different chain, shown separately two rows down. The mark on the
+              * big readout is a real exchange tape, and attributing it to the wrong source
+              * is worse than not attributing it at all.
+              */}
             <StatusBar
-              network="PAPER DESK · PRAGMA TAPE"
+              network={
+                state.markSource
+                  ? `PAPER DESK · ${state.markSource.replace(":", " ").toUpperCase()}`
+                  : "PAPER DESK"
+              }
               connected={state.ready}
               riding={state.openTickets.length}
               attract={attract}
