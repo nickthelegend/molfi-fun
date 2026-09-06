@@ -98,7 +98,23 @@ fix; do this before anything cosmetic.
 | 0.2 | Confirm the relay catches up: `curl -s molfi.fun/api/health` reports every pair `settleable: true`. | BLOCKED on 0.1 |
 | 0.3 | Confirm market 49 settles and a new round lists: `/api/markets` shows 3 open. | BLOCKED on 0.1 |
 | 0.4 | Re-run `pnpm verify`; E1 must turn PASS. | BLOCKED on 0.1 |
-| 0.5 | Raise `KEEPER_BANKROLL` to ≥ `2` STRK so a market can cover a stake worth firing. At the live value the desk can sell ~0.2 STRK of exposure, which reads as broken even when it works. **Edit the Railway variable, not the code**: `apps/keeper/src/index.ts` defaults to `0.2` STRK but the deployed service overrides it to `0.05`. Project `cf1bcefd-0fad-490a-af41-158e1c375255`, service `b081214d-69ef-43cf-83da-638a165af468`. | BLOCKED on 0.1 |
+| 0.5 | Raise `KEEPER_BANKROLL` so a market can cover a stake worth firing — at the live 0.05 the desk sells ~0.2 STRK of exposure, which reads as broken even when it works. **Edit the Railway variable, not the code**: `apps/keeper/src/index.ts` defaults to `0.2` STRK, the deployed service overrides it to `0.05`. Project `cf1bcefd-0fad-490a-af41-158e1c375255`, service `b081214d-69ef-43cf-83da-638a165af468`. Set it together with `KEEPER_TIER` using the table below — **BLOCKED on 0.1 and deliberately not guessed at**: the right pair of values depends on how much arrives, and setting an unverifiable config now would be a guess dressed as a decision. | BLOCKED on 0.1 |
+
+**Burn, measured on Sepolia today.** Listing a market costs ~0.50 STRK (create + transfer +
+fund, batched), a settle ~0.15, a relay batch ~0.10 at most once per `KEEPER_RELAY_MIN_AGE`
+(420s). The relay is a fixed ~0.85 STRK/hour that does not shrink with the round length. The
+table dedup from 6.3 saves ~0.018 per listing, which is real but does not move this table.
+
+| `KEEPER_TIER` | Round | Listings/hr | Burn/hr excl. bankroll | + bankroll `B`/hr | 100 STRK lasts |
+| --- | --- | --- | --- | --- | --- |
+| `0` | 15m | 12 | ~7.6 STRK | `12B` | ~4h at `B=0.5`, ~1h at `B=2` |
+| `1` | 1h | 3 | ~2.6 STRK | `3B` | ~24h at `B=0.5`, ~11h at `B=2` |
+| `2` | 4h | 0.75 | ~1.3 STRK | `0.75B` | ~60h at `B=0.5`, ~35h at `B=2` |
+
+**Recommended: `KEEPER_TIER=1`, `KEEPER_BANKROLL=1000000000000000000` (1 STRK)** on a 100 STRK
+top-up — an hour-long round still settles inside a judging session, and 1 STRK of bankroll
+sells ~4 STRK of exposure, which is a size worth firing. At 3,000 STRK, `KEEPER_TIER=0`
+becomes affordable again and the desk goes back to a settlement every fifteen minutes.
 
 ### Phase 1 — Put the trading route on Sepolia · **BLOCKED (B-1)**
 
@@ -159,9 +175,9 @@ real position exists.
 | 5.1 | **Idea 1 — the observer's view.** For a real position, show side by side what the chain reveals (commitment, reach ratios, stake, owner) and what it cannot (the band), read live from Sepolia. | BLOCKED on 2.1 |
 | 5.2 | **Idea 2 — anonymity set per market.** Count open positions sharing an indistinguishable reach; print it on `/m/<id>` and the console. | BLOCKED on 2.1 |
 | 5.3 | **Idea 3 — `/verify`.** Paste any commitment, get the full audit. The verifier is per-market today (`/api/audit/<id>`); this is the per-position one a trader wants. Reuse `readPosition` in `apps/web/src/lib/market-reads.ts`. | BLOCKED on 2.1 |
-| 5.4 | **Idea 5 — guided demo run.** One key drives connect → band → fire → settle → claim with narration. Judges have four minutes. | NOT STARTED |
-| 5.5 | **Idea 8 — the settlement moment.** The band resolves, the ring completes, the payout counts up. `settleFlash` and the 620ms expanding ring exist in `RangeChart`; the payout count-up does not. | NOT STARTED |
-| 5.6 | **Idea 10 — position export/import in the UI.** The secret is the only key to the payout; recovery must be a first-class flow, not console-only. | NOT STARTED |
+| 5.4 | **Idea 5 — guided demo run.** | **DONE** — six narrated steps driving the real engine and the real keys, entered from the menu, ended by any touch. Verified end to end on production: the balance moved $250.00 → $248.50 on a real $1.50 stake, so it is the product running rather than a recording. |
+| 5.5 | **Idea 8 — the settlement moment.** | **DONE** — the amount eases in over 620ms, scaled in integers so the display cannot drift from what was paid, and lands on the exact value even when no animation frame ever arrives. Verified: 37 distinct eased steps, monotonic, exact landing. The ramp itself could not be watched — the browser pane delivers 0 rAF frames/sec — which is also how the reduced-motion path was confirmed. |
+| 5.6 | **Idea 10 — position export/import in the UI.** | **DONE** — the functions existed; the UI could not be reached. Export and import live in the Pool view, the Pool view lives behind the menu, and **the live desk had no menu** — `MenuSheet` has taken a `live` prop since it was written and nothing ever passed it. Wired, with the paper-only props made optional so the live menu shows no paper balance and no dead reset key. Round trip verified against the real store: a tampered file is refused (*"it has been altered"*), a valid one is accepted with the commitment recomputed from the preimage, listed, and exportable. |
 
 ### Phase 6 — Keeper economics, so it does not stall again · **NOT STARTED**
 
@@ -173,23 +189,23 @@ across three pairs that is roughly 4 STRK/hour — faster than any faucet.
 | 6.1 | Batch relays, settles and listings into one transaction each, with per-item fallback when the batch exceeds the account's fee bounds. | DONE |
 | 6.2 | Throttle relays by print age (`KEEPER_RELAY_MIN_AGE`, default 420s) rather than republishing on every Pragma tick. | DONE |
 | 6.3 | **Make `create_market` stop re-writing the pricing table per market.** | **DONE** — tables are content-addressed by the Poseidon hash of their knots; the first market to carry one stores it, later markets store a pointer. Measured with a matched benchmark pair: **607,150 l2_gas and 1,536 l1_data_gas saved per repeat listing** (~0.018 STRK). The class grows 9,752 → 10,037 felts so the declare goes **57 → 60 STRK**; break-even is ~167 repeat listings, about fourteen hours at three pairs and fifteen-minute rounds. **Ships only with the next declare (Phase 1/3).** |
-| 6.4 | Move Sepolia to tier 1 (1h) or tier 2 (4h) rounds if funding stays tight; 15-minute rounds are a demo luxury costing 4× tier 1. Railway var `KEEPER_TIER` (`0`=15m, `1`=1h, `2`=4h), currently `0`. | NOT STARTED |
-| 6.5 | Add a keeper alert when `stoppedListing` has been set for more than one cycle, so the desk going quiet is noticed rather than discovered. | NOT STARTED |
+| 6.4 | Move Sepolia to a longer round if funding stays tight. Railway var `KEEPER_TIER` (`0`=15m, `1`=1h, `2`=4h), currently `0`. | **BLOCKED on 0.1** — the burn table under 0.5 has the measured numbers and a recommendation for each funding level. Not set now: with the keeper unable to list at all, any value is unverifiable. |
+| 6.5 | Add a keeper alert when `stoppedListing` persists. | **DONE** — `/health` now returns **503** on either of two counts: no cycle in three periods, or two consecutive cycles unable to list, with an `unhealthy` string saying which. Verified in production: `503`, `ok:false`, *"has not listed a round for 3 cycles: balance … below the floor …"*, where it previously answered `200`/`ok:true` while completely stalled. One `stall` ledger row per transition — confirmed 1 row across 3 stalled cycles, not one per cycle. |
 
 ### Phase 7 — Verification and hygiene · **IN PROGRESS**
 
 | # | Task | State |
 | --- | --- | --- |
-| 7.1 | 81 Cairo tests (`pnpm test:cairo`). | DONE |
+| 7.1 | Cairo tests (`pnpm test:cairo`). | **DONE** — 88, five of them new for the table dedup. |
 | 7.2 | 84 SDK tests + 9 keeper tests (`pnpm test`). | DONE |
 | 7.3 | Three packages typecheck clean (`pnpm typecheck`). | DONE |
-| 7.4 | `pnpm api:check` — every endpoint including failure paths. | DONE |
+| 7.4 | `pnpm api:check` — every endpoint including failure paths. | **DONE** — all checks pass against `https://molfi.fun`. Against a local dev server it reports a 502 on `/api/markets`; that is the rate-limited public node, not a regression. |
 | 7.5 | `pnpm verify` — 37 checks against the real network. **34 PASS, 1 FAIL, 2 UNTESTED.** | IN PROGRESS |
 | 7.6 | `docs/TESTPLAN.md` — 156 items executed in a real browser. 143 PASS, 13 untestable, 0 outstanding FAIL. | DONE |
 | 7.7 | No mocks, stubs, fixtures, TODOs or debug leftovers in shipped source. | DONE |
 | 7.8 | Re-run 7.1–7.6 after every phase above; treat any regression as blocking. | NOT STARTED |
-| 7.9 | Update `README.md` "Live right now" and the networks table once mainnet exists. It currently says the market contract has "68 tests" — the real number is 81. | NOT STARTED |
-| 7.10 | Update `docs/API.md` if Phase 1 changes any response shape. | NOT STARTED |
+| 7.9 | README test count. | **DONE** — was 68, now 88 and correct. The "Live right now" and networks tables still need the mainnet row **once mainnet exists** (Phase 3). |
+| 7.10 | `docs/API.md` accuracy. | **DONE** — `/api/keeper` was entirely undocumented while the README claims the file covers every endpoint (`pnpm verify` G4 checks docs→code, not code→docs, so it could not catch this). `/api/markets` was described as "every market the contract holds" when it is the newest sixty; `count`, `chainNow` and `network` were undocumented. Corrected. |
 
 ---
 
@@ -213,10 +229,19 @@ Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 | --- | --- | --- |
 | ~~`create_market` re-writes the pricing table for every market~~ — **closed, and the premise was wrong.** The 18M L2 gas figure was a three-call batch (create + transfer + fund) including per-transaction overhead; the table write is ~607k of it. Deduplicated anyway: net positive after ~167 listings. | Benchmarked in `cairo/tests/test_market.cairo` | 6.3 — closed |
 | Market bankroll is 0.05 STRK, so the desk can sell only ~0.2 STRK of exposure. The console now says so honestly, but it is not a tradeable size. | `KEEPER_BANKROLL`; the capacity line reads "DESK COVERS 0.202 STRK" | 0.5 |
-| Six Tier-1 demo features unbuilt (observer's view, anonymity set, `/verify`, guided run, settlement moment, export/import). | `docs/IDEAS.md` | 5.1–5.6 |
-| `README.md` says the Cairo suite has 68 tests; it has 81. | `snforge test` | 7.9 |
-| No alerting when the keeper stops listing. It went quiet for hours today and was found by hand. | Railway logs | 6.5 |
+| ~~Six Tier-1 demo features unbuilt~~ — **three closed** (guided run, settlement moment, export/import). Three remain and are blocked on a real position existing: observer's view, anonymity set, `/verify`. | `docs/IDEAS.md` | 5.1–5.3 |
+| ~~README test count~~ — **closed.** | `snforge test` | 7.9 — closed |
+| ~~No alerting when the keeper stops listing~~ — **closed.** `/health` answers 503 with the reason; one ledger row per transition. | Verified in production | 6.5 — closed |
 | Sepolia rounds are 15 minutes, which is a demo luxury at 4× the keeper cost of tier 1. | `KEEPER_TIER=0` | 6.4 |
+
+### Found by executing this plan, and closed
+
+| Gap | Why it mattered | Where |
+| --- | --- | --- |
+| **The live desk had no menu at all.** Shield, withdraw, your positions, and the export that is the only way to recover a payout were reachable only from the demo desk, which correctly reports it has no pool. `MenuSheet` has accepted a `live` prop since it was written; nothing ever passed it. | The pool interaction UI — the part that makes this a STRK20 submission — was dead from the user's side on the only desk where it applies. | 5.6 |
+| **A stored position vanished from the list whenever `/api/markets` was slow.** The read cycle threw before it ever built the position list, so the local store — the only index of what a browser owns — went invisible during a node outage. | A payout looked lost because a node was busy. The market data is enrichment for a row; it now degrades the row to "not found on chain" rather than removing it. | 5.6 |
+| **`/api/keeper` was undocumented** while the README claims `docs/API.md` covers every endpoint, and **`/api/markets` was documented as returning every market** when it returns the newest sixty. | `pnpm verify` G4 checks that every path the docs name exists, not that every path that exists is named, so neither could be caught automatically. | 7.10 |
+| **The count-up would have shown `$0.00` in a tab that is not painting.** `requestAnimationFrame` does not fire there, and the initial value was zero. | Introduced and caught in the same run: the animation is decoration, the number is not. A timeout now guarantees the landing. | 5.5 |
 
 ### Untestable, not gaps — recorded so they are not re-litigated
 
