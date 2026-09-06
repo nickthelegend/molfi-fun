@@ -18,6 +18,7 @@ import {
   directionSettlement,
   outcomeOf,
 } from "../src/direction.ts";
+import { commitmentOf, commitmentOfDirection } from "../src/positions.ts";
 
 test("the multiplier is two, less the edge, exactly", () => {
   // The same three the contract asserts.
@@ -74,4 +75,30 @@ test("the felts match the contract's encoding", () => {
   assert.equal(directionFelt("down"), DOWN);
   assert.equal(UP, 0n);
   assert.equal(DOWN, 1n);
+});
+
+test("a direction commitment can never be replayed as a range commitment", () => {
+  // Same secret, same id, same everything the two hashes share. Only the domain tag differs,
+  // and both contracts number their markets from one — so without distinct tags a preimage
+  // valid on the range market would be valid on the direction market.
+  const secret = "0x1234";
+  const direction = commitmentOfDirection({ secret, roundId: 1, direction: "up" });
+  const range = commitmentOf({ secret, marketId: 1, bandLow: 0n, bandHigh: 0n });
+  assert.notEqual(direction, range);
+});
+
+test("up and down are different commitments under the same secret", () => {
+  const secret = "0xbeef";
+  const up = commitmentOfDirection({ secret, roundId: 7, direction: "up" });
+  const down = commitmentOfDirection({ secret, roundId: 7, direction: "down" });
+  assert.notEqual(up, down);
+  // And neither is guessable from the other without the secret, which is the whole point of
+  // hashing one bit alongside 31 bytes of entropy.
+  assert.match(up, /^0x[0-9a-f]+$/);
+});
+
+test("the commitment is stable — the same preimage always resolves to the same ticket", () => {
+  const a = commitmentOfDirection({ secret: "0xa", roundId: 3, direction: "down" });
+  const b = commitmentOfDirection({ secret: "0xa", roundId: 3, direction: "down" });
+  assert.equal(a, b);
 });

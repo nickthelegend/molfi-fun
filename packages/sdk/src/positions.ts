@@ -75,3 +75,35 @@ export function commitmentOf(s: PositionSecret): string {
     ]),
   );
 }
+
+/** The domain tag for a direction ticket, matching `DIRECTION_TAG` in `updown.cairo`. */
+const DIRECTION_TAG = "MOLFI_DIRECTION_V1";
+
+/** The secret a direction ticket is opened under. No band — there is nothing to hide but a bit. */
+export interface DirectionSecret {
+  secret: string;
+  roundId: number;
+  direction: "up" | "down";
+}
+
+/**
+ * The commitment a direction ticket is stored under.
+ *
+ * Mirrors `commitment_of` in `updown.cairo`: `poseidon(DIRECTION_TAG, secret, round_id,
+ * direction)`, with the direction as the felt the contract uses — 0 for up, 1 for down.
+ *
+ * A direction is one bit, which is why the secret is inside the hash rather than beside it.
+ * Without it, two guesses would open every ticket on the board. The **tag** is the other half:
+ * both games hash `(tag, secret, id, …)` and both number their markets from one, so without
+ * distinct domains a preimage valid on one contract would be valid on the other.
+ */
+export function commitmentOfDirection(s: DirectionSecret): string {
+  return num.toHex(
+    hash.computePoseidonHashOnElements([
+      shortStringToFelt(DIRECTION_TAG),
+      s.secret,
+      num.toHex(BigInt(s.roundId)),
+      num.toHex(s.direction === "up" ? 0n : 1n),
+    ]),
+  );
+}

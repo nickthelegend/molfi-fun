@@ -96,3 +96,81 @@ export function decodeTable(r: string[]): bigint[] {
   return knots;
 }
 
+/**
+ * A direction round, exactly as `UpDownMarket.get_round` lays it out.
+ *
+ * Offsets are the whole risk here and they are not guessable: Cairo flattens a struct, a
+ * `u256` is two felts with the low limb first, and a `u64`/`u32`/`bool` is one. A reader that
+ * assumes one felt per field produces plausible nonsense rather than an error — that exact
+ * mistake once reported a 1 STRK stake as 8 trillion. Counted against
+ * `cairo/src/updown.cairo`'s `Round`, field by field.
+ */
+export interface OnChainRound {
+  id: number;
+  pair: string;
+  cutoffAt: number;
+  roundSeconds: number;
+  token: string;
+  /** The price every ticket in this round is measured against, fixed when it was listed. */
+  referencePrice: bigint;
+  referenceAt: number;
+  referenceSources: number;
+  houseEdgeBps: bigint;
+  /** One number for both sides. If this ever differed per side the reserve would leak. */
+  multiplierBps: bigint;
+  settledPrice: bigint;
+  settledAt: number;
+  settledBlockAt: number;
+  settledSources: number;
+  isSettled: boolean;
+  staked: bigint;
+  paid: bigint;
+  bankroll: bigint;
+  reserved: bigint;
+}
+
+export function decodeRound(id: number, r: string[]): OnChainRound {
+  return {
+    id,
+    pair: toLabel(r[0]),
+    cutoffAt: Number(BigInt(r[1])),
+    roundSeconds: Number(BigInt(r[2])),
+    token: r[3],
+    referencePrice: u256(r[4], r[5]),
+    referenceAt: Number(BigInt(r[6])),
+    referenceSources: Number(BigInt(r[7])),
+    houseEdgeBps: u256(r[8], r[9]),
+    multiplierBps: u256(r[10], r[11]),
+    settledPrice: u256(r[12], r[13]),
+    settledAt: Number(BigInt(r[14])),
+    settledBlockAt: Number(BigInt(r[15])),
+    settledSources: Number(BigInt(r[16])),
+    isSettled: BigInt(r[17]) === 1n,
+    staked: u256(r[18], r[19]),
+    paid: u256(r[20], r[21]),
+    bankroll: u256(r[22], r[23]),
+    reserved: u256(r[24], r[25]),
+  };
+}
+
+/** A direction ticket: what it cost, and nothing about which way it points. */
+export interface OnChainTicket {
+  roundId: number;
+  stake: bigint;
+  multiplierBps: bigint;
+  claimed: boolean;
+  exists: boolean;
+  /** Zero for a pool ticket, where the secret is the only credential. */
+  owner: string;
+}
+
+export function decodeTicket(r: string[]): OnChainTicket {
+  return {
+    roundId: Number(BigInt(r[0])),
+    stake: BigInt(r[1]),
+    multiplierBps: u256(r[2], r[3]),
+    claimed: BigInt(r[4]) === 1n,
+    exists: BigInt(r[5]) === 1n,
+    owner: r[6],
+  };
+}

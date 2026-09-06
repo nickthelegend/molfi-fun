@@ -29,6 +29,15 @@ export interface NetworkConfig {
   /** molfi's anonymizer, once deployed. Null means "not deployed here yet". */
   market: string | null;
   /**
+   * The direction game's contract — up or down against a reference fixed at listing.
+   *
+   * A second address rather than a flag on the first, because the two games store different
+   * things: a range position carries a pair of reach ratios, a direction ticket carries
+   * nothing but its price. One contract holding both would mean every reader of a position
+   * having to know which half of the struct was meaningful.
+   */
+  upDownMarket: string | null;
+  /**
    * The block the market contract's first event landed in.
    *
    * `starknet_getEvents` pages the chain in fixed windows — Sepolia's node covers 81,920
@@ -78,6 +87,16 @@ export const CHAIN_IDS = {
  * change after a deploy, and one place a verifier can read to check it is talking to the
  * same contract the console is.
  */
+/** The direction game, per network. Same rules as `MOLFI_MARKET` — null is honest. */
+export const MOLFI_UPDOWN: Record<NetworkName, string | null> = {
+  devnet: null,
+  sepolia: "0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9",
+  mainnet: null,
+};
+
+const upDownFor = (network: NetworkName): string | null =>
+  process.env.NEXT_PUBLIC_UPDOWN ?? process.env.MOLFI_UPDOWN ?? MOLFI_UPDOWN[network];
+
 export const MOLFI_MARKET: Record<NetworkName, string | null> = {
   devnet: null,
   /**
@@ -140,6 +159,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     stakeToken: process.env.NEXT_PUBLIC_TOKEN ?? null,
     oracle: process.env.NEXT_PUBLIC_ORACLE ?? null,
     market: marketFor("devnet"),
+    upDownMarket: upDownFor("devnet"),
     firstEventBlock: 0,
     explorer: "",
     realPool: false,
@@ -156,6 +176,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
      */
     oracle: SEPOLIA_PRICE_RELAY,
     market: marketFor("sepolia"),
+    upDownMarket: upDownFor("sepolia"),
     /**
      * Where **this** contract's first event landed — 14,648,162, the block it was deployed in.
      *
@@ -177,6 +198,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     stakeToken: STRK_TOKEN,
     oracle: PRAGMA.mainnet,
     market: marketFor("mainnet"),
+    upDownMarket: upDownFor("mainnet"),
     firstEventBlock: null,
     explorer: "https://starkscan.co",
     realPool: true,
