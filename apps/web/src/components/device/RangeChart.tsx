@@ -258,8 +258,19 @@ export function RangeChart({
     g.fillStyle = C.amber;
     g.font = "600 10px ui-monospace, monospace";
     g.textAlign = "left";
-    g.fillText(fmtPrice(high, market.dp), nowX + 6, Math.max(8, yHigh - 8));
-    g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
+    /**
+     * One label when the two edges are the same number.
+     *
+     * The direction game collapses the band to a single reference line, and labelling both
+     * ends of it printed the same price twice, eight pixels apart. Two identical numbers
+     * stacked on a chart look like a rendering fault whether or not the reader knows why.
+     */
+    if (low === high) {
+      g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
+    } else {
+      g.fillText(fmtPrice(high, market.dp), nowX + 6, Math.max(8, yHigh - 8));
+      g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
+    }
 
     g.textAlign = "right";
     g.fillText(`NEXT ${fmtMultiplier(multiplierBps)}`, W - 4, 12);

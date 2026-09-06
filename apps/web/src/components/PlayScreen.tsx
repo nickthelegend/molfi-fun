@@ -5,6 +5,9 @@ import type { Wallet } from "@/components/PrivyGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  DEFAULT_CONFIG,
+  directionMultiplierBps,
+  type Direction,
   MARKETS,
   ROUND_SECONDS,
   fmtMultiplier,
@@ -21,6 +24,8 @@ import { useSound } from "@/lib/useSound";
 import { DeviceFrame } from "./device/DeviceFrame";
 import { RangeChart } from "./device/RangeChart";
 import { BandControl } from "./device/BandControl";
+import { DirectionControl } from "./device/DirectionControl";
+import { GameSwitch, type Game } from "./device/GameSwitch";
 import { StatusBar } from "./device/StatusBar";
 import { Knob } from "./device/Knob";
 import { Positions } from "./device/Positions";
@@ -132,7 +137,7 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
   useApplyTheme(prefs.theme);
 
   const desk = usePaperDesk(prefs.market);
-  const { state, setMarketKey, setTier, setRunning, fire, reset, topUp } = desk;
+  const { state, setMarketKey, setTier, setRunning, fire, fireDirection, reset, topUp } = desk;
   const band = useBand(state.market, state.tier, state.spot);
   const play = useSound(prefs.sound, prefs.volume);
 
@@ -197,6 +202,15 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
    * tickets through the same engine and the same pricing as a person would — it is the
    * product running, not a recording of it — and it stops the moment anyone interacts.
    */
+  /**
+   * Which game the deck is playing, and which way the direction ticket points.
+   *
+   * `picked` survives a switch back and forth on purpose: a player who flips to the range game
+   * to look at something and flips back has not changed their mind about the direction.
+   */
+  const [game, setGame] = useState<Game>("range");
+  const [picked, setPicked] = useState<Direction>("up");
+
   const [attract, setAttract] = useState(false);
   /**
    * The guided run: which step is on screen, or null.
@@ -271,7 +285,20 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
    */
   const stepAbove = STAKE_STEPS.find((v) => v > stake) ?? null;
   const stepBelow = STAKE_STEPS.filter((v) => v < stake).pop() ?? null;
-  const payout = payoutFor(stake, band.multiplierBps);
+  /**
+   * What the ticket on the deck right now is worth — whichever game is loaded.
+   *
+   * The PAYS panel and the multiplier under it used to read `band.multiplierBps`
+   * unconditionally, so switching to the direction game left the range price on screen: the
+   * control said 1.92x and the panel above it said 1.25x, three centimetres apart. The quoted
+   * price is the one promise the deck makes before a stake is locked, and two of them at once
+   * is worse than none.
+   */
+  const quotedBps =
+    game === "direction"
+      ? directionMultiplierBps(DEFAULT_CONFIG.houseEdgeBps)
+      : band.multiplierBps;
+  const payout = payoutFor(stake, quotedBps);
   const round = state.market.rounds[state.tier];
 
   /**
@@ -324,10 +351,12 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
   }, [state.lastSettled, reducedMotion]);
 
   const doFire = useCallback(() => {
-    const r = fire(band.low, band.high, stake);
+    // One key, two games. The direction ticket has no band to remember, so `lastBand` — and
+    // the AGAIN key that reads it — is left alone rather than filled with the reference price.
+    const r = game === "direction" ? fireDirection(picked, stake) : fire(band.low, band.high, stake);
     if (r.ok) {
       play("fire");
-      if (band.band) setLastBand({ ...band.band });
+      if (game === "range" && band.band) setLastBand({ ...band.band });
     }
     if (!r.ok) {
       play("reject");
@@ -348,7 +377,7 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
       });
       setTimeout(() => setFlash(null), 1400);
     }
-  }, [fire, band.low, band.high, stake, play, shake]);
+  }, [game, picked, fire, fireDirection, band.low, band.high, band.band, stake, play, shake]);
 
   useEffect(() => {
     if (!attract) return;
@@ -626,9 +655,15 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
                         market={state.market}
                         history={state.history}
                         spot={state.spot}
-                        low={band.low}
-                        high={band.high}
-                        multiplierBps={band.multiplierBps}
+                        /**
+                         * In the direction game there is no band to draw, so both edges are
+                         * the reference and the box collapses to the line the price has to
+                         * finish above or below. Drawing the range band here would show a
+                         * shape the ticket has nothing to do with.
+                         */
+                        low={game === "direction" ? state.spot : band.low}
+                        high={game === "direction" ? state.spot : band.high}
+                        multiplierBps={quotedBps}
                         progress={reducedMotion ? 0 : progress}
                         settleFlash={settleFlash}
                         openBands={state.openTickets.map((t) => ({
@@ -676,18 +711,39 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
                     ) : null}
                   </div>
 
-                  <BandControl
-                    widthPct={widthPct}
-                    onNudge={(d) => {
-                      band.nudge(d);
+                  <GameSwitch
+                    game={game}
+                    onChange={(g) => {
+                      setGame(g);
                       play("key");
                     }}
-                    label={reachLabel}
-                    disabled={!band.ready}
-                    atMin={atMinBand}
-                    atMax={atMaxBand}
-                    asymmetric={Boolean(halves && halves[0] !== halves[1])}
                   />
+
+                  {game === "direction" ? (
+                    <DirectionControl
+                      picked={picked}
+                      onPick={(d) => {
+                        setPicked(d);
+                        play("key");
+                      }}
+                      reference={state.spot > 0n ? fmtPrice(state.spot, state.market.dp) : "—"}
+                      multiplier={fmtMultiplier(directionMultiplierBps(DEFAULT_CONFIG.houseEdgeBps))}
+                      disabled={state.spot === 0n}
+                    />
+                  ) : (
+                    <BandControl
+                      widthPct={widthPct}
+                      onNudge={(d) => {
+                        band.nudge(d);
+                        play("key");
+                      }}
+                      label={reachLabel}
+                      disabled={!band.ready}
+                      atMin={atMinBand}
+                      atMax={atMaxBand}
+                      asymmetric={Boolean(halves && halves[0] !== halves[1])}
+                    />
+                  )}
 
                   <div className="mt-2 flex items-center justify-between border-t border-[#161616] pt-2">
                     <HouseBattery utilisationBps={state.utilisationBps} />
@@ -744,7 +800,7 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
                   </div>
 
                   <div className="tnum glow-amber mt-[5px] font-display text-[38px] font-bold leading-none text-amber">
-                    {state.ready ? fmtMultiplier(band.multiplierBps) : "—"}
+                    {state.ready ? fmtMultiplier(quotedBps) : "—"}
                   </div>
 
                   {/* No win-probability on the deck. Sigma is shaded so the vault stays

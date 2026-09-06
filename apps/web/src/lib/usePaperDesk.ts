@@ -10,6 +10,7 @@ import {
   type FireResult,
   type MarketDef,
   type PaperTicket,
+  type Direction,
 } from "@molfi/sdk";
 import { fetchJson } from "./fetchJson";
 
@@ -291,6 +292,17 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     [market, spot, tier],
   );
 
+  /** Open a direction ticket against the price on screen right now. */
+  const fireDirection = useCallback(
+    (picked: Direction, stake: bigint): FireResult => {
+      if (spot === 0n) return { ok: false, error: { kind: "bad-band" } };
+      const r = engineRef.current!.fireDirection(market, spot, picked, stake, tier);
+      forceRender((n) => n + 1);
+      return r;
+    },
+    [market, spot, tier],
+  );
+
   const stack = useCallback(
     (parentId: number, stake: bigint): FireResult => {
       if (spot === 0n) return { ok: false, error: { kind: "bad-band" } };
@@ -339,6 +351,7 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     setTier,
     setRunning,
     fire,
+    fireDirection,
     stack,
     reset,
     topUp,

@@ -27,12 +27,25 @@ import {
   ROUND_SECONDS,
   type MarketDef,
 } from "./markets.ts";
+import { type Direction, directionMultiplierBps, outcomeOf } from "./direction.ts";
 
 export type TicketStatus = "open" | "won" | "lost" | "void";
 
 export interface PaperTicket {
   id: number;
   marketKey: string;
+  /**
+   * Which game this ticket is playing.
+   *
+   * Absent on every ticket written before the direction game existed, so it is read as
+   * `"range"` wherever it is missing rather than defaulted at write time — a stored tape from
+   * an older session must keep settling the way it was sold.
+   */
+  game?: "range" | "direction";
+  /** Direction tickets only: the price the round is measured against, fixed at open. */
+  reference?: bigint;
+  /** Direction tickets only: which way this one says it will go. */
+  picked?: Direction;
   tier: number;
   low: bigint;
   high: bigint;
@@ -58,6 +71,14 @@ export interface EngineConfig {
   minStake: bigint;
   maxStake: bigint;
   maxUtilisationBps: bigint;
+  /**
+   * The edge on a direction ticket, in basis points.
+   *
+   * Separate from the range game's, which lives on each market's calibration because it is
+   * baked into the fitted table. A direction round has no table — the price is two times the
+   * fair odds less this — so it needs somewhere of its own to live.
+   */
+  houseEdgeBps: bigint;
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
@@ -71,6 +92,8 @@ export const DEFAULT_CONFIG: EngineConfig = {
   minStake: 1_000_000n, // $1
   maxStake: 10_000_000n, // $10
   maxUtilisationBps: 8_000n,
+  // The same 400 bps the listed markets carry, so the two games cost the same to play.
+  houseEdgeBps: 400n,
 };
 
 export type FireError =
@@ -192,6 +215,69 @@ export class PaperEngine {
     return this.#open(market, spot, p.low, p.high, stake, p.expiresAt, tableTier, sigma1e4, p.id);
   }
 
+  /**
+   * Open a direction ticket: up or down, against the price right now.
+   *
+   * Shares every money path with `fire` — the same balance check, the same reservation
+   * against the vault, the same truncating payout — because the two games differ in what they
+   * ask, not in how they are funded. What differs is the price: there is no band to measure,
+   * so the multiplier is the round's fixed one and both sides pay the same. That symmetry is
+   * the reason the on-chain version can keep the direction secret, and the desk mirrors it so
+   * the number on screen is the number the contract would charge.
+   */
+  fireDirection(
+    market: MarketDef,
+    spot: bigint,
+    picked: Direction,
+    stake: bigint,
+    tier: number,
+  ): FireResult {
+    const round = market.rounds[tier];
+    if (!round) return { ok: false, error: { kind: "bad-tier" } };
+    if (stake < this.cfg.minStake || stake > this.cfg.maxStake) {
+      return { ok: false, error: { kind: "stake", min: this.cfg.minStake, max: this.cfg.maxStake } };
+    }
+    if (stake > this.balance) return { ok: false, error: { kind: "balance", available: this.balance } };
+    if (spot <= 0n) return { ok: false, error: { kind: "bad-band" } };
+
+    const mult = directionMultiplierBps(this.cfg.houseEdgeBps);
+    const payout = payoutFor(stake, mult);
+
+    const nextAssets = this.vaultAssets + stake;
+    if (this.reserved + payout > (nextAssets * this.cfg.maxUtilisationBps) / BPS) {
+      return { ok: false, error: { kind: "over-utilised" } };
+    }
+
+    this.balance -= stake;
+    this.vaultAssets = nextAssets;
+    this.reserved += payout;
+
+    const ticket: PaperTicket = {
+      id: this.nextId++,
+      marketKey: market.key,
+      game: "direction",
+      reference: spot,
+      picked,
+      tier,
+      // A direction ticket has no band. The edges are carried as the reference so the
+      // positions screen and the tape have one shape to render rather than two.
+      low: spot,
+      high: spot,
+      stake,
+      payout,
+      multiplierBps: mult,
+      prob1e6: 500_000n,
+      openedAt: this.now,
+      expiresAt: this.now + round.seconds,
+      openSpot: spot,
+      settledPrice: null,
+      status: "open",
+      parentId: null,
+    };
+    this.tickets.push(ticket);
+    return { ok: true, ticket };
+  }
+
   #open(
     market: MarketDef,
     spot: bigint,
@@ -291,6 +377,33 @@ export class PaperEngine {
   #settle(t: PaperTicket, price: bigint) {
     t.settledPrice = price;
     this.reserved -= t.payout;
+
+    /**
+     * A direction ticket asks a different question, so it is answered differently.
+     *
+     * Up wins above the reference, down below it, and an exact tie returns the stake — the
+     * round asked which way the price would move and it did not move. Folding a tie into a
+     * loss would be an edge appearing nowhere in the quoted multiplier, and the contract does
+     * not do it either.
+     */
+    if (t.game === "direction") {
+      const outcome = outcomeOf(t.reference ?? t.openSpot, price);
+      if (outcome === "tie") {
+        t.status = "won";
+        this.vaultAssets -= t.stake;
+        this.balance += t.stake;
+        return;
+      }
+      if (outcome === t.picked) {
+        t.status = "won";
+        this.vaultAssets -= t.payout;
+        this.balance += t.payout;
+      } else {
+        t.status = "lost";
+      }
+      return;
+    }
+
     if (price >= t.low && price <= t.high) {
       t.status = "won";
       this.vaultAssets -= t.payout;

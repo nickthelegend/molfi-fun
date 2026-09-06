@@ -75,7 +75,25 @@ export function Positions({
                 <span className="mono tnum text-[10px] text-dim">{i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <div className="mono tnum truncate text-[11px] text-white">
-                    {symbolOf(t.marketKey)} {fmtPrice(t.low, dp)} – {fmtPrice(t.high, dp)}
+                    {/*
+                      A direction ticket has no band, and rendering one as `X – X` printed a
+                      range whose two edges were the same number — which reads as a bug even
+                      to someone who knows what it means. It says which way it went and what
+                      from, because that is the whole of what was bought.
+                    */}
+                    {symbolOf(t.marketKey)}{" "}
+                    {t.game === "direction" ? (
+                      <>
+                        <span className={t.picked === "up" ? "text-green" : "text-red"}>
+                          {t.picked === "up" ? "▲ UP" : "▼ DOWN"}
+                        </span>{" "}
+                        from {fmtPrice(t.reference ?? t.openSpot, dp)}
+                      </>
+                    ) : (
+                      <>
+                        {fmtPrice(t.low, dp)} – {fmtPrice(t.high, dp)}
+                      </>
+                    )}
                   </div>
                   <div className="mono mt-0.5 text-[9px] tracking-[0.1em] text-dim">
                     {fmtUsd(t.stake)} · {fmtMultiplier(t.multiplierBps)}

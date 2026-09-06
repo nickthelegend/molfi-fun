@@ -106,3 +106,96 @@ test("a top-up moves the balance and leaves the tape alone", () => {
   e.topUp(-5n);
   assert.equal(e.balance, before + 50_000_000n, "a negative top-up is not a withdrawal");
 });
+
+// ───────────────────────────────────────────────────────────── the direction game
+
+test("a direction ticket pays two-less-the-edge when it goes the right way", () => {
+  const e = new PaperEngine();
+  const spot = 3_000_000n;
+  const r = e.fireDirection(strk, spot, "up", 1_000_000n, 0);
+  assert.equal(r.ok, true);
+
+  e.now = e.openTickets[0].expiresAt;
+  e.tick({ STRK: spot + 1n }, 0);
+
+  const t = e.tickets[0];
+  assert.equal(t.status, "won");
+  // 1_000_000 * 19200 / 10000 = 1_920_000, the same figure the contract asserts.
+  assert.equal(t.payout, 1_920_000n);
+});
+
+test("a direction ticket the wrong way pays nothing", () => {
+  const e = new PaperEngine();
+  const spot = 3_000_000n;
+  e.fireDirection(strk, spot, "up", 1_000_000n, 0);
+  const before = e.balance;
+
+  e.now = e.openTickets[0].expiresAt;
+  e.tick({ STRK: spot - 1n }, 0);
+
+  assert.equal(e.tickets[0].status, "lost");
+  assert.equal(e.balance, before, "nothing came back");
+});
+
+test("a direction tie returns the stake, not a loss", () => {
+  const e = new PaperEngine();
+  const spot = 3_000_000n;
+  const stake = 1_000_000n;
+  const opening = e.balance;
+  e.fireDirection(strk, spot, "down", stake, 0);
+
+  e.now = e.openTickets[0].expiresAt;
+  e.tick({ STRK: spot }, 0); // did not move
+
+  // Exactly whole again: the round asked which way it would go and it did not go.
+  assert.equal(e.balance, opening);
+  assert.equal(e.tickets[0].status, "won");
+});
+
+test("both directions cost and pay the same, which is what hides the bit", () => {
+  const up = new PaperEngine();
+  const down = new PaperEngine();
+  const spot = 3_000_000n;
+  up.fireDirection(strk, spot, "up", 1_000_000n, 0);
+  down.fireDirection(strk, spot, "down", 1_000_000n, 0);
+
+  // Same payout means the same reservation, and the reservation is the public number. If
+  // these ever diverge the on-chain version leaks which side a ticket took.
+  assert.equal(up.tickets[0].payout, down.tickets[0].payout);
+  assert.equal(up.tickets[0].multiplierBps, down.tickets[0].multiplierBps);
+  assert.equal(up.reserved, down.reserved);
+});
+
+test("a direction ticket cannot be opened for more than the balance", () => {
+  // A balance under the minimum ticket, so the stake is legal in size and simply unaffordable
+  // — otherwise the stake-range check answers first and the balance branch is never reached.
+  const e = new PaperEngine({ startingBalance: 1n });
+  const r = e.fireDirection(strk, 3_000_000n, "up", 1_000_000n, 0);
+  assert.equal(r.ok, false);
+  assert.equal(r.ok === false && r.error.kind, "balance");
+});
+
+test("an oversized direction stake is refused for being oversized, not unaffordable", () => {
+  const e = new PaperEngine();
+  const r = e.fireDirection(strk, 3_000_000n, "up", e.balance + 1n, 0);
+  assert.equal(r.ok, false);
+  // Both are true of this stake; the refusal names the one a player can act on.
+  assert.equal(r.ok === false && r.error.kind, "stake");
+});
+
+test("range and direction tickets settle side by side, each on its own rule", () => {
+  const e = new PaperEngine();
+  const spot = 3_000_000n;
+  const half = (spot * 50n) / 10_000n;
+  e.fire(strk, spot, spot - half, spot + half, 1_000_000n, 0);
+  e.fireDirection(strk, spot, "down", 1_000_000n, 0);
+
+  e.now = Math.max(...e.openTickets.map((t) => t.expiresAt));
+  // Inside the band, and above the reference: the range ticket wins, the down ticket loses.
+  e.tick({ STRK: spot + 1n }, 0);
+
+  const range = e.tickets.find((t) => t.game !== "direction")!;
+  const dir = e.tickets.find((t) => t.game === "direction")!;
+  assert.equal(range.status, "won");
+  assert.equal(dir.status, "lost");
+});

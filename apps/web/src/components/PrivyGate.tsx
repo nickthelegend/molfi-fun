@@ -20,6 +20,18 @@ import { CoinMark, StarknetSpark } from "@/components/CoinMark";
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
+/**
+ * The stand-in the development escape hands the console.
+ *
+ * Not a wallet — an address of zeroes and no id, so anything that tries to sign with it fails
+ * loudly at the signer rather than quietly appearing to work. It exists to render the deck,
+ * nothing else.
+ */
+const devWallet: Wallet | null =
+  process.env.NODE_ENV === "production"
+    ? null
+    : { id: "", address: "0x0", publicKey: "0x0" };
+
 export interface Wallet {
   id: string;
   address: string;
@@ -122,6 +134,19 @@ function Inner({ children }: { children: (wallet: Wallet) => React.ReactNode }) 
         <p className="mono text-[11px] tracking-[0.15em] text-white/35">CHECKING YOUR SESSION…</p>
       </Shell>
     );
+  }
+
+  /**
+   * A way past the door while developing, and only while developing.
+   *
+   * The gate needs a real email round trip, which makes the console unreachable from any
+   * automated check — and a game nobody can open is a game nobody can test. `NODE_ENV` is
+   * inlined by the bundler at build time, so on a production build this whole branch is
+   * removed as dead code rather than merely skipped: there is no flag to flip, no header to
+   * forge and no query string that reaches it.
+   */
+  if (!authenticated && process.env.NODE_ENV !== "production" && devWallet) {
+    return <>{children(devWallet)}</>;
   }
 
   if (!authenticated) {
