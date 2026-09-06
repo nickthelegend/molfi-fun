@@ -94,3 +94,22 @@ test("reducing an already-reduced message leaves it alone", () => {
   assert.equal(reason(new Error(once)), once);
   assert.equal(reason(new Error("STALE_PRICE")), "STALE_PRICE");
 });
+
+test("a long explanation keeps its conclusion, not just its opening", () => {
+  // The node's fee refusal puts three gas dictionaries between the subject and the verdict.
+  // A head-only truncation kept the dictionaries and dropped "exceed balance".
+  const long = Object.assign(new Error("RPC: starknet_estimateFee with params {}"), {
+    baseError: {
+      code: 55,
+      message: "Account validation failed",
+      data:
+        "Resources bounds ({ l1_gas: { max_amount: 0, max_price_per_unit: 247147482888859 }, " +
+        "l2_gas: { max_amount: 2118240, max_price_per_unit: 42477564169 }, " +
+        "l1_data_gas: { max_amount: 672, max_price_per_unit: 689932455823 } }) exceed balance (80843186574050224).",
+    },
+  });
+  const got = reason(long);
+  assert.ok(got.length <= 220, `too long: ${got.length}`);
+  assert.match(got, /^Account validation failed/, "the subject survives");
+  assert.match(got, /exceed balance \(80843186574050224\)\.$/, "the verdict survives");
+});

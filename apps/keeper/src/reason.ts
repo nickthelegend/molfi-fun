@@ -131,7 +131,20 @@ function innermost(trace: string): string {
     .trim();
 }
 
-/** One line, no escaped newlines, short enough for a log and a ledger row. */
+/**
+ * One line, short enough for a log and a ledger row, keeping both ends.
+ *
+ * A plain `slice` drops the conclusion, and the conclusion is the actionable half: the node
+ * says "Resources bounds ({ l1_gas: … , l2_gas: … , l1_data_gas: … }) exceed balance (…)",
+ * and a head-only truncation keeps three gas dictionaries and throws away the words "exceed
+ * balance". Eliding the middle keeps the subject and the verdict.
+ */
+const LIMIT = 220;
+
 function collapse(s: string): string {
-  return s.replace(/\\n/g, " ").replace(/\s+/g, " ").trim().slice(0, 220);
+  const one = s.replace(/\\n/g, " ").replace(/\s+/g, " ").trim();
+  if (one.length <= LIMIT) return one;
+  const head = Math.floor((LIMIT - 3) * 0.6);
+  const tail = LIMIT - 3 - head;
+  return `${one.slice(0, head)}\u2026${one.slice(-tail)}`;
 }
