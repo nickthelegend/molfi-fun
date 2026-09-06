@@ -7,7 +7,7 @@ export function HowToBody() {
   const steps = [
     ["Pick a band", "Drag the two amber rules on the screen. Tighter pays more."],
     ["Hit the red key", "Your stake is locked and the band projects out to the cutoff."],
-    ["Stack if you like", "Every stack is a fresh ticket on the same band, priced right then."],
+    ["Stack if you like", "Every stack is a fresh position on the same band, priced right then."],
     ["The cutoff hits", "If the price prints inside your band, you get paid the multiplier."],
   ];
 

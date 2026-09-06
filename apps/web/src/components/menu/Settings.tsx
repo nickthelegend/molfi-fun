@@ -37,12 +37,16 @@ export function Settings({ onSound }: { onSound?: (on: boolean) => void }) {
           disabled={osReduced}
           onChange={(v) => set("reducedMotion", v)}
         />
-        <Toggle
-          label="Show the oracle strip"
-          hint="Puts the settling median's age, publisher count and drift on the deck."
-          value={prefs.showOracle}
-          onChange={(v) => set("showOracle", v)}
-        />
+        {/*
+          * There was a "Show the oracle strip" switch here, and it is gone rather than
+          * fixed.
+          *
+          * Nothing read it — the strip has been on the glass unconditionally since the
+          * console was rebuilt — so it was a switch that did nothing, which this screen's
+          * own premise forbids. Wiring it back up would be worse: a stale print does not
+          * settle one position wrongly, it settles every position in that market wrongly at
+          * once, and that is not a fact a reader should be able to switch off.
+          */}
       </Group>
 
       <Group title="Desk defaults">

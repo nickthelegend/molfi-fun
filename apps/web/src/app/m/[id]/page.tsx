@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { CheckItYourself } from "@/components/CheckItYourself";
 import { hash } from "starknet";
 import {
@@ -114,6 +115,9 @@ function verifyCommand(id: number): string {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Only a real id gets a market title. "molfi — market #abc" is a page claiming to be
+  // about something that was never listed.
+  if (!/^\d+$/.test(id)) return { title: "molfi — no such market" };
   return {
     title: `molfi — market #${id}`,
     description:
@@ -125,26 +129,9 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   const market = /^\d+$/.test(id) ? await readMarket(Number(id)) : null;
 
-  if (!market) {
-    return (
-      <main className="tiled grid min-h-dvh place-items-center px-5">
-        <div className="w-full max-w-[420px] rounded-[22px] bg-card p-6 text-center">
-          <p className="text-[15px] font-semibold">No market #{id}</p>
-          <p className="mt-3 text-[13px] leading-relaxed text-white/50">
-            {NETWORKS[NETWORK].market
-              ? "The contract has no market with that id."
-              : `molfi's market contract is not deployed on ${NETWORK} yet, so there is nothing to verify.`}
-          </p>
-          <Link
-            href="/play"
-            className="mt-5 inline-block rounded-full bg-amber-2 px-6 py-3 text-[13px] font-extrabold text-black"
-          >
-            OPEN THE CONSOLE
-          </Link>
-        </div>
-      </main>
-    );
-  }
+  // A 404 body under a 200 status reads correctly to a person and lies to everything else.
+  if (!market) notFound();
+
 
   const audit = auditMarket(market);
   const def = MARKETS.find((m) => m.label === market.pair);

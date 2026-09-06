@@ -343,13 +343,31 @@ export function PlayScreen() {
   const bandSpan = band.limits
     ? Number(band.limits.maxHalfWidth1e4 - band.limits.minHalfWidth1e4)
     : 0;
+  /**
+   * The fill and the printed reach, both from the whole band rather than half of it.
+   *
+   * Dragging one edge on the chart makes the band asymmetric, and both of these read only
+   * `lowHalf1e4` — so a band reaching 0.18% down and 0.26% up printed "±0.22%" and drew a
+   * fill for the down side alone. A single ± figure is a claim of symmetry, and after a drag
+   * it was not true.
+   */
+  const halves = band.band ? [band.band.lowHalf1e4, band.band.highHalf1e4] : null;
   const widthPct =
-    band.band && bandSpan > 0
-      ? Number(band.band.lowHalf1e4 - band.limits!.minHalfWidth1e4) / bandSpan
+    halves && bandSpan > 0
+      ? Number((halves[0] + halves[1]) / 2n - band.limits!.minHalfWidth1e4) / bandSpan
       : 0;
-  const reachLabel = band.band
-    ? `${(Number(band.band.lowHalf1e4) / 1_000_000).toFixed(2)}%`
-    : "—";
+  const pct = (v: bigint) => (Number(v) / 1_000_000).toFixed(2);
+  const reachLabel = !halves
+    ? "—"
+    : halves[0] === halves[1]
+      ? `${pct(halves[0])}%`
+      : `${pct(halves[0])} / ${pct(halves[1])}%`;
+  const atMinBand = Boolean(
+    band.band && band.limits && band.band.lowHalf1e4 <= band.limits.minHalfWidth1e4,
+  );
+  const atMaxBand = Boolean(
+    band.band && band.limits && band.band.lowHalf1e4 >= band.limits.maxHalfWidth1e4,
+  );
 
   const settledTickets = state.tickets.filter((t) => t.status === "won" || t.status === "lost");
 
@@ -503,6 +521,9 @@ export function PlayScreen() {
                     }}
                     label={reachLabel}
                     disabled={!band.ready}
+                    atMin={atMinBand}
+                    atMax={atMaxBand}
+                    asymmetric={Boolean(halves && halves[0] !== halves[1])}
                   />
 
                   <div className="mt-2 flex items-center justify-between border-t border-[#161616] pt-2">

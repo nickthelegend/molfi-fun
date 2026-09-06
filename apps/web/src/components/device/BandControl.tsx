@@ -13,20 +13,35 @@ export function BandControl({
   onNudge,
   label,
   disabled,
+  atMin,
+  atMax,
+  asymmetric,
 }: {
   /** How wide the band is as a fraction of the legal window, 0–1. */
   widthPct: number;
   onNudge: (delta: number) => void;
-  /** The reach, already formatted — e.g. `0.42%`. */
+  /**
+   * The reach, already formatted — `0.42%` when the band is symmetric, `0.18 / 0.26%` when a
+   * dragged edge has made it not.
+   */
   label: string;
+  /** True when the two halves differ, so the readout drops the ± it can no longer claim. */
+  asymmetric?: boolean;
   disabled?: boolean;
+  /** At the tightest band the market will sell — nothing left for `−` to do. */
+  atMin?: boolean;
+  /** At the widest — nothing left for `+` to do. */
+  atMax?: boolean;
 }) {
   return (
     <div className="mt-2 flex items-center gap-[7px] rounded-[11px] border border-[#171717] bg-screen-2 px-2 py-[7px]">
       <span className="mono text-[9px] tracking-[0.15em] text-dim">BAND</span>
       <button
         onClick={() => onNudge(-0.08)}
-        disabled={disabled}
+        // The band clamps to the sellable window either way, so at the edge this key was
+        // pressable and inert — which the console's own rule forbids: every control does
+        // what its label says, or it stops offering to.
+        disabled={disabled || atMin}
         aria-label="Tighter band"
         className="h-[26px] w-[30px] rounded-[7px] bg-[#1c1c1c] text-[14px] font-semibold text-amber disabled:opacity-30"
       >
@@ -43,13 +58,16 @@ export function BandControl({
       </div>
       <button
         onClick={() => onNudge(0.08)}
-        disabled={disabled}
+        disabled={disabled || atMax}
         aria-label="Wider band"
         className="h-[26px] w-[30px] rounded-[7px] bg-[#1c1c1c] text-[14px] font-semibold text-amber disabled:opacity-30"
       >
         +
       </button>
-      <span className="mono tnum min-w-[52px] text-right text-[10px] text-white">±{label}</span>
+      <span className="mono tnum min-w-[62px] text-right text-[10px] text-white">
+        {asymmetric ? "" : "±"}
+        {label}
+      </span>
     </div>
   );
 }

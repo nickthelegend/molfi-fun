@@ -21,8 +21,6 @@ export interface Prefs {
   tier: number;
   /** Console shell colour. Four graphites — the body never competes with the glass. */
   theme: "graphite" | "gunmetal" | "olive" | "oxblood";
-  /** Show the oracle strip alongside the chart. */
-  showOracle: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -32,7 +30,6 @@ export const DEFAULT_PREFS: Prefs = {
   market: "BTC",
   tier: 0,
   theme: "graphite",
-  showOracle: false,
 };
 
 const KEY = "xorr.prefs.v1";

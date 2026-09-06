@@ -40,12 +40,25 @@ export function Positions({
 
   return (
     <div className="flex h-full flex-col px-[11px] pb-[9px] pt-[11px]">
-      <div className="mono flex items-baseline justify-between text-[9.5px] tracking-[0.15em] text-dim">
+      <div className="mono flex flex-none items-baseline justify-between text-[9.5px] tracking-[0.15em] text-dim">
         <span>OPEN POSITIONS</span>
         <span>SEALED UNTIL CUTOFF</span>
       </div>
 
-      <div className="mt-[9px] flex flex-col gap-1.5">
+      {/*
+        * Both lists flex and both scroll.
+        *
+        * Only the tape used to, on the assumption that a handful of positions would be open.
+        * At twenty-six the open list grew past the glass, clipped its own last card mid-row,
+        * and pushed the settled tape and the session strip out of the device entirely — with
+        * nothing to scroll, because the region that could scroll was the one that had been
+        * squeezed to zero height. Two bounded regions cannot do that to each other.
+        */}
+      <div
+        className={`mt-[9px] flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto ${
+          open.length === 0 ? "justify-center" : ""
+        }`}
+      >
         {open.length === 0 ? (
           <div className="mono px-2.5 py-[26px] text-center text-[10px] tracking-[0.14em] text-dim">
             NOTHING RIDING · FIRE A BAND
@@ -56,7 +69,7 @@ export function Positions({
             return (
               <div
                 key={t.id}
-                className="flex items-center gap-2.5 rounded-[11px] border border-[#1b1b1b] bg-screen-3 px-2.5 py-[9px]"
+                className="flex flex-none items-center gap-2.5 rounded-[11px] border border-[#1b1b1b] bg-screen-3 px-2.5 py-[9px]"
                 style={{ borderLeft: "3px solid var(--color-amber)" }}
               >
                 <span className="mono tnum text-[10px] text-dim">{i + 1}</span>
@@ -84,13 +97,17 @@ export function Positions({
         )}
       </div>
 
-      <div className="mono mt-3.5 flex items-baseline justify-between text-[9.5px] tracking-[0.15em] text-dim">
+      <div className="mono mt-3.5 flex flex-none items-baseline justify-between text-[9.5px] tracking-[0.15em] text-dim">
         <span>SETTLED</span>
         <span>PUBLISHED · RECHECKABLE</span>
       </div>
 
       {/* The one region that flexes, so it is the one that scrolls. */}
-      <div className="mt-[9px] flex min-h-0 flex-1 flex-col justify-center gap-px overflow-y-auto">
+      <div
+        className={`mt-[9px] flex min-h-0 flex-1 flex-col gap-px overflow-y-auto ${
+          settled.length === 0 ? "justify-center" : ""
+        }`}
+      >
         {settled.length === 0 ? (
           <div className="mono py-4 text-center text-[10px] tracking-[0.14em] text-dim">
             NO TAPE YET
@@ -102,7 +119,7 @@ export function Positions({
             return (
               <div
                 key={t.id}
-                className="flex items-center gap-2.5 bg-[#080808] px-2.5 py-[5px]"
+                className="flex flex-none items-center gap-2.5 bg-[#080808] px-2.5 py-[5px]"
               >
                 <span
                   aria-hidden
@@ -125,7 +142,8 @@ export function Positions({
         )}
       </div>
 
-      <div className="mono mt-2 flex items-baseline justify-between border-t border-[#161616] pt-2 text-[9.5px] tracking-[0.15em] text-dim">
+      {/* Anchored to the bottom of the glass, so the running total never scrolls away. */}
+      <div className="mono mt-2 flex flex-none items-baseline justify-between border-t border-[#161616] pt-2 text-[9.5px] tracking-[0.15em] text-dim">
         <span>SESSION</span>
         <span className="tnum flex items-baseline gap-2.5">
           <span className="text-[10.5px]">

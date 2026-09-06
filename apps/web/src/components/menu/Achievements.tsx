@@ -63,14 +63,14 @@ export function buildAwards(tickets: PaperTicket[]): Award[] {
     {
       id: "first-light",
       name: "First light",
-      how: "Fire your first ticket",
+      how: "Fire your first position",
       icon: "🔴",
       earned: ordered.length > 0,
     },
     {
       id: "in-the-money",
       name: "In the money",
-      how: "Settle a ticket inside its band",
+      how: "Settle a position inside its band",
       icon: "🎯",
       earned: wins.length > 0,
     },
@@ -123,14 +123,14 @@ export function buildAwards(tickets: PaperTicket[]): Award[] {
     {
       id: "size",
       name: "Size",
-      how: "Stake the maximum on one ticket",
+      how: "Stake the maximum on one position",
       icon: "🐋",
       earned: ordered.some((t) => t.stake >= 10_000_000n),
     },
     {
       id: "double-up",
       name: "Double up",
-      how: "Win more than your stake back on one ticket",
+      how: "Win more than your stake back on one position",
       icon: "💰",
       earned: wins.some((t) => t.payout - t.stake >= t.stake),
     },
@@ -181,7 +181,7 @@ export function Achievements({ tickets }: { tickets: PaperTicket[] }) {
           />
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-white/40">
-          Every badge is worked out from tickets that actually settled on this desk.
+          Every badge is worked out from positions that actually settled on this desk.
           Nothing here is granted.
         </p>
       </div>
