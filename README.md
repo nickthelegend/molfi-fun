@@ -31,6 +31,15 @@ sealed until settlement; that is the part molfi will not trade away for reach.
 | That it was you | hidden | **public** |
 | Wallet needed | one that speaks STRK20 | any Starknet account |
 
+> **The class deployed on Sepolia today does not keep the band row.** Its `Position` struct
+> stores `band_low` and `band_high` outright, so anyone can list a market's positions and read
+> what each one bought. The contract in this repository replaced both fields with reach ratios
+> and never stores the band — it has not been declared, because that costs about 60 STRK and
+> the deployer does not have it. [molfi.fun/privacy](https://molfi.fun/privacy) and
+> [molfi.fun/verify](https://molfi.fun/verify) both say so on the page, drawn from the deployed
+> ABI rather than from a config file, so they retract themselves the moment a class without the
+> band goes live. This note is here for the same reason.
+
 The pool route is the better one and it is the default wherever the wallet supports it. The
 direct route exists because for most of a year most wallets have not, and a market only one
 kind of wallet can reach is a market nobody trades. molfi learned that the expensive way:
@@ -43,7 +52,7 @@ Every project claims privacy. This is the part most of them leave out.
 
 | Sealed until settlement | Public, always |
 | --- | --- |
-| The band you picked | That a position was opened |
+| The band you picked *(on the class in this repo — not the one deployed; see above)* | That a position was opened |
 | How wide it is — no, that one is public | The total staked in a market |
 | How much you staked *(pool route)* | The price the market settled at |
 | Which positions are yours *(pool route)* | Every payout the contract made |
@@ -71,8 +80,13 @@ the contract actually paid. You do not need an account, a wallet, or a position 
 | Who settles these | [molfi.fun/keeper](https://molfi.fun/keeper) |
 | Recompute a settled market | [molfi.fun/m/1](https://molfi.fun/m/1) |
 
-Markets settle on Starknet Sepolia every fifteen minutes, unattended, against a price backed
-by ten to twelve independent publishers. Nothing on those pages needs a wallet.
+Markets settle on Starknet Sepolia unattended, against a price backed by ten to twelve
+independent publishers — 48 of them so far. Nothing on those pages needs a wallet.
+
+Rounds are currently listed at one hour (`KEEPER_TIER=1`), which is what a 5 STRK daily drip
+from the Foundation faucet can keep settleable to its own cutoff; the console still offers 15m,
+1h and 4h. The keeper funds itself from that faucet and pauses listing when it drops below its
+floor, which it says on [molfi.fun/keeper](https://molfi.fun/keeper) rather than going quiet.
 
 ## Layout
 

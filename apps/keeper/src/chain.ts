@@ -1,4 +1,4 @@
-import { Account, CallData, RpcProvider, hash, type Call } from "starknet";
+import { Account, CallData, RpcProvider, hash, transaction, type Call } from "starknet";
 
 import {
   CALIBRATED_MARKETS,
@@ -9,6 +9,7 @@ import {
   pairId,
 } from "@molfi/sdk";
 import { PRAGMA } from "@molfi/sdk";
+import { boundsFrom, type BareEstimate } from "./bounds.ts";
 import { reason, transient } from "./reason.ts";
 
 
@@ -194,49 +195,92 @@ async function syncNonce(): Promise<bigint> {
  * says the same thing in two hundred characters of gas dictionaries, after a nonce and a
  * round trip have been spent finding out.
  *
- * Measured on Sepolia while writing this: one relay estimated at 0.09319 STRK against a
- * 0.08084 balance. The shortfall there is real and no bound can close it — the keeper needs
- * funding, not a tighter margin. The capping matters for the case one notch less bad, where
- * the fee fits and the padding does not.
+ * Measured on Sepolia: one relay costs 0.0416 STRK against a 0.0808 balance. It was refused
+ * for a day anyway, because the figure being compared was starknet.js's padded 0.0928 rather
+ * than the node's own number — see `bareEstimate`. The shortfall was the padding.
  *
  * Passing explicit bounds also means `execute` does not estimate again, so this costs no
  * extra round trip.
  */
-const FEE_MARGIN = 1.5;
-/** Never offer the whole balance: the account still needs to pay for the next one. */
-const SPENDABLE = 0.92;
+/**
+ * What the transaction actually costs, as the node itself reports it.
+ *
+ * `account.estimateInvokeFee` does not tell you this, and the difference is not small.
+ * Measured against Sepolia on the same call, the same second: the node put one relay at
+ * **0.0416 STRK** and starknet.js returned **0.0928** — it multiplies the gas *amount* by
+ * about 1.5 and the *price* by about 1.5 before handing the figure back, so what it calls
+ * `overall_fee` is already a padded bound and the two paddings compound to 2.23x.
+ *
+ * That number was then compared against the balance to decide affordability, so a keeper
+ * holding 0.0808 STRK spent a day refusing a transaction it could have paid for twice over,
+ * reporting a funding shortfall that did not exist. The affordability question has to be
+ * asked of the real cost; the padding belongs in the bound, once, and is added below.
+ *
+ * `SKIP_VALIDATE` leaves out the account's signature check, which is a signature
+ * verification and change from a rounding error next to the margin applied on top.
+ */
+async function bareEstimate(call: Call | Call[], nonce: bigint): Promise<BareEstimate> {
+  const calls = Array.isArray(call) ? call : [call];
+  const ZERO = { max_amount: "0x0", max_price_per_unit: "0x0" };
+  const res = await fetch(SEPOLIA_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "starknet_estimateFee",
+      params: {
+        request: [
+          {
+            type: "INVOKE",
+            version: "0x3",
+            sender_address: account.address,
+            calldata: transaction.getExecuteCalldata(calls, "1"),
+            signature: ["0x0", "0x0"],
+            nonce: "0x" + nonce.toString(16),
+            resource_bounds: { l1_gas: ZERO, l1_data_gas: ZERO, l2_gas: ZERO },
+            tip: "0x0",
+            paymaster_data: [],
+            account_deployment_data: [],
+            nonce_data_availability_mode: "L1",
+            fee_data_availability_mode: "L1",
+          },
+        ],
+        simulation_flags: ["SKIP_VALIDATE"],
+        block_id: "pending",
+      },
+    }),
+  });
+  const json = (await res.json()) as {
+    result?: Array<Record<string, string>>;
+    error?: unknown;
+  };
+  if (json.error || !json.result?.[0]) {
+    /**
+     * Carried as `baseError`, not flattened into the message.
+     *
+     * `reason()` digs the real explanation out of the deepest `baseError`, and a revert
+     * during estimation is where `STALE_PRICE` lives — the difference between the keeper
+     * logging "waiting" and logging an unreadable "Transaction execution error".
+     */
+    const err = new Error("the node would not estimate this") as Error & { baseError?: unknown };
+    err.baseError = json.error;
+    throw err;
+  }
+  const e = json.result[0];
+  const n = (v: string | undefined) => BigInt(v ?? "0x0");
+  return {
+    fee: n(e.overall_fee),
+    l1: { amount: n(e.l1_gas_consumed), price: n(e.l1_gas_price) },
+    l2: { amount: n(e.l2_gas_consumed), price: n(e.l2_gas_price) },
+    data: { amount: n(e.l1_data_gas_consumed), price: n(e.l1_data_gas_price) },
+  };
+}
 
 async function boundsFor(call: Call | Call[], nonce: bigint) {
-  const est = await account.estimateInvokeFee(call, { nonce });
-  const estimated = est.overall_fee;
+  const est = await bareEstimate(call, nonce);
   const balance = await strkBalance(account.address);
-  const affordable = (balance * BigInt(Math.round(SPENDABLE * 100))) / 100n;
-
-  if (estimated > affordable) {
-    throw new Error(
-      `cannot afford this: the fee alone is ${estimated} and the balance is ${balance}`,
-    );
-  }
-
-  const padded = (estimated * BigInt(Math.round(FEE_MARGIN * 100))) / 100n;
-  const cap = padded <= affordable ? padded : affordable;
-  // Scale the estimate's own resource bounds to the cap, keeping their shape.
-  const scale = (v: bigint) => (estimated === 0n ? v : (v * cap) / estimated);
-  const rb = est.resourceBounds;
-  return {
-    l1_gas: {
-      max_amount: BigInt(rb.l1_gas.max_amount),
-      max_price_per_unit: BigInt(rb.l1_gas.max_price_per_unit),
-    },
-    l1_data_gas: {
-      max_amount: BigInt(rb.l1_data_gas.max_amount),
-      max_price_per_unit: BigInt(rb.l1_data_gas.max_price_per_unit),
-    },
-    l2_gas: {
-      max_amount: BigInt(rb.l2_gas.max_amount),
-      max_price_per_unit: scale(BigInt(rb.l2_gas.max_price_per_unit)),
-    },
-  };
+  return boundsFrom(est, balance);
 }
 
 export async function send(call: Call | Call[], label: string, attempts = 3): Promise<string> {
