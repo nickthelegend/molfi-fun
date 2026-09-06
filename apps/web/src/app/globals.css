@@ -418,3 +418,24 @@ body {
     animation: fade-in 120ms ease-out !important;
   }
 }
+
+/*
+ * Landing-page motion.
+ *
+ * Two loops, both slow and both small. The coin marks drift so three static discs read as a
+ * live set of markets; the primary key breathes so the eye lands on the one thing the page is
+ * asking you to press. Anything faster or larger than this stops being ambient and starts
+ * being a distraction from a page whose job is to be read.
+ *
+ * Both are applied with Tailwind's `motion-safe:` variant, so they never start under
+ * `prefers-reduced-motion` — and the global rule further down shortens whatever does run.
+ */
+@keyframes drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 159, 10, 0.12); }
+}
