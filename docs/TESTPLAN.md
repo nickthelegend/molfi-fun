@@ -226,3 +226,75 @@ Every read path, every UI path and every already-settled market is fully testabl
 | J7 | No emoji on the glass | The device surface carries none. |
 | J8 | Contrast | Glass text is the two permitted greys, nothing dimmer. |
 
+
+---
+
+# Results
+
+Executed against `https://molfi.fun` (production) in a real browser, reading the console and
+the network log on every item. Fixes were made against the local build and re-verified there,
+then deployed and re-run on production from the top.
+
+**156 items · 143 PASS · 0 FAIL outstanding · 13 UNTESTABLE (each named below, with why).**
+
+## What failed, and what was done about it
+
+| # | Failure | Root cause | Fix |
+| --- | --- | --- | --- |
+| A17, A18 | `/m/<id>` answered **200** for an id that was never listed | The page rendered a "no market" body under a success status | `notFound()` behind a route-scoped 404 page; a non-numeric id no longer gets a title claiming to be about a market |
+| C9 | The band `−`/`+` keys stayed pressable at the tightest and widest sellable band, doing nothing | The clamp lived in `useBand`, so the band stopped but the control did not | Keys disable at each limit |
+| C10 | After dragging one chart edge the readout still printed a single `±` figure | The reach label and the fill were computed from `lowHalf1e4` alone | Both halves drive the fill; the `±` is dropped when it would be a false claim of symmetry |
+| C27, C28 | With 26 open positions the list overflowed the glass, clipped its own last card, and pushed the settled tape and session strip out of the device | Only the tape flexed and scrolled; the open list was unbounded and squeezed the scrollable region to zero height | Both regions bounded and scrollable, session strip pinned |
+| E6 | Settings carried a "Show the oracle strip" switch that nothing read | Dead since the console rebuild — the strip is unconditional | Switch removed, not rewired: a stale print settles *every* position in a market wrongly, so it is not a fact a reader may switch off |
+| J1 | React "Cannot update a component while rendering a different component", from Settings, Customize and the live console | `usePrefs.set` wrote to localStorage **and broadcast** inside the `setPrefs` updater, which React runs during the render phase | Both side effects moved into the event handler, with a ref carrying the current value |
+| D11 | With no wallet the live desk asserted "your band and size stay hidden" | A promise about a route nobody had chosen, and one a non-STRK20 wallet would not get | States what the deployment offers, which the direct-route probe already knows: pool only |
+| G3, G7 | The keeper's persisted ledger recorded failures as `"invoke_transaction": {`, then as `unknown, and the node said nothing readable` | `reason()` matched the *request* starknet.js prints before the failure; the explanation is nested under `baseError.data.execution_error`. `send` also reduced the error twice, the second pass destroying the first pass's answer | Reads the structured error from the deepest `baseError`, unwraps the Cairo frame stack, and is idempotent. Extracted to its own module and pinned with 9 tests |
+| G7 | The explanation was truncated before its conclusion | A head-only 220-char cut kept three gas dictionaries and dropped "exceed balance" | Elide the middle, keep subject and verdict |
+| H3, C2 | The status bar read "PAPER DESK · **PRAGMA** TAPE" | Pragma is the settlement oracle, not the mark's source; `/api/price` returns the real exchange and the desk discarded it | Reads "PAPER DESK · BINANCE STRKUSDT" |
+
+Four plan items were written against the wrong contract and were corrected to the real one
+before being judged, rather than being marked to fit: **B4** (the tape is `returns[]`, real
+one-minute log returns, not closes), **B7** (a refused quote is a 200 with a machine-readable
+`refusal` and, deliberately, no `multiplierBps`), **A10** (the real group headings), and **I1**
+(stacking is the advertised product on the paper desk; the live desk disables FIRE while a
+transaction is pending and queues sends).
+
+## Untestable, and why
+
+Not marked PASS. Each needs something that does not exist right now.
+
+| # | Item | Why |
+| --- | --- | --- |
+| D13, D15, D16, D18, D19, D20 | Connect · open · secret survives reload · claim · network mismatch · explorer link | No Starknet wallet extension is installed in this browser, and no market is open to trade into. D15/D16 were verified end-to-end earlier in this project against Sepolia with a real signing wallet. |
+| F4, F8, F9 | `quote_offsets` parity · `open_position` refusal · `claim_position` refusal | **These entrypoints are not on the deployed class.** Probed the live ABI: Sepolia runs an older build with `privacy_invoke`, `settle`, `fund_market`, `create_market` and the views, but no `open_position`, `claim_position`, `quote_offsets`, `owner` or `set_oracle`. The redeploy needs a ~60 STRK declare. Covered by 81 Cairo tests. |
+| C38 | OS-level `prefers-reduced-motion` | The browser tool cannot emulate the media query. The rule is present and correct (shortens to 120ms; shake/roll/coin-drop disabled) and the in-app Settings toggle was verified to take effect and persist. |
+| G5 (list) | A listing round landing | The keeper holds 0.0808 STRK and stops before it can strand an unfunded market. The batched path was verified earlier today: market 48 created, funded and bankrolled in **one** transaction. |
+| I2, I5 | Refresh mid-transaction · a hung request | Both verified earlier in this project — `maybeSubmitted` secret retention checked against on-chain positions, and `fetchJson`'s deadline observed rendering `API/MARKETS DID NOT ANSWER IN 15S`. Neither is reproducible now without a wallet and a slow endpoint. |
+
+**F12 — deployed ABI conformance — PASSES**, and is the reason the app is still correct
+against that older class: `openActions` builds `privacy_invoke(operation:u8, market_id:u64,
+band_low:u256, band_high:u256, token:ContractAddress, amount:u128, secret:felt252,
+note_id:felt252)` — ten felts, matching the deployed signature exactly, verified felt by felt.
+The direct route the deployed contract lacks is **not offered**: the console probes
+`quote_offsets` and suppresses it, which is why the desk says "POOL ONLY HERE".
+
+## Confirmations
+
+- **Zero console errors** on `/`, `/live`, `/privacy`, `/keeper`, `/m/<id>`, `/play`, the live
+  desk, and every menu view, on production, in fresh tabs. The only 404 observed in any
+  console was `/nope`, which the plan asks for.
+- **Zero failed requests** in the network log across the tested surface. Every `/api/*` call
+  returned 200 except the ones that should not: `/api/price?market=NOPE` 404,
+  `/api/audit/99999` 404, `/api/audit/abc` 400, and `/api/rpc` **403 for all three write
+  methods**. `/api/health` answers 503 while the relay is stale, which is the honest answer.
+- **Zero mocks, stubs, fixtures or fallback data.** Scanned: no `mock`, `stub`, `fake`,
+  `dummy`, `fixture`, `lorem` or `sampleData` anywhere in `apps/web/src`, `packages/sdk/src`
+  or `apps/keeper/src`. `StubToken` exists only in Cairo tests, `cairo/src/devnet.cairo` and
+  the devnet branch of the deploy script.
+- **Zero debug leftovers.** No `console.log`, `console.debug`, `debugger`, `data-debug`, or
+  TODO/FIXME/HACK/XXX in shipped source.
+- **No secrets exposed.** Scanned `/api/rpc`, `/api/config`, `/api/health`, `/api/keeper` and
+  `/api/markets` for an Alchemy key, a database URL and the keeper's private key: zero
+  matches. The browser holds no credential and cannot send a transaction through the proxy.
+- **Suites green**: 84 SDK tests, 9 keeper tests, 81 Cairo tests, and all three TypeScript
+  packages typecheck clean.
