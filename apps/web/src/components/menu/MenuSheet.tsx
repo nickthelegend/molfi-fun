@@ -81,6 +81,15 @@ export function MenuSheet({
   // A live desk has no paper plays; the history, leaderboard and achievements views already
   // print honest empty states for that, so they need no special casing beyond this.
   const plays = tickets ?? [];
+  /**
+   * Which desk this menu was opened from — not whether a wallet happens to be connected.
+   *
+   * The balance card keyed off `live?.connection`, so the live desk with no wallet yet
+   * announced a "Paper balance". There is no paper balance on the live desk; the figure it
+   * would describe does not exist. What is unknown there is the *shielded* balance, and
+   * unknown is shown as unknown.
+   */
+  const onLiveDesk = live !== undefined;
   const paperPnl = pnl ?? 0n;
   const [view, setView] = useState<View>("menu");
   const back = () => setView("menu");
@@ -220,12 +229,18 @@ export function MenuSheet({
           {/* No account system on the demo desk, so it says so rather than inventing a
               handle. The live console shows the connected address instead. */}
           <div className="truncate text-[15px] font-semibold">
-            {live?.connection ? "Live desk" : "Demo desk"}
+            {onLiveDesk ? "Live desk" : "Demo desk"}
           </div>
           <p className="truncate text-[13px] text-white/45">
-            {played === 0
-              ? "No plays yet. Make your first play."
-              : `${played} ${played === 1 ? "play" : "plays"} · ${paperPnl >= 0n ? "+" : "−"}${fmtUsd(paperPnl < 0n ? -paperPnl : paperPnl)}`}
+            {/* Paper plays are a demo-desk fact. On the live desk the useful line is whether
+                there is a wallet behind this menu at all. */}
+            {onLiveDesk
+              ? live!.connection
+                ? "Connected · positions are yours to claim"
+                : "No wallet connected. Everything here still reads from the chain."
+              : played === 0
+                ? "No plays yet. Make your first play."
+                : `${played} ${played === 1 ? "play" : "plays"} · ${paperPnl >= 0n ? "+" : "−"}${fmtUsd(paperPnl < 0n ? -paperPnl : paperPnl)}`}
           </p>
         </div>
         <button
@@ -248,7 +263,7 @@ export function MenuSheet({
       {/* ------------------------------------------------------------ balance */}
       <div className="mt-3 rounded-2xl bg-[#161616] p-4">
         <div className="flex items-center justify-between">
-          <span className="label">{live?.connection ? "Shielded" : "Paper balance"}</span>
+          <span className="label">{onLiveDesk ? "Shielded" : "Paper balance"}</span>
           <button
             onClick={() => setView("history")}
             aria-label="history"
@@ -259,16 +274,16 @@ export function MenuSheet({
         </div>
         <div className="mt-2 flex items-center gap-3">
           <span className="grid h-8 w-8 place-items-center rounded-full bg-blue text-[13px] font-bold">
-            {live?.connection ? "S" : "$"}
+            {onLiveDesk ? "S" : "$"}
           </span>
           {/* Two different currencies, and never silently the same one. The demo desk keeps
               paper dollars; a connected desk holds STRK inside the pool, and an unreadable
               shielded balance is shown as unknown rather than as zero. */}
           <span className="tnum flex-1 text-[30px] font-bold leading-none">
-            {live?.connection
-              ? live.shielded === null
+            {onLiveDesk
+              ? live!.shielded === null
                 ? "—"
-                : `${fmtStrk(live.shielded, 2)}`
+                : `${fmtStrk(live!.shielded, 2)}`
               : balance === undefined
                 ? "—"
                 : fmtUsd(balance)}
