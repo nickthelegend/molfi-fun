@@ -227,6 +227,57 @@ Every read path, every UI path and every already-settled market is fully testabl
 | J8 | Contrast | Glass text is the two permitted greys, nothing dimmer. |
 
 
+## K · `/verify` — the observer's view (new since the first run)
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| K1 | `/verify` renders | 200; headline, the contract address, the observer panel, the `getEvents` snippet, three doors. |
+| K2 | Band-leak banner is chain-driven | The red "the band is one of the things revealed" box is drawn from the **deployed class's ABI**, not a constant — present exactly when the deployed `Position` has `band_low`. |
+| K3 | Commitment lookup, unknown | A well-formed commitment that was never opened answers "No position on this contract carries that commitment" — a real answer, not an error state. |
+| K4 | Commitment lookup, malformed | A non-felt input fails with the route's named error, not an unhandled throw. |
+| K5 | Lookup reads the chain | The request goes to `/api/position/<commitment>` and returns 200; nothing is computed from local storage. |
+| K6 | Revealed / cannot columns | With a real position, the left column lists market, stake, multiplier, claimed, and (on this class) the band in red; the right column omits any claim the deployed class does not honour. |
+| K7 | `getEvents` snippet is runnable | The printed curl is valid JSON-RPC against the configured node and returns events or an empty set. |
+| K8 | Links | `/privacy`, `/live`, `/play` doors all 200. |
+
+## L · Honesty surfaces that read the chain
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| L1 | `/privacy` band row | States the **deployed** behaviour. While the deployed class stores the band, the row says so and the "Hidden" claim is not asserted. |
+| L2 | `/privacy` banner | Red box present, drawn from the ABI read at render, linking to `/verify`. |
+| L3 | Self-retracting | Both L1 and L2 are computed from `bandIsOnChain(address)`; neither is hardcoded, so a class without the band removes them with no code change. |
+| L4 | Unreadable class | If the ABI cannot be read, the claim is reported as *unverified*, never as confirmed. |
+| L5 | `pnpm verify` D13 | Fails while the deployed class stores the band, with the member names in the detail. |
+
+## M · Console behaviour added after the first run
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| M1 | Guided run entry | MENU → "Show me how it works, narrated" starts it. |
+| M2 | Guided run drives the real engine | Six captioned steps in order; the balance falls by a real stake and a real position opens. Not a recording. |
+| M3 | Guided run yields | Any pointer or key input ends it immediately. |
+| M4 | Settlement count-up | The settled amount eases to its exact value; integer-scaled, no drift from the paid amount. |
+| M5 | Count-up lands without frames | With `requestAnimationFrame` never firing, the final value is still displayed — never `$0.00`. |
+| M6 | Reduced motion | With the preference on, the amount renders immediately rather than animating. |
+| M7 | Live desk has a menu | A MENU key exists on the live desk and opens the sheet with the pool view reachable. |
+| M8 | Live menu hides paper-only controls | No paper balance figure and no RESET DEMO DESK on the live desk. |
+| M9 | Position import round trip | A file whose commitment does not match its secret is refused by name; a valid one is accepted with the commitment recomputed, listed, and exportable. |
+| M10 | Positions survive a dead market read | With `/api/markets` failing, stored positions still list (degraded to "not found on chain"), never disappear. |
+
+## N · Keeper behaviour added after the first run
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| N1 | Stall detection | `/health` returns 503 once two consecutive cycles cannot list, with an `unhealthy` string naming which half failed. |
+| N2 | Stall ledger | Exactly one `stall` row per transition into or out of not-listing — never one per cycle. |
+| N3 | `/api/keeper` status | Answers **200** whenever the keeper answered, with the verdict in `ok`/`unhealthy`. It must not mirror the keeper's 503, or every caller reports the keeper unreachable. |
+| N4 | Keeper badge | Shows DEGRADED with "answering, but no longer listing rounds" — never "the keeper did not answer" while it is answering. |
+| N5 | Self-funding | On dropping below the floor the keeper asks the Foundation **agent** faucet itself, records the outcome, and honours a stated cooldown exactly. |
+| N6 | Affordability pre-flight | When the bare fee exceeds the balance it refuses before signing, naming both numbers, rather than emitting the node's gas-dictionary refusal after spending a nonce. |
+| N7 | `transient` | A permanent refusal whose text merely contains "502" inside a number is **not** retried. |
+| N8 | Round funded to its cutoff | The configured tier satisfies `3(bankroll + 0.5) + hours·0.797 + 0.45 ≤ drip`, so a listed round can always stay settleable to its own cutoff. |
+
 ---
 
 # Results
