@@ -175,8 +175,22 @@ export async function readRelayed(pair: string) {
  */
 let nextNonce: bigint | null = null;
 
+/**
+ * The account's next nonce, counting what is already in the mempool.
+ *
+ * `getNonce()` defaults to the **latest** block, which is the confirmed state and says
+ * nothing about transactions that have been accepted and not yet mined. When anything else
+ * signs from this account — the previous replica during a rolling deploy, or a hand-run
+ * `sncast` — its transaction sits pending, `latest` still reports the nonce it consumed, and
+ * the keeper picks the same one. The node answers `DuplicateNonce`, `transient()` correctly
+ * calls that retryable, the retry re-syncs, and reads the identical stale value again. It
+ * never converges: observed live as three attempts on nonce `0x2cf`, then a hard failure, for
+ * both a settle and a funding, on every cycle.
+ *
+ * `pending` includes the mempool, so the next nonce is the one nothing has claimed.
+ */
 async function syncNonce(): Promise<bigint> {
-  const n = await account.getNonce();
+  const n = await account.getNonce("pending");
   nextNonce = BigInt(n);
   return nextNonce;
 }
