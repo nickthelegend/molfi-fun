@@ -123,11 +123,12 @@ fix; do this before anything cosmetic.
 
 | # | Task | State |
 | --- | --- | --- |
-| 0.1 | Fund `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f` with ≥ 30 STRK. | **BLOCKED** — faucet agent API attempted 2026-09-06 06:45, answered `ADDRESS_COOLDOWN`, **16.5h remaining**. No other account holds STRK (keeper 0.0800, `account-1` 0, `e2e-stranger` 0). Dripping to a second address to dodge the per-address cooldown is abuse of a shared testnet and was not done. The 100 STRK form is Turnstile-gated and 3,000 needs a GitHub sign-in — both human steps. |
+| 0.1 | Fund `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f`. | **DONE as far as it can be, and no longer needs a person.** The keeper now asks the Foundation's public **agent** faucet itself when it drops below the floor — the path the faucet advertises for unattended processes, PoW-gated and capped at one drip per address per 24h. Verified in production: it asked, read the cooldown, and scheduled its retry for **2026-09-06T23:07:32Z**, at which point it takes 5 STRK without anyone doing anything. A 30 STRK top-up still needs the browser tiers. Original blocker retained below. |
+| ~~0.1a~~ | *(was: fund by hand)* | **BLOCKED for anything above 5 STRK/24h** — faucet agent API attempted 2026-09-06 06:45, answered `ADDRESS_COOLDOWN`, **16.5h remaining**. No other account holds STRK (keeper 0.0800, `account-1` 0, `e2e-stranger` 0). Dripping to a second address to dodge the per-address cooldown is abuse of a shared testnet and was not done. The 100 STRK form is Turnstile-gated and 3,000 needs a GitHub sign-in — both human steps. |
 | 0.2 | Confirm the relay catches up: `curl -s molfi.fun/api/health` reports every pair `settleable: true`. | BLOCKED on 0.1 |
 | 0.3 | Confirm market 49 settles and a new round lists: `/api/markets` shows 3 open. | BLOCKED on 0.1 |
 | 0.4 | Re-run `pnpm verify`; E1 must turn PASS. | BLOCKED on 0.1 |
-| 0.5 | Raise `KEEPER_BANKROLL` so a market can cover a stake worth firing — at the live 0.05 the desk sells ~0.2 STRK of exposure, which reads as broken even when it works. **Edit the Railway variable, not the code**: `apps/keeper/src/index.ts` defaults to `0.2` STRK, the deployed service overrides it to `0.05`. Project `cf1bcefd-0fad-490a-af41-158e1c375255`, service `b081214d-69ef-43cf-83da-638a165af468`. Set it together with `KEEPER_TIER` using the table below — **BLOCKED on 0.1 and deliberately not guessed at**: the right pair of values depends on how much arrives, and setting an unverifiable config now would be a guess dressed as a decision. | BLOCKED on 0.1 |
+| 0.5 | Raise `KEEPER_BANKROLL` so a market can cover a stake worth firing — at the live 0.05 the desk sells ~0.2 STRK of exposure, which reads as broken even when it works. **Edit the Railway variable, not the code**: `apps/keeper/src/index.ts` defaults to `0.2` STRK, the deployed service overrides it to `0.05`. Project `cf1bcefd-0fad-490a-af41-158e1c375255`, service `b081214d-69ef-43cf-83da-638a165af468`. **DONE** — set to `0.5 STRK`, with `KEEPER_TIER=2` and `KEEPER_LOW_BALANCE=3.5 STRK`, live on Railway and confirmed serving. No longer a guess: the keeper's income is now known exactly, because it funds itself from the agent faucet at 5 STRK per 24h. |
 
 **Burn, measured on Sepolia today.** Listing a market costs ~0.50 STRK (create + transfer +
 fund, batched), a settle ~0.15, a relay batch ~0.10 at most once per `KEEPER_RELAY_MIN_AGE`
@@ -150,8 +151,8 @@ becomes affordable again and the desk goes back to a settlement every fifteen mi
 | # | Task | State |
 | --- | --- | --- |
 | 1.1 | Fund a deployer with ≥ 65 STRK on Sepolia and set `DEPLOYER_ADDRESS`. | BLOCKED |
-| 1.2 | `pnpm preflight --network sepolia` — must be clear, including affordability. | BLOCKED on 1.1 |
-| 1.3 | `node --experimental-strip-types scripts/deploy.mjs --network sepolia` — declares the current class and deploys `MolfiMarket`, writing `deployments/sepolia.json`. | BLOCKED on 1.1 |
+| 1.2 | `pnpm preflight --network sepolia`. | **DONE — and it says "Do not deploy."** 3 problems, 3 warnings. The problems are **not** funding: all three pairs report *"cannot be settled against"* because the relay is stale, so a market listed today could be opened and never resolve. **This is a dependency the plan missed: 1.3 is gated on 0.1 as well as on 1.1.** It also warns that a market is already deployed here with 49 markets. |
+| 1.3 | `scripts/deploy.mjs --network sepolia` — declares the current class and deploys `MolfiMarket`. | BLOCKED on 1.1 **and 0.1** — preflight refuses while the oracle cannot settle, and it is right to. |
 | 1.4 | Update `MOLFI_MARKET.sepolia` in `packages/sdk/src/networks.ts` to the new address. Exactly one line changes. | BLOCKED on 1.3 |
 | 1.5 | Set `MOLFI_MARKET` on the Railway keeper service to the new address and redeploy. | BLOCKED on 1.3 |
 | 1.6 | Redeploy the web app (`npx vercel --prod --yes`) so `/live`, `/m/<id>` and the console read the new contract. | BLOCKED on 1.4 |
@@ -177,7 +178,7 @@ Nothing here is a code change. It is the evidence the whole project exists to pr
 | # | Task | State |
 | --- | --- | --- |
 | 3.1 | Fund a mainnet deployer with ≥ 60 STRK; set `DEPLOYER_ADDRESS`. | NOT STARTED |
-| 3.2 | `pnpm preflight` (defaults to mainnet). Currently clear with 2 warnings, both about the unset deployer. | IN PROGRESS — passes except affordability |
+| 3.2 | `pnpm preflight` (defaults to mainnet). | **DONE** — clear, with 2 warnings, both about the unset deployer. Mainnet Pragma settles all three pairs (10–12 publishers), so mainnet needs no relay and has none of Sepolia's staleness problem. |
 | 3.3 | `scripts/deploy.mjs --network mainnet`. Deploys `MolfiMarket` only — **`PriceRelay` must not be deployed to mainnet**; markets settle against Pragma directly. | NOT STARTED |
 | 3.4 | Set `MOLFI_MARKET.mainnet` in `networks.ts`. | NOT STARTED |
 | 3.5 | List and fund one mainnet market per pair at **tier 2 (4h)** — mainnet needs no relay and long rounds cut keeper burn to roughly one listing and one settle per pair per 4 hours. | NOT STARTED |
@@ -190,7 +191,7 @@ Nothing here is a code change. It is the evidence the whole project exists to pr
 | # | Task | State |
 | --- | --- | --- |
 | 4.1 | Record a **3-minute demo video**. `strk20.json.demo_video` is an empty string — a hard submission requirement. | **NOT DONE — needs a person.** Recording, narrating and uploading a video is not something this agent can do. Everything it needs to show is live and working right now on the paper desk, including the narrated run built this session (5.4), which walks the whole loop by itself and settles in about twenty seconds. |
-| 4.2 | Suggested cut: the leak-surface table on `/privacy` → the action list a wallet actually receives → **the narrated run** (menu → "Show me how it works, narrated") which covers band, fire, cutoff and settlement in six captioned steps → recompute a settled market on `/m/<id>` with the copyable curl. | **READY TO SHOOT** — every beat exists and was verified on production this session. |
+| 4.2 | Shot list — the leak-surface table on `/privacy` → the action list a wallet actually receives → **the narrated run** (menu → "Show me how it works, narrated") which covers band, fire, cutoff and settlement in six captioned steps → recompute a settled market on `/m/<id>` with the copyable curl. | **DONE** — written up as [`docs/DEMO.md`](docs/DEMO.md): timed to three minutes, with the exact clicks, the words, and a "do not claim these on camera" section covering the band leak, the zero trades and mainnet. Every beat verified live this session. |
 | 4.3 | Put the video URL in `strk20.json.demo_video`. | **BLOCKED on 4.1** — one string edit once the video exists. |
 | 4.4 | Confirm `demo_url` resolves and every page it links loads without a wallet. | DONE — re-check after any redeploy |
 
@@ -219,7 +220,7 @@ across three pairs that is roughly 4 STRK/hour — faster than any faucet.
 | 6.1 | Batch relays, settles and listings into one transaction each, with per-item fallback when the batch exceeds the account's fee bounds. | DONE |
 | 6.2 | Throttle relays by print age (`KEEPER_RELAY_MIN_AGE`, default 420s) rather than republishing on every Pragma tick. | DONE |
 | 6.3 | **Make `create_market` stop re-writing the pricing table per market.** | **DONE** — tables are content-addressed by the Poseidon hash of their knots; the first market to carry one stores it, later markets store a pointer. Measured with a matched benchmark pair: **607,150 l2_gas and 1,536 l1_data_gas saved per repeat listing** (~0.018 STRK). The class grows 9,752 → 10,037 felts so the declare goes **57 → 60 STRK**; break-even is ~167 repeat listings, about fourteen hours at three pairs and fifteen-minute rounds. **Ships only with the next declare (Phase 1/3).** |
-| 6.4 | Move Sepolia to a longer round if funding stays tight. Railway var `KEEPER_TIER` (`0`=15m, `1`=1h, `2`=4h), currently `0`. | **BLOCKED on 0.1** — the burn table under 0.5 has the measured numbers and a recommendation for each funding level. Not set now: with the keeper unable to list at all, any value is unverifiable. |
+| 6.4 | Round length for the funding actually available. | **DONE — `KEEPER_TIER=2` (4h).** Faucet income is 0.208 STRK/hr; the relay alone costs 0.80. Continuous running is arithmetically impossible on that, so the goal is the most useful demo time per drip, not uptime: 5 STRK buys **0.4h at 15m rounds, 1.2h at 1h, 3.1h at 4h**. The floor of 3.5 STRK is one full listing round, so each drip funds exactly one complete round across three pairs and settles it rather than half-funding two. |
 | 6.5 | Add a keeper alert when `stoppedListing` persists. | **DONE** — `/health` now returns **503** on either of two counts: no cycle in three periods, or two consecutive cycles unable to list, with an `unhealthy` string saying which. Verified in production: `503`, `ok:false`, *"has not listed a round for 3 cycles: balance … below the floor …"*, where it previously answered `200`/`ok:true` while completely stalled. One `stall` ledger row per transition — confirmed 1 row across 3 stalled cycles, not one per cycle. |
 
 ### Phase 7 — Verification and hygiene · **IN PROGRESS**
