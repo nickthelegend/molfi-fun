@@ -174,3 +174,62 @@ from the deployed ABI rather than a constant, and `pnpm verify` D13 fails until 
 `market.cairo`, and a declare is the only way any of them reaches a chain — about 60 STRK, which
 the deployer does not have. Until then the class live on Sepolia has the exclusive bounds, the
 masked assertion, and the public band.
+
+---
+
+# Oracles considered, and why molfi still reads Pragma
+
+Asked and answered against the chain rather than from memory, because "use X instead" is cheap
+to say and expensive to discover is wrong after you have built on it.
+
+## Chainlink — no Starknet deployment
+
+Chainlink's price feeds are EVM-only. There is no Chainlink aggregator contract on Starknet
+mainnet or Sepolia to read, so there is nothing to integrate. Not a quality judgement, an
+availability one.
+
+## Pyth — deployed on Starknet, and abandoned
+
+Pyth *does* have a Starknet contract, which makes it a genuinely different case from Chainlink
+and worth checking properly. Mainnet:
+`0x062ab68d8e23a7aa0d5bf4d25380c2d54f2dd8f83012e047851c3706b53d64d1`. It is deployed — the
+class hash reads back fine.
+
+Then Pyth's own docs say **"Pyth Core no longer supports Starknet as of August 26, 2026"**,
+eleven days before this was written, and the chain agrees. Reading `get_price_unsafe` for six
+feeds on mainnet, today:
+
+| Feed | Price it still holds | Published | Age |
+| --- | --- | --- | --- |
+| BTC/USD | $64,935.20 | 2024-07-18 | **780 days** |
+| ETH/USD | $4,346.61 | 2025-09-09 | 362 days |
+| LINK/USD | $14.37 | 2024-07-17 | 781 days |
+| STRK/USD | $0.13 | 2025-09-09 | 362 days |
+| XRP/USD | $1.38 | 2026-02-22 | 196 days |
+| SOL/USD | — | — | no feed, ever |
+
+molfi refuses any print older than 900 seconds. The freshest thing Pyth has on Starknet is
+seventeen million seconds old.
+
+Pyth is a *pull* oracle, so stale storage on its own would only mean nobody had pushed
+recently — the fix would be to fetch a signed update from Hermes and submit it. That path is
+closed too: `hermes.pyth.network` now answers **401 unauthorized** on both the v2 and legacy
+endpoints, so it needs a credential that does not exist in this repo. And pushing updates into
+a contract the vendor has formally stopped supporting is not a foundation for a settlement
+guarantee.
+
+## What actually limits the market list
+
+Not the oracle vendor — the publisher floor. `settle` demands three publishers and a print
+under fifteen minutes old, and that is the whole constraint. Against Pragma mainnet, of forty
+candidate pairs only BTC, ETH, STRK, WBTC, EKUBO, LORDS, USDC and USDT clear it. Stablecoins
+are excluded on their merits; EKUBO and LORDS clear Pragma but have no minute tape anywhere to
+fit a probability table from. That leaves four, and molfi lists four.
+
+**The honest route to more coins is molfi's own relay, and it is real work rather than a
+config change.** `PriceRelay` already republishes a price onto Sepolia and carries the source
+count with it, and the keeper passes mainnet Pragma's true count today. Relaying a
+Binance-only price would mean either reporting one publisher — which `MIN_SOURCES` correctly
+rejects — or reporting three and lying about it. The defensible version is a real median across
+three or more independent exchanges with the true count attached, which is what an oracle is.
+That is buildable and it is not built.
