@@ -555,7 +555,7 @@ and a local build for the console, which the gate now stands in front of.
 | --- | --- | --- | --- |
 | P1 | Open bands are visible | The bands you hold are drawn, and are not hidden by the band you might buy. | **FAIL → fixed.** They were drawn *before* the amber box and painted over. Now drawn last |
 | P2 | In the money reads as winning | A band containing the current price is green. | **FAIL → fixed.** It was `C.dim` at half alpha — being in the money looked like being switched off. Verified: 21 green pixels sampled off the canvas |
-| P3 | Out of the money reads as losing | A band the price has left is red. | **UNTESTED IN BROWSER.** Same branch, different constant; the pane the tests run in throttles the desk clock, so the price never walks out of a band. Not claimed as a pass |
+| P3 | Out of the money reads as losing | A band the price has left is red. | **PASS.** Was marked untested because the desk clock is throttled while the Browser pane is hidden — the price never walked far enough to leave a band. Rerun with the pane displayed and the transition is exact: a ±0.04% band sampled at 33 green pixels, then **33 red and 0 green** as the spot moved 79,319.13 → 79,294.68 and left it. The throttling was the obstacle, not the code |
 | P4 | Bands belong to their market | Switching market with a position open must not draw that position on the new market's axis. | **FAIL → fixed.** A BTC band at 79,900 was drawn on the ETH chart against 2,501, clamped to the axis and painted red — three positions reported as losing that were on another market. Verified: 21 green on STRK, 0 after switching to BTC |
 | P5 | Overlapping bands are countable | Two positions on the same band read as two, not one. | **PASS** — solid cap at `now` per band |
 
@@ -586,7 +586,11 @@ and a local build for the console, which the gate now stands in front of.
 
 - **Zero console errors and zero failed requests** on `/`, `/play`, `/privacy`, `/keeper`,
   `/verify` and `/m/48` on production, and on the console locally through the range game, the
-  direction game, the switch, firing, and market changes.
+  direction game, the switch, firing, market changes, and a band walking out of the money.
+- **A note on the pane.** Two items were recorded as untestable in earlier runs because the
+  Browser pane throttles timers while it is hidden, which freezes the desk clock. That is a
+  property of the harness, not of the app, and it is worth writing down: a "cannot be tested"
+  should be re-examined when the reason is environmental. Displaying the pane closed P3.
 - **105 SDK · 23 keeper · 119 Cairo** green; three packages typecheck clean; `api:check`
   passes in full against production.
 - **Zero mocks, stubs or fixtures.** The eight grep hits are HTML `placeholder` attributes,
