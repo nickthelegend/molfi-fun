@@ -125,32 +125,49 @@ async function relayPrices(): Promise<void> {
 
   if (calls.length === 0) return;
 
+  const noted = async (pairs: typeof relayed, tx: string | null, why?: string) => {
+    for (const r of pairs) {
+      await db.record({
+        kind: "relay", network: NETWORK, pair: r.pair, marketId: null, txHash: tx,
+        ok: tx !== null,
+        detail: tx
+          ? `${r.price} from ${r.sources} publishers, mainnet block ${r.block}`
+          : (why ?? "unknown"),
+        meta: tx
+          ? { price: r.price.toString(), sources: r.sources, sourceBlock: r.block }
+          : undefined,
+      });
+    }
+  };
+
   /**
-   * Every pair in one transaction.
+   * Every pair in one transaction, then one at a time if that will not go through.
    *
    * Three pairs meant three transactions and three lots of per-transaction L2 gas for what
-   * is three storage writes. The relay is the keeper's most frequent action, so this is
-   * where the fee was actually going.
+   * is three storage writes, and the relay is the keeper's most frequent action. But a V3
+   * transaction is validated against its fee *bounds*, which scale with the batch — so on a
+   * thin balance the cheap batch is the one that cannot be attempted at all, and failing it
+   * as a unit takes every pair down together. A stale relay stops every market settling, so
+   * this is the one place where getting *some* of it done matters more than doing it cheaply.
    */
   try {
     const tx = await send(calls, `relayed ${relayed.map((r) => r.pair).join(", ")}`);
     state.relayed += relayed.length;
-    for (const r of relayed) {
-      await db.record({
-        kind: "relay", network: NETWORK, pair: r.pair, marketId: null, txHash: tx,
-        ok: true,
-        detail: `${r.price} from ${r.sources} publishers, mainnet block ${r.block}`,
-        meta: { price: r.price.toString(), sources: r.sources, sourceBlock: r.block },
-      });
-    }
+    await noted(relayed, tx);
+    return;
   } catch (e) {
-    const why = reason(e);
-    log(`relay batch: FAILED ${why}`);
-    for (const r of relayed) {
-      await db.record({
-        kind: "relay", network: NETWORK, pair: r.pair, marketId: null, txHash: null,
-        ok: false, detail: why,
-      });
+    log(`relay batch: ${reason(e)} — falling back to one pair at a time`);
+  }
+
+  for (let i = 0; i < relayed.length; i += 1) {
+    try {
+      const tx = await send(calls[i], `relayed ${relayed[i].pair}`);
+      state.relayed += 1;
+      await noted([relayed[i]], tx);
+    } catch (e) {
+      const why = reason(e);
+      log(`relay ${relayed[i].pair}: FAILED ${why}`);
+      await noted([relayed[i]], null, why);
     }
   }
 }
