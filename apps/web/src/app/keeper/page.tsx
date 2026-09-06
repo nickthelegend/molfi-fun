@@ -32,6 +32,22 @@ interface Action {
 }
 
 const EXPLORER = "https://sepolia.starkscan.co/tx/";
+const EXPLORER_ACCOUNT = "https://sepolia.starkscan.co/contract/";
+
+/** The ledger kinds, in the order they matter, with the words the page uses for them. */
+const LEDGER_KINDS = [
+  { key: "settle", label: "markets settled" },
+  { key: "list", label: "rounds listed" },
+  { key: "relay", label: "prices relayed" },
+  { key: "fund", label: "top-ups asked for" },
+  { key: "stall", label: "times it stalled" },
+] as const;
+
+interface LedgerRow {
+  total: number;
+  ok: number;
+  last: string | null;
+}
 
 async function fetchJson(path: string) {
   const base = process.env.KEEPER_URL;
@@ -173,6 +189,11 @@ function Status({ health }: { health: Record<string, unknown> | null }) {
 
   const ok = Boolean(health.ok);
   const lag = typeof health.lagMs === "number" ? Math.round(health.lagMs / 1000) : null;
+  const ledger = (health.ledger ?? null) as Record<string, LedgerRow | undefined> | null;
+  const uptime =
+    typeof health.startedAt === "string"
+      ? since(Date.parse(health.startedAt))
+      : "for an unknown time";
 
   return (
     <section className="mt-4 rounded-[22px] bg-card p-5">
@@ -184,12 +205,27 @@ function Status({ health }: { health: Record<string, unknown> | null }) {
           {ok ? "RUNNING" : "STALLED"}
         </span>
       </div>
+      {/*
+        The account, first, and linked.
+
+        This page tells you not to believe it and then prints transaction hashes. Neither is
+        worth much without the address they came from: with it you can pull the keeper's
+        whole history off the explorer and never read this page again, which is the point.
+      */}
+      {typeof health.keeper === "string" ? (
+        <a
+          href={`${EXPLORER_ACCOUNT}${health.keeper}`}
+          target="_blank"
+          rel="noreferrer"
+          className="mono mt-2 block truncate text-[10px] tracking-wide text-amber underline"
+        >
+          {health.keeper}
+        </a>
+      ) : null}
+
       <dl className="mono mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] tracking-wide">
         <Cell k="cycles" v={String(health.cycles ?? "—")} />
         <Cell k="last cycle" v={lag === null ? "—" : `${lag}s ago`} />
-        <Cell k="relayed" v={String(health.relayed ?? 0)} />
-        <Cell k="settled" v={String(health.settled ?? 0)} />
-        <Cell k="listed" v={String(health.listed ?? 0)} />
         <Cell
           k="balance"
           v={
@@ -198,11 +234,45 @@ function Status({ health }: { health: Record<string, unknown> | null }) {
               : "—"
           }
         />
+        <Cell k="cycle period" v={health.cycleSeconds ? `${health.cycleSeconds}s` : "—"} />
       </dl>
+
+      {/*
+        Two different numbers, and conflating them was a lie by omission.
+
+        `relayed`/`settled`/`listed` on the health payload count what *this process* has done
+        since it booted. The ledger in Postgres counts what the keeper has ever done. When the
+        process restarts the first set goes to zero — so a keeper that has settled forty-five
+        markets was printing "settled 0" under a heading that reads "everything it has done".
+        Both are shown, each labelled with the span it covers.
+      */}
+      {ledger ? (
+        <>
+          <div className="label mt-4">Since it was first deployed</div>
+          <dl className="mono mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] tracking-wide">
+            {LEDGER_KINDS.filter((k) => ledger[k.key]).map((k) => {
+              const row = ledger[k.key]!;
+              return <Cell key={k.key} k={k.label} v={`${row.ok} of ${row.total}`} />;
+            })}
+          </dl>
+          <div className="label mt-4">This process, up {uptime}</div>
+          <dl className="mono mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] tracking-wide">
+            <Cell k="relayed" v={String(health.relayed ?? 0)} />
+            <Cell k="settled" v={String(health.settled ?? 0)} />
+            <Cell k="listed" v={String(health.listed ?? 0)} />
+          </dl>
+        </>
+      ) : null}
+
       {typeof health.stoppedListing === "string" ? (
         <p className="mt-2 text-[11px] leading-relaxed text-amber">
           Not listing new markets: {health.stoppedListing}. It keeps settling, which is
           cheaper and the more important of the two.
+        </p>
+      ) : null}
+      {typeof health.lastDrip === "string" ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-white/40">
+          Last time it asked the faucet to top itself up: {health.lastDrip}.
         </p>
       ) : null}
     </section>
@@ -216,4 +286,13 @@ function Cell({ k, v }: { k: string; v: string }) {
       <dd className="tnum truncate text-white/70">{v}</dd>
     </div>
   );
+}
+
+/** How long ago a timestamp was, in the coarsest unit that is still true. */
+function since(ms: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 90) return `${s}s`;
+  if (s < 5_400) return `${Math.round(s / 60)}m`;
+  if (s < 172_800) return `${Math.round(s / 3_600)}h`;
+  return `${Math.round(s / 86_400)}d`;
 }

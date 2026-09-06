@@ -28,6 +28,16 @@ export interface NetworkConfig {
   oracle: string | null;
   /** molfi's anonymizer, once deployed. Null means "not deployed here yet". */
   market: string | null;
+  /**
+   * The block the market contract's first event landed in.
+   *
+   * `starknet_getEvents` pages the chain in fixed windows — Sepolia's node covers 81,920
+   * blocks per call — so a scan started at block 0 against a contract deployed fourteen
+   * million blocks later answers with an empty page and a continuation token. Correct, and
+   * useless to anyone who runs it once. Every printed scan starts here instead, so a single
+   * command returns the events the page says it will.
+   */
+  firstEventBlock: number | null;
   /** Block explorer base, used for the tx links the demo needs to show. */
   explorer: string;
   /** True when the STRK20 pool is the real one and the SDK route applies. */
@@ -111,6 +121,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     stakeToken: process.env.NEXT_PUBLIC_TOKEN ?? null,
     oracle: process.env.NEXT_PUBLIC_ORACLE ?? null,
     market: marketFor("devnet"),
+    firstEventBlock: 0,
     explorer: "",
     realPool: false,
   },
@@ -126,6 +137,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
      */
     oracle: SEPOLIA_PRICE_RELAY,
     market: marketFor("sepolia"),
+    firstEventBlock: 14_605_143,
     explorer: "https://sepolia.starkscan.co",
     realPool: true,
   },
@@ -137,6 +149,7 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     stakeToken: STRK_TOKEN,
     oracle: PRAGMA.mainnet,
     market: marketFor("mainnet"),
+    firstEventBlock: null,
     explorer: "https://starkscan.co",
     realPool: true,
   },

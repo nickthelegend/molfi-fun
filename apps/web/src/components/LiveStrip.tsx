@@ -75,7 +75,17 @@ export function LiveStrip() {
       href="/live"
       className="mono mt-5 flex h-[30px] items-center justify-center gap-2 rounded-lg bg-[#141414] px-3 text-[9px] leading-none tracking-[0.1em] text-white/40 transition-colors hover:bg-[#1b1b1b] hover:text-white/60"
     >
-      {!data ? (
+      {failed || !data ? (
+        /**
+         * A failed read wins over the numbers, even after a good one.
+         *
+         * This used to be `!data`, so the error only ever appeared if the *first* read
+         * failed. Once one had succeeded the strip kept painting those numbers for as long
+         * as the route stayed down — a settlement age counting up from a chain nobody could
+         * read any more, on the one line of this page whose whole job is to say that molfi
+         * is running. Stale is not live, and a strip that cannot tell the difference is
+         * worse than one that says nothing.
+         */
         <span className="text-white/25">{failed ? failed.toUpperCase() : "READING SEPOLIA…"}</span>
       ) : (
         <>

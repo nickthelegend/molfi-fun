@@ -274,6 +274,11 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     [market, spot],
   );
 
+  const topUp = useCallback((amount: bigint) => {
+    engineRef.current!.topUp(amount);
+    forceRender((n) => n + 1);
+  }, []);
+
   const reset = useCallback(() => {
     engineRef.current = new PaperEngine();
     lastSettledRef.current = null;
@@ -309,6 +314,7 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     fire,
     stack,
     reset,
+    topUp,
     roundSeconds: ROUND_SECONDS,
     secondsPerTick,
   };

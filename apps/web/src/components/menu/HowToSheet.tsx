@@ -30,9 +30,9 @@ export function HowToBody() {
         <p className="mt-1 text-[13px] leading-relaxed text-white/55">
           It is <span className="text-white">1 ÷ chance</span>, less a 4% fee. The chance
           comes from a distribution measured on real market tape for each round length —
-          not a curve we assumed. Over a three-second round the price often does not move
-          at all, and pricing that off a bell curve would be wrong in the house&apos;s
-          favour.
+          not a curve we assumed. Real returns are fat-tailed and, over a quarter of an
+          hour, far more concentrated at the centre than a bell curve says; pricing a
+          fifteen-minute band off one would be wrong in the house&apos;s favour.
         </p>
         <p className="mt-2 text-[13px] leading-relaxed text-white/55">
           <span className="text-white">The 4% fee is not the whole spread.</span> Volatility

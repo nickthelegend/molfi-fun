@@ -55,20 +55,34 @@ export function KeeperBadge() {
   if (k && !k.configured) return null;
 
   /**
-   * Three states, and the middle one is the point.
+   * Not-read-yet is not the same as read-and-failed.
+   *
+   * `k` starts null, so every page used to paint a red STOPPED with "the keeper did not
+   * answer" for as long as the first request took — on a healthy keeper, on every single
+   * navigation, and for the whole of a slow connection. An alarm that fires before anything
+   * has been measured is the one kind of alarm nobody keeps believing.
+   */
+  const reading = !k && !failed;
+
+  /**
+   * Four states, and the two in the middle are the point.
    *
    * "Running" and "unreachable" are easy. A keeper that answers, reports no error, and has
    * quietly stopped listing because it ran out of STRK is the failure that looks like
    * health — so it gets its own colour and says what stopped.
    */
   const late = k ? k.lagMs > k.cycleSeconds * 1000 * 3 : false;
-  const tone = !k || failed || !k.reachable || late
-    ? { dot: "#e8453c", text: "STOPPED" }
-    : k.stoppedListing || k.lastError
-      ? { dot: "#ff9f0a", text: "DEGRADED" }
-      : { dot: "#3ddc84", text: "RUNNING" };
+  const tone = reading
+    ? { dot: "#5c5c5c", text: "READING…" }
+    : !k || failed || !k.reachable || late
+      ? { dot: "#e8453c", text: "STOPPED" }
+      : k.stoppedListing || k.lastError
+        ? { dot: "#ff9f0a", text: "DEGRADED" }
+        : { dot: "#3ddc84", text: "RUNNING" };
 
-  const detail = failed || !k
+  const detail = reading
+    ? "reading its status"
+    : failed || !k
     ? "the keeper did not answer"
     : late
       ? `last cycle ${Math.round(k.lagMs / 1000)}s ago, on a ${k.cycleSeconds}s loop`

@@ -103,6 +103,20 @@ export class PaperEngine {
     this.vaultAssets = this.cfg.vaultAssets;
   }
 
+  /**
+   * Hand the paper desk more paper.
+   *
+   * Not a reset: the tape, the open positions and the session P&L all survive, because a
+   * visitor who has spent the starting balance learning the console should not have to
+   * throw away what they just did to keep going. It moves the same `balance` field a fire
+   * and a settlement move, so nothing downstream can tell where the money came from — the
+   * one place it is visible is the label above the key, which says it is paper.
+   */
+  topUp(amount: bigint): void {
+    if (amount <= 0n) return;
+    this.balance += amount;
+  }
+
   get utilisationBps(): bigint {
     const total = this.vaultAssets;
     if (total === 0n) return this.reserved === 0n ? 0n : BPS;

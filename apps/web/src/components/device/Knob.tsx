@@ -23,6 +23,7 @@ export function Knob({
   max,
   onChange,
   label = "TURN",
+  valueText,
 }: {
   /** Current detent, 1-based. */
   value: number;
@@ -30,6 +31,14 @@ export function Knob({
   max: number;
   onChange: (v: number) => void;
   label?: string;
+  /**
+   * What this detent means, in the words on the readout — "$5.00", not "5".
+   *
+   * `aria-valuenow` has to be the detent index, because that is what the range is expressed
+   * in, and a screen reader left with only that announces "3 of 6" for a five dollar stake.
+   * `aria-valuetext` is the standard way to say the number a sighted user is reading.
+   */
+  valueText?: string;
 }) {
   /** Where the drag started, and the value it started from. Null when not dragging. */
   const drag = useRef<{ y: number; from: number } | null>(null);
@@ -79,6 +88,7 @@ export function Knob({
         aria-valuemin={1}
         aria-valuemax={max}
         aria-valuenow={value}
+        aria-valuetext={valueText}
         title="drag or scroll to step the stake"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

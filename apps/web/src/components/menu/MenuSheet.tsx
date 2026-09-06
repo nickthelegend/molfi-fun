@@ -50,6 +50,7 @@ export function MenuSheet({
   tickets,
   pnl,
   onReset,
+  onTopUp,
   onAttract,
   onGuide,
   live,
@@ -66,6 +67,8 @@ export function MenuSheet({
   tickets?: PaperTicket[];
   pnl?: bigint;
   onReset?: () => void;
+  /** Paper-only, like `onReset`: there is nothing on a live desk this could add to. */
+  onTopUp?: (amount: bigint) => void;
   /** Start attract mode: the desk plays itself until someone touches it. */
   onAttract?: () => void;
   /** Start the narrated run: the same engine, with a line saying what each step is doing. */
@@ -104,7 +107,11 @@ export function MenuSheet({
   if (view === "funds")
     return (
       <Sheet onClose={onClose} onBack={back} title="Add funds">
-        <AddFunds address={live?.connection?.address ?? null} />
+        <AddFunds
+          address={live?.connection?.address ?? null}
+          onTopUp={onTopUp}
+          balance={balance}
+        />
       </Sheet>
     );
 

@@ -80,10 +80,19 @@ export default async function VerifyPage() {
 {`curl -s ${NETWORKS[NETWORK].rpcUrl} \\
   -H 'content-type: application/json' \\
   -d '{"jsonrpc":"2.0","id":1,"method":"starknet_getEvents","params":[{
-        "from_block":{"block_number":0},"to_block":"latest",
+        "from_block":{"block_number":${NETWORKS[NETWORK].firstEventBlock ?? 0}},"to_block":"latest",
         "address":"${address ?? "0x…"}","chunk_size":50}]}'`}
           </pre>
           <p className="mt-3 text-[13px] leading-relaxed text-white/55">
+            It starts at block{" "}
+            <span className="tnum text-white/70">
+              {(NETWORKS[NETWORK].firstEventBlock ?? 0).toLocaleString("en-US")}
+            </span>
+            , where this contract&apos;s first event landed, because the node answers a scan
+            in fixed windows and one begun at block zero comes back empty with a continuation
+            token — correct, and no use to anyone who runs it once.
+          </p>
+          <p className="mt-2 text-[13px] leading-relaxed text-white/55">
             That is the same list anyone watching this market already has. It is why the band
             being in storage matters, and why the totals on{" "}
             <Link href="/live" className="text-amber underline">

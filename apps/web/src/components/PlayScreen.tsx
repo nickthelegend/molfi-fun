@@ -47,6 +47,17 @@ const STAKE_STEPS = [1_000_000n, 1_500_000n, 2_000_000n, 3_000_000n, 5_000_000n,
  */
 const QUICK_STAKES = [1_000_000n, 2_500_000n, 5_000_000n, 10_000_000n];
 
+/** The 1-based detent closest to a stake, for parking the knob after a quick stake. */
+function nearestStep(v: bigint): number {
+  let best = 1;
+  for (let i = 0; i < STAKE_STEPS.length; i += 1) {
+    const d = STAKE_STEPS[i] > v ? STAKE_STEPS[i] - v : v - STAKE_STEPS[i];
+    const bd = STAKE_STEPS[best - 1] > v ? STAKE_STEPS[best - 1] - v : v - STAKE_STEPS[best - 1];
+    if (d < bd) best = i + 1;
+  }
+  return best;
+}
+
 /**
  * Coin tones, per `packages/sdk/src/markets.ts`.
  *
@@ -111,7 +122,7 @@ export function PlayScreen() {
   useApplyTheme(prefs.theme);
 
   const desk = usePaperDesk(prefs.market);
-  const { state, setMarketKey, setTier, setRunning, fire, reset } = desk;
+  const { state, setMarketKey, setTier, setRunning, fire, reset, topUp } = desk;
   const band = useBand(state.market, state.tier, state.spot);
   const play = useSound(prefs.sound, prefs.volume);
 
@@ -238,7 +249,18 @@ export function PlayScreen() {
    */
   const [pctStake, setPctStake] = useState<bigint | null>(null);
   const stake = pctStake ?? STAKE_STEPS[stakeStep - 1];
-  const stakeAt = (i: number) => (i >= 1 && i <= STAKE_STEPS.length ? STAKE_STEPS[i - 1] : null);
+
+  /**
+   * The detents either side of the number on screen — not either side of the knob.
+   *
+   * A quick stake sets `pctStake` and left `stakeStep` where the knob happened to be, so
+   * after tapping $5 the readout printed "$5, ▲ $2, ▼ $1": the neighbours of $1.50, which is
+   * not the figure above them. Both hints were wrong at once, and the next notch of the knob
+   * really did drop $5 to $2. Reading them off `stake` makes the readout describe the stake
+   * it is printed under, whether that came from the knob or from a key.
+   */
+  const stepAbove = STAKE_STEPS.find((v) => v > stake) ?? null;
+  const stepBelow = STAKE_STEPS.filter((v) => v < stake).pop() ?? null;
   const payout = payoutFor(stake, band.multiplierBps);
   const round = state.market.rounds[state.tier];
 
@@ -734,6 +756,10 @@ export function PlayScreen() {
                           }
                           onClick={() => {
                             setPctStake(v);
+                            // Park the knob at the nearest detent too. Without this its next
+                            // notch is measured from wherever it was last left, so one turn
+                            // after tapping $5 dropped the stake to $2.
+                            setStakeStep(nearestStep(v));
                             play("key");
                           }}
                           className={`mono flex-1 rounded-md py-[5px] text-[9px] tracking-[0.08em] disabled:opacity-30 ${
@@ -801,6 +827,7 @@ export function PlayScreen() {
                 <Knob
                   value={stakeStep}
                   max={STAKE_STEPS.length}
+                  valueText={fmtUsd(stake, Number(stake) % 1_000_000 === 0 ? 0 : 2)}
                   onChange={(n) => {
                     setPctStake(null); // the physical control always takes over
                     setStakeStep(n);
@@ -849,18 +876,8 @@ export function PlayScreen() {
                 </div>
               </div>
               <div className="mono tnum flex-none text-right text-[9.5px] leading-[1.6] text-dim">
-                <div>
-                  ▲{" "}
-                  {stakeAt(stakeStep + 1)
-                    ? fmtUsd(stakeAt(stakeStep + 1)!, 0)
-                    : "—"}
-                </div>
-                <div>
-                  ▼{" "}
-                  {stakeAt(stakeStep - 1)
-                    ? fmtUsd(stakeAt(stakeStep - 1)!, 0)
-                    : "—"}
-                </div>
+                <div>▲ {stepAbove ? fmtUsd(stepAbove, 0) : "—"}</div>
+                <div>▼ {stepBelow ? fmtUsd(stepBelow, 0) : "—"}</div>
               </div>
             </div>
           </div>
@@ -874,6 +891,7 @@ export function PlayScreen() {
           tickets={state.tickets}
           pnl={state.pnl}
           onReset={reset}
+          onTopUp={topUp}
           onAttract={() => setAttract(true)}
           onGuide={() => setGuideStep(0)}
         />

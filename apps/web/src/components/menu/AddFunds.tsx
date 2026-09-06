@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { fmtUsd } from "@molfi/sdk";
 import { activeNetwork } from "@/lib/chain";
 
 /**
@@ -13,7 +14,19 @@ import { activeNetwork } from "@/lib/chain";
  * conflating the two would hide the one moment where the amount and the funder are both
  * visible on chain.
  */
-export function AddFunds({ address }: { address: string | null }) {
+/** Paper top-ups, in the units the deck's own keys use. */
+const TOP_UPS = [50_000_000n, 100_000_000n, 250_000_000n];
+
+export function AddFunds({
+  address,
+  onTopUp,
+  balance,
+}: {
+  address: string | null;
+  /** Present only on the paper desk, where a top-up is a real thing this can do. */
+  onTopUp?: (amount: bigint) => void;
+  balance?: bigint;
+}) {
   const [png, setPng] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -102,13 +115,49 @@ export function AddFunds({ address }: { address: string | null }) {
           </p>
         </div>
       ) : (
-        <div className="mt-3 rounded-2xl bg-[#141414] p-6 text-center">
-          <p className="text-[14px] text-white/60">
-            Connect a wallet and this shows your own receiving address.
-          </p>
-          <p className="mt-2 text-[12px] text-white/35">
-            On the demo desk the balance is paper, and there is nothing to fund.
-          </p>
+        <div className="mt-3 rounded-2xl bg-[#141414] p-6">
+          {onTopUp ? (
+            <>
+              {/*
+                A top-up the demo desk can actually perform.
+                
+                This used to say there was nothing to fund and stop there, which left a
+                visitor who had spent the opening balance with only RESET DEMO DESK — and
+                that throws away the tape, the open positions and the session P&L they came
+                here to look at. The money is paper and the label says so; the point of the
+                key is that the console keeps working.
+              */}
+              <div className="label text-center">Paper balance</div>
+              <div className="tnum mt-1 text-center text-[26px] font-extrabold leading-none">
+                {balance === undefined ? "—" : fmtUsd(balance)}
+              </div>
+              <div className="mt-4 flex gap-2">
+                {TOP_UPS.map((v) => (
+                  <button
+                    key={String(v)}
+                    onClick={() => onTopUp(v)}
+                    className="mono flex-1 rounded-lg bg-amber py-2.5 text-[11px] font-bold tracking-[0.08em] text-black"
+                  >
+                    + {fmtUsd(v, 0)}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-center text-[11px] leading-relaxed text-white/35">
+                Paper, and only in this browser. It keeps your tape and any open positions —
+                RESET DEMO DESK is the one that clears them. Nothing here touches a chain.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-center text-[14px] text-white/60">
+                Connect a wallet and this shows your own receiving address.
+              </p>
+              <p className="mt-2 text-center text-[12px] text-white/35">
+                STRK sent to it arrives in public; shielding it into the pool is a separate
+                step in the Pool sheet.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

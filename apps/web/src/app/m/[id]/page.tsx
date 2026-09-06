@@ -27,6 +27,17 @@ import { NETWORKS } from "@molfi/sdk";
  * page says what the chain says. A result served out of our own database would be a
  * screenshot with extra steps.
  */
+/**
+ * Where the settled price sits in `get_market`'s flat return, counting from zero.
+ *
+ * Named because two places need it and they disagreed: the decoder read felts 8 and 9 —
+ * correctly — while the "check it yourself" note under the curl told the reader to look at
+ * 9 and 10. Anyone who followed the page's own instructions got `settled_at` as the high
+ * limb of a price and a number in the 1e39s, on the one part of this page whose entire job
+ * is to let a sceptic confirm the figure without trusting molfi.
+ */
+const SETTLED_PRICE_AT = 8;
+
 export const dynamic = "force-dynamic";
 
 const u256 = (lo: string, hi: string) => (BigInt(hi) << 128n) | BigInt(lo);
@@ -69,7 +80,7 @@ async function readMarket(id: number): Promise<OnChainMarket | null> {
       roundSeconds: Number(BigInt(r[2])),
       sigma1e4: u256(r[4], r[5]),
       houseEdgeBps: u256(r[6], r[7]),
-      settledPrice: u256(r[8], r[9]),
+      settledPrice: u256(r[SETTLED_PRICE_AT], r[SETTLED_PRICE_AT + 1]),
       settledAt: Number(BigInt(r[10])),
       settledBlockAt: Number(BigInt(r[11])),
       settledSources: Number(BigInt(r[12])),
@@ -210,7 +221,7 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
           */}
         <CheckItYourself
           command={verifyCommand(market.id)}
-          note={`Returns market #${market.id} straight from a public Starknet node. Felts 9 and 10 are the settled price as a u256, low limb first — divide by 1e8.`}
+          note={`Returns market #${market.id} straight from a public Starknet node. Felts ${SETTLED_PRICE_AT} and ${SETTLED_PRICE_AT + 1} of the result — counting from zero — are the settled price as a u256, low limb first: divide the low limb by 1e8.`}
         />
 
         <div className="mt-4 rounded-[22px] bg-card p-6">

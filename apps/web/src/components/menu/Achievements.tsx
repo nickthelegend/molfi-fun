@@ -1,6 +1,12 @@
 "use client";
 
-import { fmtMultiplier, fmtUsd, roundLabel, type PaperTicket } from "@molfi/sdk";
+import {
+  ROUND_SECONDS,
+  fmtMultiplier,
+  fmtUsd,
+  roundLabel,
+  type PaperTicket,
+} from "@molfi/sdk";
 
 /**
  * Achievements earned from the tape, not awarded for showing up.
@@ -83,12 +89,21 @@ export function buildAwards(tickets: PaperTicket[]): Award[] {
       progress: { at: Math.min(3, longestWinStreak(settled)), of: 3 },
     },
     {
+      /**
+       * Counted against the rounds the console actually offers.
+       *
+       * This asked for six lengths "3s to 15m" — the round set from the abandoned
+       * three-second design. The desk has listed 15m, 1h and 4h for a long time, so the
+       * badge could never be earned and its subtitle described a control nobody could find.
+       * Reading the target off `ROUND_SECONDS` means the next change to the round set moves
+       * the badge with it.
+       */
       id: "full-spread",
       name: "Full spread",
-      how: "Play every round length, 3s to 15m",
+      how: `Play every round length, ${roundLabel(0)} to ${roundLabel(ROUND_SECONDS.length - 1)}`,
       icon: "📶",
-      earned: rounds.size >= 6,
-      progress: { at: rounds.size, of: 6 },
+      earned: rounds.size >= ROUND_SECONDS.length,
+      progress: { at: rounds.size, of: ROUND_SECONDS.length },
     },
     {
       id: "tourist",
