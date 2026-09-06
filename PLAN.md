@@ -35,9 +35,10 @@ position exactly and says nothing about what it predicts.
    contract paid.
 6. At least one real position has been opened and claimed end to end, in each game.
 
-**Where that stands: 5 of 6.** Item 6 is done for range (tx `0x028801d1…` → `0x0592bf85…`,
-2 STRK in, 2.1026 STRK out) and **not done for up/down**. Item 2 is half: the direction game is
-deployed *and* playable, but the two are not connected to each other.
+**Where that stands: 6 of 6.** Item 6 is done for range (`0x028801d1…` → `0x0592bf85…`,
+2 STRK in, 2.1026 out) **and for up/down** (`0x01563d53…` → `0x0337599e…`, 2 STRK in, a losing
+ticket claimed and its reservation released). Item 2 is done: both games are playable against
+their deployed contracts.
 
 ### Winning means (the hackathon's own bar)
 
@@ -61,7 +62,7 @@ recorded list of things deliberately not built.
 | | |
 | --- | --- |
 | Range market | `0x053b17219aa45008548e3633b9fcd78ec9540b00d71fd34ec6217599d3298f1f` — 56 markets, 44 settled |
-| **Up/down market** | `0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9` — **1 round, 0 tickets, orphaned** |
+| **Up/down market** | `0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9` — 2 rounds, 1 ticket opened, settled and claimed |
 | Price relay | `0x0275a7fdecdb539060b1e7cb2c857f88d505ed0a6c0ea2aafbbcc383456dfcbb` |
 | Keeper | `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f`, ~2,004 STRK |
 | Tests | 119 Cairo · 105 SDK · 23 keeper, all green |
@@ -72,23 +73,36 @@ recorded list of things deliberately not built.
 
 ## 3. Phases
 
-### Phase 1 — Connect the up/down game to its contract · **BLOCKED on nothing. This is the top of the list.**
+### Phase 1 — Connect the up/down game to its contract · **DONE**
 
-The direction game is deployed, tested and playable, and **the app has never spoken to the
-contract.** The only reference to `updown.cairo` anywhere in `apps/` or `packages/` is a comment
-in `packages/sdk/src/direction.ts`. That is the single largest gap in the project: a working
-contract, a working game, and no wire between them.
+Was: a working contract, a working game, and no wire between them — the only reference to
+`updown.cairo` anywhere in `apps/` or `packages/` was a comment.
+
+Now the loop has run on chain, end to end:
+
+| | |
+| --- | --- |
+| `create_round` | `0x014592d6…` |
+| `fund_round` | `0x013a9c5e…` — 10 STRK behind it |
+| `open_ticket` | `0x01563d53…` — 2 STRK staked, **3.84 reserved**, exactly 2 × 1.92 |
+| `settle` | `0x05b61e04…` — reference 79,900.59 → **79,855.59**, DOWN wins |
+| `claim_ticket` | `0x0337599e…` — **SUCCEEDED**, paid 0, reserved released, marked spent |
+
+The ticket lost, which is the better test: it exercises the branch where a losing claim must
+*succeed* rather than revert, pay nothing, and give its reservation back so the round's
+capacity returns. And the ticket the chain stores is `roundId, stake, multiplierBps, claimed,
+exists, owner` — **no direction field**. UP lived only inside the commitment until the claim.
 
 | # | Task | State |
 | --- | --- | --- |
-| 1.1 | Add `upDownMarket` to `NetworkConfig` in `packages/sdk/src/networks.ts` and set the Sepolia value to `0x07881b0c…`. Mainnet null. | NOT STARTED |
-| 1.2 | Add `decodeRound` and `decodeTicket` to `packages/sdk/src/decode.ts`, mirroring the `Round` and `Ticket` structs in `cairo/src/updown.cairo`. Cairo lays a struct flat, a `u256` is two felts low-limb-first — the same offsets that produced an 8-trillion-STRK stake when got wrong for `Market`. | NOT STARTED |
-| 1.3 | Add `commitmentOfDirection(secret, roundId, direction)` to `packages/sdk/src/positions.ts`, mirroring `poseidon(MOLFI_DIRECTION_V1, secret, round_id, direction)`. Add a test asserting it differs from the range commitment for the same secret and id. | NOT STARTED |
-| 1.4 | Teach the keeper to list and settle direction rounds: extend `apps/keeper/src/index.ts` `openNewRounds` and `settleDue` to iterate the up/down contract alongside the range one, using `create_round` / `settle`. | NOT STARTED |
-| 1.5 | Add `openDirection` and `claimDirection` to `apps/web/src/lib/useLiveDesk.ts`, building `open_ticket(round_id, commitment, stake)` and `claim_ticket(round_id, secret, direction)`. | NOT STARTED |
-| 1.6 | Make the deck's game switch select the contract, not just the paper engine: when `game === "direction"` and the desk is live, fire against the up/down market. | NOT STARTED |
-| 1.7 | Extend `/api/markets` (or add `/api/rounds`) to serve direction rounds so the console can list them. | NOT STARTED |
-| 1.8 | **Open and claim one real direction ticket on Sepolia.** Record both hashes in `strk20.json`. This is what closes "Done means" item 6 for the second game. | BLOCKED on 1.1–1.7 |
+| 1.1 | Add `upDownMarket` to `NetworkConfig` in `packages/sdk/src/networks.ts` and set the Sepolia value to `0x07881b0c…`. Mainnet null. | **DONE** — `upDownMarket` on `NetworkConfig`, Sepolia `0x07881b0c…`, mainnet null |
+| 1.2 | Add `decodeRound` and `decodeTicket` to `packages/sdk/src/decode.ts`, mirroring the `Round` and `Ticket` structs in `cairo/src/updown.cairo`. Cairo lays a struct flat, a `u256` is two felts low-limb-first — the same offsets that produced an 8-trillion-STRK stake when got wrong for `Market`. | **DONE** — verified against the live contract: 26 felts, `pair BTC/USD`, reference 79,637.12, and decoded `multiplierBps` 19200 equal to the contract's own `quote()`, which is the cross-check that proves the offsets rather than merely typechecking them |
+| 1.3 | Add `commitmentOfDirection(secret, roundId, direction)` to `packages/sdk/src/positions.ts`, mirroring `poseidon(MOLFI_DIRECTION_V1, secret, round_id, direction)`. Add a test asserting it differs from the range commitment for the same secret and id. | **DONE** — `commitmentOfDirection`, with tests that it differs from a range commitment for the same secret and id, that up differs from down, and that the same preimage is stable |
+| 1.4 | Teach the keeper to list and settle direction rounds: extend `apps/keeper/src/index.ts` `openNewRounds` and `settleDue` to iterate the up/down contract alongside the range one, using `create_round` / `settle`. | **DONE** — `tendDirectionRounds` settles what is due, lists when none is open, and funds it in the same transaction as the listing, so a listed-but-unfunded round can never be observed |
+| 1.5 | Add `openDirection` and `claimDirection` to `apps/web/src/lib/useLiveDesk.ts`, building `open_ticket(round_id, commitment, stake)` and `claim_ticket(round_id, secret, direction)`. | **DONE** — `fireDirection` and a claim path that routes by game before route |
+| 1.6 | Make the deck's game switch select the contract, not just the paper engine: when `game === "direction"` and the desk is live, fire against the up/down market. | **DONE** — the store is a discriminated union; the compiler found all six places that assumed a band |
+| 1.7 | Extend `/api/markets` (or add `/api/rounds`) to serve direction rounds so the console can list them. | **DONE** — `/api/rounds` |
+| 1.8 | **Open and claim one real direction ticket on Sepolia.** Record both hashes in `strk20.json`. This is what closes "Done means" item 6 for the second game. | **DONE** — see the table above. Five transactions recorded in `strk20.json`, now 26 |
 
 ### Phase 2 — Finish the Privy trading path · **IN PROGRESS**
 
@@ -161,11 +175,11 @@ Tied to the phase each blocks. Read from the codebase, not the README.
 
 ### Blocking — the product does not do what it says without these
 
-**G1 · The up/down contract is orphaned.** *(Phase 1)*
-Deployed at `0x07881b0c…` with one round live and quoting 1.92x. `grep -rn "updown\|UpDown\|07881b0c" apps/ packages/` returns **one comment**. No address in `networks.ts`, no decoder, no commitment helper, no keeper listing, no UI path. The direction game the user plays is the paper engine; the contract it was written for has never been called by anything but a shell script.
+**G1 · CLOSED.** The up/down contract is wired: address, decoders, commitment helper, keeper
+listing and settling, `/api/rounds`, `fireDirection`, and a claim path that routes by game.
 
-**G2 · No direction ticket has ever been opened.** *(Phase 1.8)*
-`round_count` is 1 and that round has zero tickets. "Done means" item 6 is satisfied for range and not for up/down.
+**G2 · CLOSED.** A ticket was opened, the round settled, and the ticket was claimed — the
+losing branch, which is the one that had to succeed rather than revert.
 
 **G3 · The Privy account cannot be used from the UI.** *(Phase 2.5–2.7)*
 `connectWithPrivy` exists and is exported from `useLiveDesk`; nothing calls it. GO LIVE still requires a browser extension. A visitor can sign in, see their address and balance, and cannot trade.
