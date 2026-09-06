@@ -316,30 +316,55 @@ async function tendDirectionRounds(): Promise<void> {
   const seconds = ROUND_SECONDS[TIER] ?? 900;
   const pair = MARKETS[0]?.label ?? "BTC/USD";
   try {
-    /**
-     * List, approve and fund in one transaction.
-     *
-     * A round with no bankroll cannot sell a ticket — `open_ticket` reserves the full payout
-     * and refuses when the round cannot cover it — so a listed-but-unfunded round is a market
-     * that looks open and rejects everyone. Doing it in one transaction means it can never be
-     * observed in that state.
-     */
     const tx = await send(
-      [
-        createRoundCall(pair, now + seconds + 60, seconds, TOKEN, Number(HOUSE_EDGE_BPS)),
-        approveUpDownCall(BANKROLL),
-        fundRoundCall(rounds.length + 1, BANKROLL),
-      ],
-      `listed and funded direction round for ${pair}`,
+      createRoundCall(pair, now + seconds + 60, seconds, TOKEN, Number(HOUSE_EDGE_BPS)),
+      `listed direction round for ${pair}`,
     );
     state.listed += 1;
     state.stoppedListing = null;
     await db.record({
-      kind: "list", network: NETWORK, pair, marketId: rounds.length + 1, txHash: tx,
-      ok: true, detail: `direction round, ${seconds}s, ${BANKROLL} bankroll`,
+      kind: "list", network: NETWORK, pair, marketId: null, txHash: tx,
+      ok: true, detail: `direction round, ${seconds}s`,
     });
   } catch (e) {
     log(`list direction round: FAILED ${reason(e)}`);
+  }
+}
+
+/**
+ * Fund any direction round that has no bankroll, by the id the chain reports.
+ *
+ * This used to be a third call in the listing transaction, funding `rounds.length + 1` — the
+ * id the new round was *assumed* to get. It is a guess, and the guess was wrong the first
+ * time it ran unattended: two cycles listed rounds 3 and 4, and both fundings landed on 3,
+ * which ended up with 40 STRK while 4 had nothing. A round with no bankroll cannot sell a
+ * ticket, so that is a market that looks open and refuses everyone.
+ *
+ * `create_round` returns the new id but a multicall cannot feed a return value into the next
+ * call, so there is no way to fund it atomically without guessing. Funding in a later pass
+ * against an id that was actually read is the honest version: a round may exist unfunded for
+ * one cycle, and during that cycle `open_ticket` correctly refuses it rather than selling
+ * something the round cannot cover.
+ */
+async function fundUnfundedRounds(): Promise<void> {
+  if (!UPDOWN) return;
+  const rounds = await allRounds();
+  const now = Math.floor(Date.now() / 1000);
+  const empty = rounds.filter((r) => !r.isSettled && r.cutoffAt > now && r.bankroll === 0n);
+
+  for (const r of empty) {
+    try {
+      const tx = await send(
+        [approveUpDownCall(BANKROLL), fundRoundCall(r.id, BANKROLL)],
+        `funded direction round ${r.id}`,
+      );
+      await db.record({
+        kind: "fund", network: NETWORK, pair: r.pair, marketId: r.id, txHash: tx,
+        ok: true, detail: `direction round bankroll ${BANKROLL}`,
+      });
+    } catch (e) {
+      log(`fund direction round ${r.id}: FAILED ${reason(e)}`);
+    }
   }
 }
 
@@ -575,6 +600,7 @@ async function cycle(): Promise<void> {
     await fundUnfunded(markets);
     await openNewRounds();
     await tendDirectionRounds();
+    await fundUnfundedRounds();
     await indexMarkets(await allMarkets());
     state.lastError = null;
   } catch (e) {
