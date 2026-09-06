@@ -273,29 +273,63 @@ async function openNewRounds(): Promise<void> {
     cutoffAt: now + m.rounds[TIER].seconds,
   }));
 
-  const calls = planned.flatMap((p) => [
+  const callsFor = (p: (typeof planned)[number]) => [
     createMarketCall(p.pair, TIER, p.cutoffAt),
     transferCall(MARKET, BANKROLL),
     fundMarketCall(p.id, BANKROLL),
-  ]);
+  ];
 
-  try {
-    const tx = await send(
-      calls,
-      `listed and funded ${planned.map((p) => `${p.pair} as ${p.id}`).join(", ")}`,
-    );
-    state.listed += planned.length;
-    for (const p of planned) {
-      await db.record({
-        kind: "list", network: NETWORK, pair: p.pair, marketId: p.id, txHash: tx,
-        ok: true, detail: `${p.seconds}s round, cutoff ${p.cutoffAt}`,
-        meta: { cutoffAt: p.cutoffAt, seconds: p.seconds, bankroll: BANKROLL.toString(), fundTx: tx },
-      });
+  const recordListed = async (p: (typeof planned)[number], tx: string) => {
+    state.listed += 1;
+    await db.record({
+      kind: "list", network: NETWORK, pair: p.pair, marketId: p.id, txHash: tx,
+      ok: true, detail: `${p.seconds}s round, cutoff ${p.cutoffAt}`,
+      meta: { cutoffAt: p.cutoffAt, seconds: p.seconds, bankroll: BANKROLL.toString(), fundTx: tx },
+    });
+  };
+
+  /**
+   * The whole round first, then pair by pair if that will not go through.
+   *
+   * A V3 transaction is validated against its own fee *bounds*, not its eventual fee, and
+   * the bounds scale with the batch. Nine calls needed most of the keeper's balance reserved
+   * up front and failed validation outright at 1.97 STRK — the batch that saves the most fee
+   * is exactly the one a nearly-empty account cannot afford to attempt. Three calls need a
+   * third of that, so a poor keeper still lists a round; a funded one pays for one
+   * transaction instead of three.
+   */
+  if (planned.length > 1) {
+    try {
+      const tx = await send(
+        planned.flatMap(callsFor),
+        `listed and funded ${planned.map((p) => `${p.pair} as ${p.id}`).join(", ")}`,
+      );
+      for (const p of planned) await recordListed(p, tx);
+      return;
+    } catch (e) {
+      log(`list round: ${reason(e)} — falling back to one pair at a time`);
     }
-  } catch (e) {
-    const why = reason(e);
-    log(`list ${planned.map((p) => p.pair).join(", ")}: FAILED ${why}`);
-    for (const p of planned) {
+  }
+
+  /**
+   * One pair at a time, and each one re-derives its id from the chain.
+   *
+   * The ids planned above assumed the whole round would land in one transaction. Once it is
+   * three, each listing shifts the count for the next, and a stale id would fund a market
+   * that does not exist yet.
+   */
+  for (const p of planned) {
+    try {
+      const count = (await allMarkets()).length;
+      const id = count + 1;
+      const tx = await send(
+        callsFor({ ...p, id }),
+        `listed and funded ${p.pair} as market ${id}`,
+      );
+      await recordListed({ ...p, id }, tx);
+    } catch (e) {
+      const why = reason(e);
+      log(`list ${p.pair}: FAILED ${why}`);
       await db.record({
         kind: "list", network: NETWORK, pair: p.pair, marketId: null, txHash: null,
         ok: false, detail: why,

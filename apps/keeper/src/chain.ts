@@ -75,7 +75,19 @@ export function reason(e: unknown): string {
   // which identifies the *method* and says nothing about the failure. Taking it as the
   // reason made six different problems look like one, and cost a round trip to notice.
   const rpc = text.match(/"message"\s*:\s*"([^"]+)"/);
-  if (rpc) return rpc[1].slice(0, 160);
+  if (rpc) {
+    /**
+     * `message` is often the category, not the cause.
+     *
+     * A validation failure comes back as `"message": "Account validation failed"` with the
+     * actual sentence — the one naming the max fee and the balance — in `data`. Logging only
+     * the message printed "Account validation failed:" with nothing after the colon, which
+     * is the least useful string the node could have been asked for.
+     */
+    const data = text.match(/"data"\s*:\s*"([^"]+)"/);
+    const detail = data ? data[1].replace(/\\n/g, " ").trim() : "";
+    return (detail ? `${rpc[1]} — ${detail}` : rpc[1]).slice(0, 220);
+  }
   const bare = text.match(/(Invalid transaction nonce|Account validation failed|insufficient|exceed balance)[^\n"]*/i);
   if (bare) return bare[0].slice(0, 160);
 
