@@ -1,0 +1,19 @@
+# What Vercel does not need, and in two cases cannot take.
+#
+# The CLI uploads the working directory, so anything large and local goes with it. Two of
+# these are not merely wasteful: `.next-build/cache` holds webpack packs that pass 100 MB once
+# the dependency graph is big enough, and a single file over that limit fails the whole deploy
+# with "File size limit exceeded" and no hint as to which file. Vercel rebuilds from source
+# anyway, so none of this is a loss.
+
+# Local build output and caches — rebuilt remotely.
+.next
+.next-build
+**/.next
+**/.next-build
+
+# Cairo artifacts. Contracts are compiled by scarb, never by Vercel.
+cairo/target
+
+# Nothing here is imported by the web app.
+demo
