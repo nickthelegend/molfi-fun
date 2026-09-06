@@ -123,11 +123,21 @@ test("every width the painter offers is a width the desk will sell", () => {
     BTC: 7_967_722_750_000n,
     ETH: 245_703_500_000n,
     STRK: 2_853_000n,
+    WBTC: 7_950_331_250_000n,
   };
 
   for (const market of MARKETS) {
     for (let tier = 0; tier < market.rounds.length; tier += 1) {
       const spot = spots[market.key];
+      /**
+       * A market with no spot here is a market this test silently skipped.
+       *
+       * Adding WBTC left `spot` undefined and the failure surfaced twelve frames down as
+       * "Cannot mix BigInt and other types" from inside the solver — which says nothing about
+       * the actual problem, that a new market had walked past its coverage. Named here
+       * instead, so the next one to be added fails with a sentence rather than a type error.
+       */
+      assert.ok(spot, `${market.key} has no spot in this test — add one`);
       const w = sellableHalfWidths(market, tier, spot);
       assert.ok(w, `${market.key}/${roundLabel(tier)} has no window`);
       assert.ok(

@@ -52,10 +52,11 @@ const DISPLAY: Record<string, Pick<MarketDef, "symbol" | "dp">> = {
   BTC: { symbol: "BTC", dp: 2 },
   ETH: { symbol: "ETH", dp: 2 },
   STRK: { symbol: "STRK", dp: 5 },
+  WBTC: { symbol: "WBTC", dp: 2 },
 };
 
 /**
- * Three markets, chosen because Pragma aggregates them from enough publishers to settle
+ * The markets, chosen because Pragma aggregates them from enough publishers to settle
  * against. A pair with one publisher is a pair molfi will not list, however much anyone
  * would like to trade it.
  */

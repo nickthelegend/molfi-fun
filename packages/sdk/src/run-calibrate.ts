@@ -15,10 +15,33 @@ import {
 import { BPS, PROB_ONE } from "./pricing.ts";
 
 /** The pairs, and the tape each is fitted from. Binance is used to calibrate, never to settle. */
+/**
+ * A pair earns a place here by clearing two bars at once, and most do not.
+ *
+ * **Pragma must carry it with at least three publishers and a fresh print**, because that is
+ * what `settle` demands — a market listed against a thinner or staler feed can be opened and
+ * never resolve. **And an exchange must carry ninety days of minutes for it**, because the
+ * probability table is measured rather than assumed and there is nothing to measure without
+ * tape.
+ *
+ * Checked against Pragma mainnet rather than guessed. Of forty candidates only these clear
+ * both: SOL, AVAX, DOGE, LINK, BNB, XRP, ADA, ARB, OP and the rest either have no Pragma feed
+ * at all or return no data. UNI, DAI and ZEND have one publisher and prints months old.
+ * EKUBO and LORDS *do* clear Pragma with three publishers each — they are Starknet-native and
+ * genuinely volatile, which would make them the most interesting markets here — but no
+ * exchange carries minute tape for either, so there is nothing to fit a table from and
+ * listing them would mean quoting odds nobody measured.
+ *
+ * USDC and USDT clear both bars and are deliberately excluded: a prediction market on
+ * something pinned at a dollar is not a market. Every band containing 1.00 wins essentially
+ * always, the fitted sigma collapses toward zero, and the multiplier runs to the ceiling on
+ * a bet with no uncertainty in it.
+ */
 const PAIRS = [
   { key: "BTC", label: "BTC/USD", tape: "BTCUSDT" },
   { key: "ETH", label: "ETH/USD", tape: "ETHUSDT" },
   { key: "STRK", label: "STRK/USD", tape: "STRKUSDT" },
+  { key: "WBTC", label: "WBTC/USD", tape: "WBTCUSDT" },
 ];
 
 /**

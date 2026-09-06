@@ -120,6 +120,7 @@ const COIN_TONE: Record<string, string> = {
   BTC: "#f7931a",
   ETH: "#8098ee",
   STRK: "#8b5cf6",
+  WBTC: "#f09242",
 };
 
 export function PlayScreen({ wallet }: { wallet?: Wallet }) {

@@ -27,6 +27,7 @@ const BINANCE: Record<string, string> = {
   BTC: "BTCUSDT",
   ETH: "ETHUSDT",
   STRK: "STRKUSDT",
+  WBTC: "WBTCUSDT",
 };
 
 /** Decimal string -> 8dp fixed point, without touching floating point. */

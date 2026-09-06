@@ -5,7 +5,7 @@
  *  normal allows, and carries fatter tails than it allows too, so a normal misprices
  *  both ends of every band.
  *
- *  Generated: 2026-09-05T14:26:47.716Z
+ *  Generated: 2026-09-06T14:44:44.101Z
  */
 
 export interface CalibratedRound {
@@ -31,7 +31,7 @@ export interface CalibratedMarket {
   rounds: CalibratedRound[];
 }
 
-export const GENERATED_AT = "2026-09-05T14:26:47.716Z";
+export const GENERATED_AT = "2026-09-06T14:44:44.101Z";
 export const HOUSE_EDGE_BPS = 400n;
 export const SIGMA_SHADE = 0.9;
 export const ROUND_SECONDS = [900, 3600, 14400] as const;
@@ -46,24 +46,24 @@ export const CALIBRATED_MARKETS: CalibratedMarket[] = [
     rounds: [
       {
         seconds: 900,
-        sigma1e4: 171077n,
+        sigma1e4: 167242n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 300323n, 515844n, 666532n, 767462n, 836637n, 881841n, 912690n, 935108n, 950822n, 962639n, 971041n, 977620n, 982135n, 985386n, 988415n, 990440n],
+        probTable: [0n, 298760n, 513761n, 664728n, 765900n, 834775n, 880702n, 912188n, 934713n, 950446n, 962311n, 970627n, 977176n, 981951n, 985366n, 988087n, 990382n],
       },
       {
         seconds: 3600,
-        sigma1e4: 336666n,
+        sigma1e4: 330372n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 291160n, 502644n, 655308n, 758541n, 828228n, 876259n, 909583n, 932928n, 948967n, 961446n, 970208n, 976684n, 981664n, 985080n, 987657n, 989761n],
+        probTable: [0n, 289819n, 501438n, 655038n, 758174n, 827784n, 875815n, 908936n, 932127n, 948369n, 960905n, 969774n, 976867n, 981760n, 985437n, 987869n, 990041n],
       },
       {
         seconds: 14400,
-        sigma1e4: 655862n,
+        sigma1e4: 646581n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 284029n, 487800n, 632937n, 739753n, 815565n, 868658n, 904341n, 927900n, 944789n, 956922n, 966077n, 973792n, 979747n, 984116n, 987722n, 990236n],
+        probTable: [0n, 283005n, 487693n, 631951n, 738341n, 814298n, 868320n, 904940n, 927968n, 945031n, 957183n, 966802n, 974304n, 980278n, 984609n, 988177n, 990565n],
       },
     ],
   },
@@ -75,24 +75,24 @@ export const CALIBRATED_MARKETS: CalibratedMarket[] = [
     rounds: [
       {
         seconds: 900,
-        sigma1e4: 227000n,
+        sigma1e4: 222150n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 306294n, 529754n, 680451n, 779260n, 844123n, 886963n, 917349n, 937607n, 952462n, 963450n, 971321n, 977369n, 981874n, 985472n, 987884n, 989678n],
+        probTable: [0n, 304249n, 527449n, 678522n, 778720n, 843197n, 885882n, 916375n, 937308n, 951903n, 962813n, 970810n, 976935n, 981643n, 985125n, 987653n, 989466n],
       },
       {
         seconds: 3600,
-        sigma1e4: 453275n,
+        sigma1e4: 443939n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 304854n, 526337n, 676250n, 778074n, 842318n, 885756n, 916242n, 936460n, 950753n, 961803n, 970517n, 976655n, 981287n, 984771n, 987367n, 989018n],
+        probTable: [0n, 303233n, 524783n, 675323n, 777060n, 842000n, 885717n, 916387n, 936779n, 951158n, 961774n, 970305n, 976636n, 981094n, 984655n, 987358n, 989211n],
       },
       {
         seconds: 14400,
-        sigma1e4: 894046n,
+        sigma1e4: 875841n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 301556n, 513805n, 657386n, 755162n, 824304n, 873966n, 908710n, 932164n, 947506n, 958643n, 966019n, 971152n, 975725n, 980143n, 984474n, 987355n],
+        probTable: [0n, 299720n, 511959n, 654853n, 753983n, 823511n, 873511n, 908092n, 932144n, 947815n, 959271n, 967024n, 972225n, 976701n, 980713n, 984609n, 987713n],
       },
     ],
   },
@@ -104,24 +104,53 @@ export const CALIBRATED_MARKETS: CalibratedMarket[] = [
     rounds: [
       {
         seconds: 900,
-        sigma1e4: 383219n,
+        sigma1e4: 377148n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 328636n, 415444n, 510838n, 790334n, 816910n, 847268n, 909005n, 939420n, 949163n, 962977n, 974948n, 979675n, 984209n, 987035n, 990411n, 992428n],
+        probTable: [0n, 330999n, 421184n, 506478n, 793257n, 819013n, 844181n, 905310n, 941571n, 948276n, 962774n, 974475n, 979328n, 984402n, 986601n, 990218n, 992630n],
       },
       {
         seconds: 3600,
-        sigma1e4: 704113n,
+        sigma1e4: 692480n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 225613n, 497443n, 580390n, 746420n, 806833n, 870025n, 903503n, 931760n, 946796n, 965373n, 970141n, 980689n, 983439n, 988574n, 990938n, 992810n],
+        probTable: [0n, 224638n, 475227n, 583362n, 740089n, 797780n, 868191n, 904922n, 930979n, 947732n, 963559n, 970614n, 980979n, 983575n, 988786n, 991006n, 993341n],
       },
       {
         seconds: 14400,
-        sigma1e4: 1325026n,
+        sigma1e4: 1308176n,
         minProb1e6: 120000n,
         maxMultiplierBps: 79999n,
-        probTable: [0n, 229930n, 429109n, 580114n, 695398n, 782492n, 845621n, 889859n, 922399n, 942817n, 959223n, 970621n, 979389n, 985509n, 990149n, 993668n, 996210n],
+        probTable: [0n, 221278n, 424652n, 580443n, 697602n, 784890n, 848318n, 890884n, 920766n, 942372n, 959503n, 970476n, 979060n, 984928n, 989201n, 992749n, 995756n],
+      },
+    ],
+  },
+  {
+    key: "WBTC",
+    label: "WBTC/USD",
+    source: "binance:WBTCUSDT 1m",
+    live: true,
+    rounds: [
+      {
+        seconds: 900,
+        sigma1e4: 168572n,
+        minProb1e6: 120000n,
+        maxMultiplierBps: 79999n,
+        probTable: [0n, 294825n, 510056n, 660705n, 763691n, 831679n, 879294n, 911995n, 934076n, 950166n, 962109n, 970559n, 976974n, 982067n, 985752n, 988405n, 990595n],
+      },
+      {
+        seconds: 3600,
+        sigma1e4: 330753n,
+        minProb1e6: 120000n,
+        maxMultiplierBps: 79999n,
+        probTable: [0n, 287165n, 499344n, 652635n, 756910n, 826906n, 875642n, 908271n, 931973n, 948794n, 961050n, 970083n, 977022n, 981866n, 985389n, 987869n, 990253n],
+      },
+      {
+        seconds: 14400,
+        sigma1e4: 645638n,
+        minProb1e6: 120000n,
+        maxMultiplierBps: 79999n,
+        probTable: [0n, 283701n, 486118n, 631448n, 739588n, 815139n, 868291n, 904167n, 927968n, 944963n, 957260n, 966589n, 974314n, 980124n, 984484n, 988235n, 990632n],
       },
     ],
   },

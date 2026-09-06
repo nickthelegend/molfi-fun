@@ -189,13 +189,30 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
             ) : (
               <Row k="State" v="still open" />
             )}
-            <Row k="Staked" v={`${fmtStrk(market.staked, 6)} STRK`} />
-            <Row k="Paid out" v={`${fmtStrk(market.paid, 6)} STRK`} />
-            <Row k="House bankroll" v={`${fmtStrk(market.bankroll, 6)} STRK`} />
-            <Row k="Owed to open positions" v={`${fmtStrk(market.reserved, 6)} STRK`} />
             <Row k="House edge" v={`${market.houseEdgeBps} bps`} />
             <Row k="Sigma" v={`${(Number(market.sigma1e4) / 1e6).toFixed(4)}% of spot`} />
           </dl>
+
+          {/*
+            The house's ledger, moved out of the headline.
+            
+            Staked, paid, bankroll and reserved were the four rows a reader hit first, above
+            the price and the checks — a balance sheet where the answer to "what happened in
+            this market" should be. They are still published, because conservation is only a
+            promise if somebody can check it and checking needs the numbers; they now sit with
+            the check that uses them instead of in front of the one thing a person came for.
+          */}
+          <details className="mt-4 rounded-xl bg-[#131313] p-3.5">
+            <summary className="mono cursor-pointer text-[10px] tracking-[0.1em] text-white/35">
+              the money behind this market
+            </summary>
+            <dl className="mono mt-3 grid gap-1 text-[11px]">
+              <Row k="Staked" v={`${fmtStrk(market.staked, 6)} STRK`} />
+              <Row k="Paid out" v={`${fmtStrk(market.paid, 6)} STRK`} />
+              <Row k="House bankroll" v={`${fmtStrk(market.bankroll, 6)} STRK`} />
+              <Row k="Owed to open positions" v={`${fmtStrk(market.reserved, 6)} STRK`} />
+            </dl>
+          </details>
 
           <p className="mt-5 text-[11px] leading-relaxed text-white/40">
             Read from the market contract on Starknet {NETWORK}, not from a database. The

@@ -13,13 +13,21 @@
  * with it.
  */
 
-export type CoinKey = "BTC" | "ETH" | "STRK";
+export type CoinKey = "BTC" | "ETH" | "STRK" | "WBTC";
 
 /** The brand field each mark sits on, matching `COIN_TONE` on the deck. */
 export const COIN_FIELD: Record<CoinKey, string> = {
   BTC: "#f7931a",
   ETH: "#627eea",
   STRK: "#0c0c4f",
+  /**
+   * Wrapped Bitcoin keeps the ₿ and changes the field.
+   *
+   * Same asset, different market — so the glyph has to be the one a trader recognises while
+   * the disc has to be distinguishable from BTC's at nineteen pixels. Its own brand tone does
+   * exactly that: read as Bitcoin, not mistaken for it.
+   */
+  WBTC: "#f09242",
 };
 
 function Bitcoin() {
@@ -74,10 +82,26 @@ function Starknet() {
   );
 }
 
+function WrappedBitcoin() {
+  return (
+    <>
+      <circle cx="16" cy="16" r="16" fill={COIN_FIELD.WBTC} />
+      {/* The ring is what says "wrapped": the same coin, held by something else. */}
+      <circle cx="16" cy="16" r="13.2" fill="none" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="1.4" />
+      <path
+        d="M22.5 14.05c.31-2.07-1.27-3.18-3.43-3.92l.7-2.81-1.71-.43-.68 2.74c-.45-.11-.91-.22-1.37-.32l.69-2.76-1.71-.43-.7 2.81c-.37-.09-.74-.17-1.09-.26v-.01l-2.36-.59-.46 1.83s1.27.29 1.24.31c.69.17.82.63.8 1l-.8 3.2c.05.01.11.03.18.06l-.18-.05-1.12 4.49c-.09.21-.3.53-.79.41.02.03-1.24-.31-1.24-.31l-.85 1.96 2.23.56c.41.1.82.21 1.22.31l-.71 2.84 1.71.43.7-2.81c.47.13.92.24 1.37.35l-.7 2.8 1.71.43.71-2.84c2.92.55 5.11.33 6.04-2.31.75-2.13-.04-3.36-1.58-4.16 1.12-.26 1.96-.99 2.19-2.51zm-3.92 5.5c-.53 2.13-4.12.98-5.28.69l.94-3.76c1.16.29 4.9.86 4.34 3.07zm.53-5.53c-.48 1.94-3.47.95-4.44.71l.85-3.41c.97.24 4.1.69 3.59 2.7z"
+        fill="#ffffff"
+        transform="translate(16 16) scale(0.86) translate(-16 -16)"
+      />
+    </>
+  );
+}
+
 const MARKS: Record<CoinKey, () => React.ReactElement> = {
   BTC: Bitcoin,
   ETH: Ethereum,
   STRK: Starknet,
+  WBTC: WrappedBitcoin,
 };
 
 /**
