@@ -122,12 +122,16 @@ and deployment are proven on chain. What is missing is the UI path.
 
 ### Phase 3 — Keeper reliability · **IN PROGRESS**
 
-> **Live state at the time of writing: the keeper is running a build I broke.** The `pending`
-> nonce read (3.9, first attempt) makes this node reject every transaction — relays, settles
-> and fundings all fail with `Block identifier unmanaged: pending`. The corrected build is
-> committed and its Railway deploy has not taken over yet. Nothing is lost while it is down —
-> markets stay open past their cutoff and settle when it recovers — but it is down, and it is
-> down because of a fix, which is the worst way for it to be down.
+> **Resolved.** The `pending` nonce read (3.9, first attempt) made this node reject every
+> transaction. The corrected build is live and transacting: `relayed ETH/USD → 0xea2a8f93…`,
+> `settled markets 69, 70, 71, 72 → 0x56090829…`.
+>
+> Two replicas overlapped during the rollout, which is worth recording because it is the
+> *cause* of the original `DuplicateNonce`: two processes signing from one account, the
+> confirmed nonce not moving between them. The fix — increment on a duplicate rather than
+> re-read — is exactly right for that, and `/api/keeper` reported the draining replica's
+> state for several minutes while the new one was already working, which is why the endpoint
+> and the logs disagreed.
 
 | # | Task | State |
 | --- | --- | --- |
@@ -135,7 +139,7 @@ and deployment are proven on chain. What is missing is the UI path.
 | 3.2 | `send` treats a reverted transaction as a failure. | DONE |
 | 3.3 | `/health` distinguishes starting from stalled. | DONE |
 | 3.4 | Bound the confirmation wait so a cycle cannot hang for minutes. | **DONE and live** — deployed 18:44:45Z, cycling cleanly: 3 cycles, 4 relays, `lastError: None`, `ok: true` |
-| 3.5 | Verify the bound actually fires: force a slow confirmation and check the cycle ends at 90s rather than blocking. | NOT STARTED — the code path is live but the timeout has not yet been *exercised*. Only a genuinely slow transaction proves it, and none has been slow since the deploy |
+| 3.5 | Verify the bound actually fires. | **DONE — it fired on its own.** From the live log: `list round: listed and funded BTC/USD as 73 … was submitted as 0x193dcc45… but could not be confirmed: not confirmed within 90s — falling back to one pair at a time`. Reported against the hash and moved on, instead of blocking the cycle. No forcing needed; a genuinely slow transaction arrived |
 | 3.6 | Cap keeper log volume so a retry loop cannot cross Railway's 500/sec limit and destroy its own diagnostics. | NOT STARTED |
 | 3.9 | Stop `DuplicateNonce` collisions retrying for ever. | **DONE, second attempt.** Every settle and funding failed on `0x2cf`, three tries each, every cycle: `getNonce()` reports the confirmed state, so a nonce claimed by a not-yet-mined transaction still reads as free, and a retry that re-syncs reads it again. The **first fix read the nonce at `pending` and was worse** — this node answers `Block identifier unmanaged: pending`, so instead of colliding transactions failing, *every* transaction failed. Reverted. The nonce is now incremented on a duplicate, which depends on nothing the node has to support |
 | 3.10 | A watcher that proves funding worked, rather than one a round can age out of. | **NOT STARTED** — the check used `!settled && cutoffAt > now && bankroll == 0` and reported success the moment the unfunded round passed its cutoff and left the set. Round 4 never was funded; it just stopped counting. Any future check has to assert the bankroll *rose*, not that the unfunded list emptied |
