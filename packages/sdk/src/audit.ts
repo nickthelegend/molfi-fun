@@ -264,7 +264,25 @@ export function auditMarket(m: OnChainMarket): Audit {
   // want to know the odds they are being offered can be reproduced.
   const NOMINAL_SPOT = 100_000_000_000n;
   const spot = m.settledPrice > 0n ? m.settledPrice : NOMINAL_SPOT;
-  if (m.sigma1e4 > 0n) {
+  /**
+   * Without the stored table there is nothing to reproduce, and saying so is the answer.
+   *
+   * `decodeMarket` only fills `table` when the caller asked for it, so an audit run on a
+   * market read without one used to walk off the end of an empty array and throw
+   * "Cannot mix BigInt and other types" out of the pricing kernel — a 500 for the caller,
+   * from a function whose entire job is to report on things it cannot confirm.
+   */
+  if (m.sigma1e4 > 0n && m.table.length === 0) {
+    add({
+      key: "quote-is-reproducible",
+      claim: "A one-sigma band prices to a sellable multiplier under the stored table",
+      verdict: "unchecked",
+      onChain: `sigma ${m.sigma1e4}, edge ${m.houseEdgeBps} bps`,
+      recomputed: "the stored table was not read, so the quote cannot be recomputed",
+      matters:
+        "The desk and the contract run mirrored copies of the same integer kernel. This runs the kernel over what the contract stored, so a table and sigma that could only produce nonsense are caught here.",
+    });
+  } else if (m.sigma1e4 > 0n) {
     const half = (spot * m.sigma1e4) / 100_000_000n;
     if (half > 0n && half < spot) {
       const q = quote(m.table, spot, spot - half, spot + half, m.sigma1e4, m.houseEdgeBps);

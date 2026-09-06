@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
 import { EvictForeignServiceWorker } from "@/components/EvictForeignServiceWorker";
+import { KeeperBadge } from "@/components/KeeperBadge";
 import { OfflineBanner } from "@/components/OfflineBanner";
 
 const plexMono = IBM_Plex_Mono({
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <EvictForeignServiceWorker />
         <OfflineBanner />
         {children}
+        <KeeperBadge />
       </body>
     </html>
   );

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CheckItYourself } from "@/components/CheckItYourself";
 import { hash } from "starknet";
 import {
   CALIBRATED_MARKETS,
@@ -81,6 +82,34 @@ async function readMarket(id: number): Promise<OnChainMarket | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The `starknet_call` this page made, as a shell command.
+ *
+ * Built from the same address and selector the server used, so it cannot drift from what
+ * was actually read — a "verify this yourself" command that quietly points somewhere else
+ * is worse than none.
+ */
+function verifyCommand(id: number): string {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "starknet_call",
+    params: [
+      {
+        contract_address: NETWORKS[NETWORK].market,
+        entry_point_selector: hash.getSelectorFromName("get_market"),
+        calldata: ["0x" + id.toString(16)],
+      },
+      "latest",
+    ],
+  });
+  return [
+    `curl -s ${NETWORKS[NETWORK].rpcUrl} \\`,
+    `  -H 'content-type: application/json' \\`,
+    `  -d '${body}'`,
+  ].join("\n");
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -183,6 +212,19 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
             <CheckCard key={c.key} check={c} />
           ))}
         </div>
+
+        {/*
+          * One line of curl, against a node nobody here operates.
+          *
+          * Everything above is molfi's own software reporting that molfi is correct, which
+          * is worth nothing on its own. This returns the same felts from a public endpoint
+          * so a sceptic can compare the settled price on this page with the one on the
+          * chain, without cloning anything.
+          */}
+        <CheckItYourself
+          command={verifyCommand(market.id)}
+          note={`Returns market #${market.id} straight from a public Starknet node. Felts 9 and 10 are the settled price as a u256, low limb first — divide by 1e8.`}
+        />
 
         <div className="mt-4 rounded-[22px] bg-card p-6">
           <div className="label">What stays hidden</div>

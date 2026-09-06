@@ -23,7 +23,7 @@ export default function OpengraphImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          background: "#141414",
+          background: "#0b0b0c",
           padding: "72px 80px",
           fontFamily: "monospace",
         }}
@@ -42,11 +42,16 @@ export default function OpengraphImage() {
               gap: 8,
             }}
           >
-            <div style={{ display: "flex", gap: 10 }}>
-              <div style={{ width: 12, height: 12, borderRadius: 4, background: "#ff9f0a" }} />
-              <div style={{ width: 12, height: 12, borderRadius: 4, background: "#ff9f0a" }} />
-            </div>
-            <div style={{ width: 36, height: 9, borderRadius: 5, background: "#ff9f0a" }} />
+            <svg width="42" height="42" viewBox="0 0 64 64" fill="none">
+              <path
+                d="M32 8 L56 32 L32 56 L8 32 Z"
+                fill="none"
+                stroke="#ff9f0a"
+                strokeWidth="9"
+                strokeLinejoin="round"
+              />
+              <circle cx="32" cy="32" r="6" fill="#ff9f0a" />
+            </svg>
           </div>
           <div style={{ color: "#ff9f0a", fontSize: 40, letterSpacing: 8, fontWeight: 700 }}>
             MOLFI

@@ -327,8 +327,17 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
 
             {/* One fixed height, the same one the paper desk uses: switching between them
                 must not resize the device in the reader's hand. */}
-            <div className="h-[421px] px-[11px] pb-[9px] pt-[11px]">
-              <div className="flex items-start justify-between gap-2.5">
+            {/*
+              * One fixed height, and the region under the price is the one that flexes.
+              *
+              * The glass cannot grow — a handheld that changes size when a notice appears is
+              * not a handheld — so something has to give when the live desk has more to say
+              * than usual: no wallet, a settlement due, a claim waiting. The price stays
+              * pinned and everything below it scrolls, which is the rule the positions
+              * screen already follows.
+              */}
+            <div className="flex h-[421px] flex-col px-[11px] pb-[9px] pt-[11px]">
+              <div className="flex flex-none items-start justify-between gap-2.5">
                 <div>
                   <MarketChip
                     symbol={market.symbol}
@@ -352,7 +361,8 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                 </div>
               </div>
 
-          <div className="relative mt-3 h-[206px]">
+              <div className="mt-[9px] min-h-0 flex-1 overflow-y-auto">
+          <div className="relative h-[206px]">
             {state.history.length > 1 && state.spot > 0n ? (
               <RangeChart
                 market={market}
@@ -415,6 +425,50 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                   ))}
                 </div>
               </div>
+
+              {/*
+                * No Starknet wallet at all, said once and permanently.
+                *
+                * Most people who open this will not have one, and the only thing the console
+                * did about that was flash "NO STARKNET WALLET FOUND" for two and a half
+                * seconds when they pressed a key — an error, in passing, for a situation
+                * that is not the reader's mistake. Everything above this line is real chain
+                * data and stays readable without a wallet; this says what is missing, what
+                * fixes it, and offers the desk that needs nothing.
+                */}
+              {state.wallets.length === 0 && !state.connection ? (
+                <div className="mt-2 rounded-[9px] border border-[#171717] bg-screen-2 px-[9px] py-2">
+                  <p className="mono text-[9px] leading-[1.5] tracking-[0.08em] text-dim">
+                    <span className="text-amber">NO STARKNET WALLET IN THIS BROWSER.</span>
+                    <br />
+                    EVERYTHING ABOVE IS READ FROM THE CHAIN AND NEEDS NONE.
+                  </p>
+                  <div className="mt-2 flex gap-1">
+                    <a
+                      href="https://www.argent.xyz/argent-x"
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="mono flex-1 rounded-md bg-white/8 py-1.5 text-center text-[9px] tracking-[0.08em] text-white/70"
+                    >
+                      GET ARGENT X
+                    </a>
+                    <a
+                      href="https://braavos.app"
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="mono flex-1 rounded-md bg-white/8 py-1.5 text-center text-[9px] tracking-[0.08em] text-white/70"
+                    >
+                      GET BRAAVOS
+                    </a>
+                    <button
+                      onClick={onBackToDemo}
+                      className="mono flex-1 rounded-md bg-amber/15 py-1.5 text-[9px] tracking-[0.08em] text-amber"
+                    >
+                      DEMO DESK
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
                   <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
                 {/* What is actually hidden depends on the route, and saying "your band and
@@ -501,6 +555,7 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                   CLAIM {claimable.length} WINNING POSITION{claimable.length > 1 ? "S" : ""}
                 </button>
               ) : null}
+              </div>
             </div>
           </div>
         }
