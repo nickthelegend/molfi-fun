@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reason } from "../src/reason.ts";
+import { reason, transient } from "../src/reason.ts";
 
 /**
  * These are the shapes the node actually produced, not invented ones.
@@ -112,4 +112,27 @@ test("a long explanation keeps its conclusion, not just its opening", () => {
   assert.ok(got.length <= 220, `too long: ${got.length}`);
   assert.match(got, /^Account validation failed/, "the subject survives");
   assert.match(got, /exceed balance \(80843186574050224\)\.$/, "the verdict survives");
+});
+
+/**
+ * `transient` decides whether a failure is retried. Getting it wrong in the permissive
+ * direction wastes a nonce and three round trips on something that will never succeed.
+ */
+test("a permanent refusal is not retried because a balance happens to contain 502", () => {
+  // The exact message the keeper produced on Sepolia: the digits of the balance end 4050224.
+  const real =
+    "cannot afford this: the fee alone is 93190680144747648 and the balance is 80843186574050224";
+  assert.equal(transient(real), false);
+});
+
+test("a real gateway failure still is", () => {
+  assert.equal(transient("RPC 502 Bad Gateway"), true);
+  assert.equal(transient("upstream returned 503"), true);
+  assert.equal(transient("Invalid transaction nonce"), true);
+  assert.equal(transient("fetch failed"), true);
+});
+
+test("a Cairo revert is never transient", () => {
+  assert.equal(transient("STALE_PRICE"), false);
+  assert.equal(transient("MARKET_CANNOT_COVER_PAYOUT"), false);
 });

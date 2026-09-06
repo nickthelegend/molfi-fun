@@ -148,3 +148,21 @@ function collapse(s: string): string {
   const tail = LIMIT - 3 - head;
   return `${one.slice(0, head)}\u2026${one.slice(-tail)}`;
 }
+
+/**
+ * Errors worth trying again. A contract refusal is an answer; a dropped socket is not.
+ *
+ * The status codes have to be matched as status codes. This was a bare
+ * `/…|502|503|504|…/`, which happily found "502" inside the digits of a balance —
+ * `…80843186574050224` — and so retried "cannot afford this: the fee alone is X and the
+ * balance is Y" three times as though it were a bad gateway. Almost every Starknet error
+ * quotes a token amount, so that was not a rare collision waiting to happen; it was a
+ * permanent failure being retried on most of the occasions it mattered.
+ */
+export function transient(why: string): boolean {
+  if (/nonce|rate limit|timeout|timed out|fetch failed|ECONN|Gateway|temporarily|unavailable/i.test(why)) {
+    return true;
+  }
+  // A 5xx as its own token, not as three digits inside a larger number.
+  return /(^|[^\d])(429|502|503|504)([^\d]|$)/.test(why);
+}

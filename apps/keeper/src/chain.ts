@@ -9,7 +9,8 @@ import {
   pairId,
 } from "@molfi/sdk";
 import { PRAGMA } from "@molfi/sdk";
-import { reason } from "./reason.ts";
+import { reason, transient } from "./reason.ts";
+
 
 /** Re-exported so callers keep importing their failure explanations from one place. */
 export { reason };
@@ -171,10 +172,6 @@ async function syncNonce(): Promise<bigint> {
   return nextNonce;
 }
 
-/** Errors worth trying again. A contract refusal is an answer; a dropped socket is not. */
-function transient(why: string): boolean {
-  return /nonce|rate|timeout|fetch failed|ECONN|502|503|504|Gateway|temporarily/i.test(why);
-}
 
 /**
  * `call` may be several calls, and when it is they land as one transaction.
