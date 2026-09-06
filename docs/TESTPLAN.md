@@ -633,3 +633,38 @@ sixty STRK, against an account holding 0.03. The account was funded, and the blo
 | U2 | `pnpm verify` died with a stack trace on a fresh contract | `settled.at(-1)` is `undefined` when nothing has settled; reading `.id` threw and took the whole suite with it — exactly when you most want the other thirty results | D5 reports the dependency instead of crashing |
 | U3 | Every market failed its table audit | Recalibrating for WBTC refit BTC/ETH/STRK too. 52 markets were listed against the old tables | Published tables restored; only WBTC is new. The constraint is written into the generated file |
 | U4 | D13 still reported the leak after the fix shipped | It reads `deployments/sepolia.json`, not `networks.ts` | Record updated, with the superseded deployment kept rather than overwritten |
+
+## Final pass — the whole plan, after the declare
+
+Run top to bottom against production and the local console once the new contract was live.
+
+**API surface — 21/21.** Nine happy paths (`/api/config`, `/markets`, `/health`, `/keeper`,
+`/price` for BTC and WBTC, `/quote` two ways, `/audit/1`, `/balance`) and twelve refusals, each
+with the right code: unknown market 404, bad market id 404, non-numeric id 400, malformed
+commitment 400, non-hex address 400, missing address 400, `/m/99999` 404, `/live` 404, and
+`/quote` 400 with no spot, 404 on an unknown market, 400 on an uncalibrated tier.
+
+One item first read FAIL and was a bad test, not a bug: `/api/quote` was called without `spot`
+and answered *"spot is required, in the oracle's 8 decimal fixed point"* — which is the route
+being right. Re-run correctly it returns `multiplierBps 10513`, **the exact multiplier the
+on-chain position was sold at**. The desk's quote and the contract agree to the basis point,
+and that is now checkable against a real position rather than asserted.
+
+**The console — all green.** Four markets cycling with live prices (BTC 79,692.58, ETH,
+STRK 0.03015, WBTC 79,590.24). Range fire $250.00 → $248.50, RIDING 1. Switch to UP/DOWN,
+1.92x. Direction fire $248.50 → $247.00, RIDING 2. Cards read `ETH 2,475.60 – 2,486.72` for the
+band and `ETH ▲ UP from 2,481.13` for the direction — a range and a reference, not a degenerate
+range. Zero console errors, zero failed requests throughout.
+
+**`pnpm verify` 38/38**, for the first time in the project's life. D13 and E1, the two failures
+that stood for days, both pass: the deployed class does not store the band, and all four pairs
+relay fresh.
+
+## Untested, and why — stated rather than hidden
+
+| Item | Why |
+| --- | --- |
+| Mainnet deploy, and three mainnet pool transactions | Mainnet STRK is bought, not dripped. All four accounts hold **0.000000 STRK on mainnet and none is even deployed there** — checked, not assumed. Spending real money is an explicit stop condition |
+| The three-minute demo video | Needs a person to record, narrate and upload |
+| Privy email login, end to end | Needs a mailbox this environment does not have. Wallet creation and `rawSign` are both verified against the live Privy API |
+| The pool route with a real STRK20 wallet | Needs a privacy-enabled wallet extension. The contract path is exercised by the Cairo suite and by `privacy_invoke` on the deployed class |
