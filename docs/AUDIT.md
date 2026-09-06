@@ -1,5 +1,11 @@
 # Contract audit — molfi, before mainnet
 
+> **All three findings below are fixed** in the commit that follows this file, along with a
+> fourth thing the fixing turned up: finding 2 existed in **two** places, not one, and the
+> boundary had no test at all — changing the public route alone passed all 116 existing tests.
+> Three tests now pin it. The findings are kept in full rather than rewritten as a changelog,
+> because what was wrong and why is the useful part.
+
 Read against `cairo/src/` at the commit this file lands in. Every finding below was reached by
 reading the money paths and the privacy paths line by line, and each one names the file and the
 condition rather than a category. Where something is safe, the reason it is safe is written
@@ -38,6 +44,7 @@ line itself gives no hint that it depends on that. `updown.cairo` includes `r.pa
 check for this reason; the range market should match before mainnet.
 
 **Severity:** low today, high if the open window ever changes.
+**Fixed:** `m.paid` is now in the sum, with the reasoning in the code rather than only here.
 
 ### 2 · A settled price exactly on a band edge loses
 
@@ -58,6 +65,10 @@ house-favouring edge case is the kind of thing that reads badly when someone fin
 than when you disclose it.
 
 **Severity:** very low in expectation, non-zero in credibility.
+**Fixed, in both routes.** The first attempt changed `claim_position` only and every existing
+test still passed — the pool route in `privacy_invoke`'s `claim` carried its own copy of the
+comparison, and no test exercised a price on a boundary. Three now do: both edges pay, and one
+unit past either still loses.
 
 ### 3 · Saturating subtraction hides an invariant violation
 
@@ -77,6 +88,7 @@ the bug and lets the market keep selling.
 behaviour — a broken invariant should stop the transaction, not be rounded away.
 
 **Severity:** low. It is a masked assertion, not a live bug.
+**Fixed:** plain subtraction, so it halts instead of clamping.
 
 ---
 
@@ -158,6 +170,7 @@ Sepolia stores `band_low` / `band_high` in the clear, so on that deployment anyo
 a market's positions and read what each one bought. `/privacy` and `/verify` both say so, drawn
 from the deployed ABI rather than a constant, and `pnpm verify` D13 fails until it changes.
 
-**Before mainnet, the fix for findings 1 and 2 and the reach-ratio `Position` must ship in the
-same declare.** They are all in `market.cairo` and a declare is the only way any of them reaches
-a chain.
+**All of this is still undeployed.** The three fixes and the reach-ratio `Position` are all in
+`market.cairo`, and a declare is the only way any of them reaches a chain — about 60 STRK, which
+the deployer does not have. Until then the class live on Sepolia has the exclusive bounds, the
+masked assertion, and the public band.

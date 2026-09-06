@@ -502,7 +502,15 @@ pub mod MolfiMarket {
             // for the whole round believing otherwise.
             let payout = pricing::payout_for(amount.into(), q.multiplier_bps);
             let backing = m.staked + amount.into() + m.bankroll;
-            assert(m.reserved + payout <= backing, errors::OVER_RESERVED);
+            // `paid` belongs in this sum even though it is always zero here.
+            //
+            // A claim needs `is_settled` and an open refuses it, so the two windows cannot
+            // overlap and nothing has left the market yet. That makes the term redundant
+            // today and load-bearing the moment the open window changes — a rollover, a
+            // re-open, an early settle — at which point this line would be authorising
+            // reservations against money that had already gone out. `claim_position` counts
+            // it; so does the direction market. Cheap to be consistent, expensive not to be.
+            assert(m.paid + m.reserved + payout <= backing, errors::OVER_RESERVED);
 
             self
                 .positions
@@ -786,8 +794,17 @@ pub mod MolfiMarket {
             assert(position.owner == claimant, errors::NOT_OWNER_OF_POSITION);
 
             self.assert_band_matches(position, band_low, band_high);
+            /// Inclusive, because that is the interval the trader was charged for.
+            ///
+            /// `prob_inside` integrates over the closed band, so the price of a position
+            /// already counts both endpoints. Excluding them on the way out meant selling an
+            /// interval fractionally wider than the one being paid on — an edge that appears
+            /// nowhere in the quoted multiplier. An exact hit at eight decimal places is
+            /// vanishingly rare, which is the argument for getting it right rather than
+            /// against: it costs nothing, and an undocumented house-favouring boundary is the
+            /// sort of thing that reads badly when someone else finds it.
             assert(
-                m.settled_price > band_low && m.settled_price < band_high, errors::OUT_OF_BAND,
+                m.settled_price >= band_low && m.settled_price <= band_high, errors::OUT_OF_BAND,
             );
 
             let payout = pricing::payout_for(position.stake.into(), position.multiplier_bps);
@@ -797,11 +814,13 @@ pub mod MolfiMarket {
             self.positions.write(commitment, position);
 
             m.paid = m.paid + payout;
-            m.reserved = if m.reserved > payout {
-                m.reserved - payout
-            } else {
-                0
-            };
+            // Plain subtraction, so a broken invariant halts rather than being clamped away.
+            //
+            // `reserved` gains exactly this payout when the position opens and loses exactly
+            // it here, and a position claims once — so it cannot underflow. Saturating to zero
+            // instead would mean that if it ever did, the accounting had already gone wrong
+            // and the market would carry on selling against numbers nobody could trust.
+            m.reserved = m.reserved - payout;
             self.markets.write(market_id, m);
 
             self.release(m.token, payout);
@@ -938,10 +957,16 @@ pub mod MolfiMarket {
             // claimed as the narrow one it was not.
             self.assert_band_matches(position, band_low, band_high);
 
-            // The band has to contain the settled price. Inclusive at neither edge: a price
-            // exactly on the boundary did not print inside the range.
+            /// The band has to contain the settled price, endpoints included.
+            ///
+            /// This read "inclusive at neither edge: a price exactly on the boundary did not
+            /// print inside the range" — a defensible sentence that happened not to match what
+            /// the trader was charged. `prob_inside` integrates over the closed interval, so
+            /// the position was priced on a band fractionally wider than the one it could be
+            /// paid on, and the difference went to the house. Both routes now agree with the
+            /// pricing and with each other.
             assert(
-                m.settled_price > band_low && m.settled_price < band_high, errors::OUT_OF_BAND,
+                m.settled_price >= band_low && m.settled_price <= band_high, errors::OUT_OF_BAND,
             );
 
             let payout = pricing::payout_for(position.stake.into(), position.multiplier_bps);

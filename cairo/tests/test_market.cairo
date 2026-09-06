@@ -1172,3 +1172,76 @@ fn bench_second_listing_writes_a_new_table() {
     assert(b == a + 1, 'two markets not listed');
     assert(m.get_table(b) == eth_15m(), 'new table unreadable');
 }
+
+/// A price landing exactly on a band edge pays, because that is what was charged for.
+///
+/// The bounds were exclusive until an audit read them against `prob_inside`, which integrates
+/// over the *closed* interval — so a position was priced on a band fractionally wider than the
+/// one it could be paid on. Nothing failed when the comparison was changed, which is the real
+/// finding: the boundary had no test at all, and an undocumented house-favouring edge case can
+/// survive a hundred and sixteen of them.
+#[test]
+fn a_price_exactly_on_the_band_edge_pays() {
+    let (m, anon, oracle, token) = setup();
+    let id = a_market(m, token);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    send_stake(m, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'low_edge', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    // Exactly the lower edge. One unit below this loses; this does not.
+    oracle.set(99_829, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    let notes = anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'low_edge', 'note');
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(notes.len() == 1, 'the edge is inside the band');
+    assert(*notes.at(0).amount > 0, 'and it is paid');
+}
+
+/// The upper edge, for the same reason. Both ends or neither.
+#[test]
+fn the_upper_band_edge_pays_too() {
+    let (m, anon, oracle, token) = setup();
+    let id = a_market(m, token);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    send_stake(m, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'high_edge', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_171, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    let notes = anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'high_edge', 'note');
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(notes.len() == 1, 'the edge is inside the band');
+    assert(*notes.at(0).amount > 0, 'and it is paid');
+}
+
+/// One unit outside still loses, so "inclusive" did not become "everything wins".
+#[test]
+#[should_panic(expected: 'BAND_MISSED')]
+fn one_unit_past_the_edge_still_loses() {
+    let (m, anon, oracle, token) = setup();
+    let id = a_market(m, token);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    send_stake(m, token, 1_000);
+    anon.privacy_invoke(OP_OPEN, id, 99_829, 100_171, token, 1_000, 'outside', 0);
+    stop_cheat_caller_address(m.contract_address);
+
+    after_cutoff();
+    oracle.set(100_172, AFTER, 10);
+    m.settle(id);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'outside', 'note');
+}
