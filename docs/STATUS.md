@@ -14,20 +14,29 @@ Evidence: **[live]** re-executed against production or the running console in th
 > not a test-plan item — nothing in this plan exercises mainnet, so nothing in it is blocked on
 > mainnet funding.
 
-> **Why D13/D14/D15/D19 cannot be closed with Privy.** The obvious idea — Privy *is* a wallet,
-> so wire it to the live desk and the extension stops mattering — does not work, and the reason
-> is worth writing down rather than rediscovering. **A Privy Starknet wallet is counterfactual.**
-> Probed against Sepolia: `starknet_getClassHashAt` on a freshly created Privy address returns
-> *Contract not found*. It is an address derived from a public key, not a deployed account, so
-> it cannot originate a transaction until someone sends a `DEPLOY_ACCOUNT` for it — which needs
-> both STRK at that address and knowledge of the account class and salt Privy derived it from.
-> Privy's own reference integration delegates exactly this to StarkZap's
-> `accountPreset` + `deploy: "if_needed"`, which molfi does not use.
+> **Why D13/D14/D15/D19 are still open — and it is not an external dependency.**
+> The first reading was that Privy could not help because its Starknet wallet is
+> counterfactual: `starknet_getClassHashAt` on a fresh Privy address returns *Contract not
+> found*. That much is true. The conclusion drawn from it was wrong.
 >
-> So Privy today gives molfi real auth, a real address, a real balance read and real signing —
-> all verified — and **not** the ability to transact. Closing these four means either a browser
-> extension wallet, or implementing counterfactual account deployment. That is real product
-> work, and it is not done.
+> Privy's `wallet.address` matches no standard account preset — checked against seven known
+> class hashes, three salt conventions and two constructor shapes, forty-two combinations, no
+> hit. Which means Privy supplies a **signer**, and the integration chooses the account class.
+> That is exactly what Privy's own reference hands to StarkZap's `accountPreset`.
+>
+> molfi can do the same, and it was tried rather than assumed: derive the address from
+> OpenZeppelin's account class (already declared on Sepolia) plus Privy's public key, fund it,
+> and send `DEPLOY_ACCOUNT` signed by `rawSign`. **It works.** Account `0x5d8b16f6…` is
+> deployed at class `0x5b4b537e…` (tx `0x337e385a…`), and the signature Privy produced was
+> accepted by the account's own `__validate__`. The first attempt failed on funding alone —
+> 0.02 STRK against fee bounds of ~0.149 — which is the same padded-bounds arithmetic already
+> fixed in the keeper.
+>
+> So Privy gives molfi auth, an address, a balance, signing **and transacting**. These four
+> items are open because `useLiveDesk` is still wired to the wallet-standard extension path and
+> not to a Privy-backed `Account` — **unfinished work of ours, not a dependency we lack.** That
+> is the honest status, and it is a smaller gap than the previous note claimed.
+
 
 
 ## A · Pages
@@ -139,13 +148,13 @@ Evidence: **[live]** re-executed against production or the running console in th
 | D10 | Why-this-band | PASS | [run 3] |
 | D11 | Route note | PASS | [run 3] |
 | D12 | CONNECT with no wallet | PASS | [run 3] |
-| D13 | CONNECT with a wallet | **UNTESTED** | Needs a wallet that can originate a transaction. No extension is installable here, and the Privy wallet is counterfactual — see the note above. |
-| D14 | Capability detection | **UNTESTED** | The capability probe reads a wallet-API version off an injected wallet. Privy exposes no such interface. |
+| D13 | CONNECT with a wallet | **UNTESTED** | `useLiveDesk` connects through the wallet-standard extension path only. A Privy-backed account is proven to work on chain — see the note above — but is not wired into the desk. |
+| D14 | Capability detection | **UNTESTED** | The capability probe reads a wallet-API version off an injected wallet. A Privy account has no such interface, so this check needs rethinking rather than re-running. |
 | D15 | Open a real position | **UNTESTED** | **Half proven.** A signed `open_position` did land this run — tx `0x028801d1…`, and `staked` on market #1 rose by exactly the 2 STRK stake. What is untested is the *browser* half: a wallet signing it and the commitment being stored locally. |
 | D16 | Secret survives a reload | PASS | [run 3] |
 | D17 | SETTLE | PASS | [run 3] |
 | D18 | CLAIM | PASS | [run 3] |
-| D19 | Network mismatch | **UNTESTED** | Needs a wallet connected to another chain. Privy's Starknet wallet has no chain to switch. |
+| D19 | Network mismatch | **UNTESTED** | Needs a wallet connected to another chain to refuse. A Privy account is Sepolia-only, so there is no mismatch to produce. |
 | D20 | Last transaction link | PASS | [run 3] |
 
 ## E · Menu sheets
