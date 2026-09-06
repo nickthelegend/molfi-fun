@@ -1087,9 +1087,34 @@ export function LiveConsole({
                   {fmtStake(stake)}
                 </div>
               </div>
-              <div className="mono tnum flex-none text-right text-[9.5px] leading-[1.6] text-dim">
-                <div>▲ {ladder[stakeStep] ? fmtStake(ladder[stakeStep]) : "—"}</div>
-                <div>▼ {ladder[stakeStep - 2] ? fmtStake(ladder[stakeStep - 2]) : "—"}</div>
+              {/*
+                * The stake steps are keys, not a readout.
+                *
+                * They printed the next size up and down and could not be pressed, which was
+                * survivable while the knob existed and became a dead end the moment the
+                * direction game took the knob's slot for its side keys: that game had no way
+                * to change size at all, so a trader was stuck at whatever the knob happened to
+                * be on. They were already showing exactly the two values a person wants to
+                * press. Now they are the control, in both games, and the knob is one way to
+                * do it rather than the only way.
+                */}
+              <div className="flex flex-none flex-col gap-1">
+                <button
+                  onClick={() => setStakeStep((v) => Math.min(v + 1, ladder.length))}
+                  disabled={!ladder[stakeStep]}
+                  aria-label="Raise the stake"
+                  className="mono tnum key rounded-md bg-white/6 px-2 py-[3px] text-right text-[9.5px] leading-none text-dim disabled:opacity-30"
+                >
+                  ▲ {ladder[stakeStep] ? fmtStake(ladder[stakeStep]) : "—"}
+                </button>
+                <button
+                  onClick={() => setStakeStep((v) => Math.max(v - 1, 1))}
+                  disabled={!ladder[stakeStep - 2]}
+                  aria-label="Lower the stake"
+                  className="mono tnum key rounded-md bg-white/6 px-2 py-[3px] text-right text-[9.5px] leading-none text-dim disabled:opacity-30"
+                >
+                  ▼ {ladder[stakeStep - 2] ? fmtStake(ladder[stakeStep - 2]) : "—"}
+                </button>
               </div>
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { motion, useInView, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { fetchJson } from "@/lib/fetchJson";
 import { useGsap } from "./useGsap";
 
@@ -52,7 +52,32 @@ function Stat({
 
 export function Proof() {
   const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-15%" });
+  /**
+   * A plain IntersectionObserver, because the counters have to be certain to fire.
+   *
+   * `useInView` was returning false here and the three numbers sat at 0 on a section whose
+   * data had already been fetched and was correct — the worst kind of failure on a page whose
+   * whole point is "these numbers are real", because it reads as "this has never run". Rather
+   * than keep guessing at which option shape the hook wants, this observes the element
+   * directly: it is four lines, it has no version-dependent option parsing, and I can see
+   * exactly when it fires.
+   */
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          io.disconnect(); // Once. A number that re-counts every scroll-by is a distraction.
+        }
+      },
+      { threshold: 0.15 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
   const [markets, setMarkets] = useState<number | null>(null);
   const [settled, setSettled] = useState<number | null>(null);
   const [relayed, setRelayed] = useState<number | null>(null);

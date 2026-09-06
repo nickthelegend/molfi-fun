@@ -73,7 +73,33 @@ const ONCE = process.argv.includes("--once");
 const TIER = Number(process.env.KEEPER_TIER ?? 0);
 
 /** What the house puts behind each new market. Small on a testnet, and real. */
-const BANKROLL = BigInt(process.env.KEEPER_BANKROLL ?? "200000000000000000");
+/** The most the desk will put behind any one market. A ceiling, not a fixed amount. */
+const BANKROLL_MAX = BigInt(process.env.KEEPER_BANKROLL ?? "200000000000000000");
+
+/**
+ * What one market actually gets, given how many are being listed and what is in hand.
+ *
+ * `fund_market` is one-way — the contract has no entrypoint that returns a market's bankroll,
+ * so every market ever listed locks its backing permanently. That is fine at four markets and
+ * arithmetic at nine: a fixed 20 STRK each turned one listing cycle into 180 STRK gone, the
+ * keeper fell under its own floor within a few cycles, and it stopped listing **anything** —
+ * so adding five markets took the four that worked offline too.
+ *
+ * The floor was right to stop it. A keeper that lists markets it cannot back sells positions
+ * it cannot pay. What was wrong was the constant: the desk should list what it can afford to
+ * stand behind, and shrink the size it offers rather than shutting.
+ *
+ * So the per-market amount is the ceiling or an equal share of what is spendable above the
+ * floor, whichever is smaller. `maxStakeFor` already derives the rail from the bankroll, so a
+ * smaller market simply offers smaller sizes and says so on the deck — which is honest, and is
+ * what a real desk does when its book is thin.
+ */
+function bankrollFor(balance: bigint, markets: number): bigint {
+  if (markets <= 0) return 0n;
+  const spendable = balance > LOW_BALANCE ? balance - LOW_BALANCE : 0n;
+  const share = spendable / BigInt(markets);
+  return share < BANKROLL_MAX ? share : BANKROLL_MAX;
+}
 
 /** Below this the keeper stops listing new markets rather than stranding an unfunded one. */
 const LOW_BALANCE = BigInt(process.env.KEEPER_LOW_BALANCE ?? "3000000000000000000");
@@ -426,16 +452,24 @@ async function fundUnfundedRounds(): Promise<void> {
   const rounds = await allRounds();
   const now = Math.floor(Date.now() / 1000);
   const empty = rounds.filter((r) => !r.isSettled && r.cutoffAt > now && r.bankroll === 0n);
+  if (empty.length === 0) return;
+
+  // Sized like a market's: what is spendable above the floor, split across what needs funding.
+  const roundBankroll = bankrollFor(await strkBalance(account.address), empty.length);
+  if (roundBankroll === 0n) {
+    log(`not funding ${empty.length} direction round(s): nothing spendable above the floor`);
+    return;
+  }
 
   for (const r of empty) {
     try {
       const tx = await send(
-        [approveUpDownCall(BANKROLL), fundRoundCall(r.id, BANKROLL)],
+        [approveUpDownCall(roundBankroll), fundRoundCall(r.id, roundBankroll)],
         `funded direction round ${r.id}`,
       );
       await db.record({
         kind: "fund", network: NETWORK, pair: r.pair, marketId: r.id, txHash: tx,
-        ok: true, detail: `direction round bankroll ${BANKROLL}`,
+        ok: true, detail: `direction round bankroll ${roundBankroll}`,
       });
     } catch (e) {
       log(`fund direction round ${r.id}: FAILED ${reason(e)}`);
@@ -542,10 +576,40 @@ async function openNewRounds(): Promise<void> {
     cutoffAt: now + m.rounds[TIER].seconds,
   }));
 
+  /**
+   * Sized to what this listing round can actually back, split across the markets in it.
+   *
+   * Nine markets at a flat ceiling is nearly two hundred STRK gone per cycle, permanently,
+   * because nothing returns a market's bankroll. An equal share of what is spendable keeps
+   * every pair listed at a size the desk can honour.
+   */
+  const perMarket = bankrollFor(balance, planned.length);
+
+  /**
+   * List only as many as the balance can back, and say what was left out.
+   *
+   * `bankrollFor` divides what is spendable by how many are planned, so funding all of them
+   * spends the entire budget by construction — correct when the division is exact, and past
+   * the floor the moment anything drifts. Trimming the plan to what fits keeps the floor a
+   * floor, and listing six markets the desk can honour is strictly better than listing nine
+   * it cannot and then having no gas to settle any of them.
+   */
+  if (perMarket > 0n) {
+    const affordable = Number((balance - LOW_BALANCE) / perMarket);
+    if (affordable < planned.length) {
+      log(`listing ${affordable} of ${planned.length} markets: the rest would breach the floor`);
+      planned.length = Math.max(0, affordable);
+    }
+  }
+  if (planned.length === 0) {
+    log("not listing: nothing spendable above the floor");
+    return;
+  }
+
   const callsFor = (p: (typeof planned)[number]) => [
     createMarketCall(p.pair, TIER, p.cutoffAt),
-    transferCall(MARKET, BANKROLL),
-    fundMarketCall(p.id, BANKROLL),
+    transferCall(MARKET, perMarket),
+    fundMarketCall(p.id, perMarket),
   ];
 
   const recordListed = async (p: (typeof planned)[number], tx: string) => {
@@ -553,7 +617,7 @@ async function openNewRounds(): Promise<void> {
     await db.record({
       kind: "list", network: NETWORK, pair: p.pair, marketId: p.id, txHash: tx,
       ok: true, detail: `${p.seconds}s round, cutoff ${p.cutoffAt}`,
-      meta: { cutoffAt: p.cutoffAt, seconds: p.seconds, bankroll: BANKROLL.toString(), fundTx: tx },
+      meta: { cutoffAt: p.cutoffAt, seconds: p.seconds, bankroll: perMarket.toString(), fundTx: tx },
     });
   };
 
@@ -621,18 +685,44 @@ async function fundUnfunded(
   markets: Awaited<ReturnType<typeof allMarkets>>,
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  for (const m of markets) {
-    if (m.isSettled || m.cutoffAt <= now || m.bankroll > 0n) continue;
+  const needy = markets.filter((m) => !m.isSettled && m.cutoffAt > now && m.bankroll === 0n);
+  if (needy.length === 0) return;
+  const balanceNow = await strkBalance(account.address);
+  const recoverAmount = bankrollFor(balanceNow, needy.length);
+  if (recoverAmount === 0n) {
+    log(`not recovering ${needy.length} unfunded market(s): nothing spendable above the floor`);
+    return;
+  }
+  /**
+   * A running budget, checked before each transfer.
+   *
+   * Dividing what is spendable by the number of markets that need it is a *share*, not a
+   * budget: the loop then funds every one of them and spends the entire amount, every cycle,
+   * and any drift between the count used for the division and the count actually funded takes
+   * it past the floor. It did — the keeper went from 94 STRK to 0.01 with nothing listed,
+   * pouring the lot into a backlog of markets left unfunded by an earlier run that had itself
+   * run dry mid-batch.
+   *
+   * The floor only means something if it is checked as the money leaves. This stops funding
+   * when the next transfer would breach it and says how many it could not reach, which is a
+   * desk that is short — a real state, worth reporting — rather than a desk that is empty.
+   */
+  let spent = 0n;
+  let skipped = 0;
+  for (const m of needy) {
+    if (balanceNow - spent - recoverAmount < LOW_BALANCE) { skipped += 1; continue; }
     log(`market ${m.id} (${m.pair}) is open with no bankroll — funding it`);
     try {
       const tx = await send(
-        [transferCall(MARKET, BANKROLL), fundMarketCall(m.id, BANKROLL)],
+        [transferCall(MARKET, recoverAmount), fundMarketCall(m.id, recoverAmount)],
         `funded market ${m.id}`,
       );
       await db.record({
         kind: "fund", network: NETWORK, pair: m.pair, marketId: m.id, txHash: tx,
-        ok: true, detail: `recovered an unfunded market with ${BANKROLL}`,
+        ok: true, detail: `recovered an unfunded market with ${recoverAmount}`,
       });
+      // Only count what actually left. A failed send spent a fee, not a bankroll.
+      spent += recoverAmount;
     } catch (e) {
       const why = reason(e);
       log(`fund ${m.id}: FAILED ${why}`);
@@ -641,6 +731,9 @@ async function fundUnfunded(
         ok: false, detail: why,
       });
     }
+  }
+  if (skipped > 0) {
+    log(`left ${skipped} unfunded market(s) alone: funding them would breach the floor`);
   }
 }
 

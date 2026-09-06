@@ -73,9 +73,20 @@ export function Games() {
           data-games="title"
           className="font-display text-[clamp(1.9rem,5vw,3.2rem)] font-extrabold leading-[1.02] tracking-[-0.02em]"
         >
-          {"Two games.".split(" ").map((w) => (
+          {/*
+            The space is a real space, not a margin.
+            
+            Splitting on " " and spacing the words with `mr-3` looks right and reads wrong:
+            `innerText` came out "Twogames.", which is what a screen reader announces and what
+            lands on the clipboard. The margin still does the visual spacing; the non-breaking
+            space restores the word boundary for everything that is not a pair of eyes.
+          */}
+          {"Two games.".split(" ").map((w, i, all) => (
             <span key={w} className="mr-3 inline-block overflow-hidden">
-              <span className="inline-block">{w}</span>
+              <span className="inline-block">
+                {w}
+                {i < all.length - 1 ? "\u00a0" : ""}
+              </span>
             </span>
           ))}
         </h2>

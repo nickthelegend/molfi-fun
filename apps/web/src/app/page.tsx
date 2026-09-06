@@ -40,7 +40,20 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <main className="relative bg-ground">
+    /*
+      `overflow-x: clip`, not `hidden`.
+      
+      Several sections animate horizontally — the felts come in from the left, the hidden
+      column from the right, the stat row settles inward — and a transform that starts outside
+      the viewport extends the document's scroll width while it runs. The reader gets a
+      horizontal scrollbar that appears and disappears as they scroll, which is the jankiest
+      possible symptom of otherwise-correct motion.
+      
+      `clip` rather than `hidden` because `hidden` makes this a scroll container, and a scroll
+      container between the pinned section and the viewport breaks ScrollTrigger's pin. `clip`
+      cuts the overflow without creating one.
+    */
+    <main className="relative overflow-x-clip bg-ground">
       <Hero />
       <ChainSees />
       <Games />

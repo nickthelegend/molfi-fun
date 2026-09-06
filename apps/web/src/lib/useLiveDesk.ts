@@ -594,6 +594,22 @@ export function useLiveDesk(market: MarketDef, tier: number) {
 
   useEffect(() => {
     let stop = false;
+
+    /**
+     * Clear the price the moment the market changes, before the new one is asked for.
+     *
+     * Without this the header kept the previous market's number under the new market's name
+     * for as long as the fetch took — about a second, measured. Switching from ETH to SOL
+     * showed "SOL 2,519.75", formatted to SOL's decimals so it looked entirely plausible. On
+     * a screen someone opens a position from, a real price under the wrong label is worse
+     * than no price: a dash is obviously not actionable, and a wrong number is not.
+     *
+     * The history goes with it. It is a trace of a different asset and drawing it under the
+     * new one would be the same lie in chart form.
+     */
+    historyRef.current = [];
+    setState((s) => ({ ...s, spot: 0n, history: [] }));
+
     const read = async () => {
       try {
         const j = await fetchJson<{
