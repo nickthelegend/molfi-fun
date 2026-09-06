@@ -250,7 +250,17 @@ const markets = await (async () => {
 const settled = markets.filter((m) => m.isSettled);
 check("D4", settled.length >= 1 && settled.every((m) => m.settledPrice > 0n && m.settledSources >= 3),
   "settlement is real", `${settled.length}/${markets.length} settled`);
-{
+if (settled.length === 0) {
+  /**
+   * A suite that dies on the first empty list reports nothing about the rest.
+   *
+   * `settled.at(-1)` is `undefined` on a contract with no settled market yet, and reading
+   * `.id` off it threw — so a *fresh deployment*, which is exactly when you most want to know
+   * what else is working, produced a stack trace instead of thirty-odd results. D4 already
+   * says settlement has not happened; these depend on it and say so.
+   */
+  check("D5", false, "a settled price is immutable", "nothing has settled on this contract yet");
+} else {
   const one = settled.at(-1);
   const again = decodeMarket(one.id, await chain(() => provider.callContract({
     contractAddress: d.market, entrypoint: "get_market", calldata: ["0x" + one.id.toString(16)],
