@@ -337,8 +337,24 @@ process.stdout.write("\nE. External integrations\n");
 {
   const { body } = await get("/api/health");
   const pairs = body.oracle?.pairs ?? [];
+  /**
+   * A pair the relay has never carried is not a stale pair, and must not read as one.
+   *
+   * `/api/health` reports every listed market, so adding WBTC put a pair in this list that
+   * the keeper has never relayed — no price, no age, no publisher count. The line rendered it
+   * as `undefined@undefineds`, which says nothing about what is wrong or which pair it is.
+   * Named per pair now, so "never relayed" and "relayed and gone stale" are distinguishable
+   * at a glance: they need different fixes.
+   */
   check("E1", pairs.length >= 3 && pairs.every((p) => p.sources >= 3 && p.ageSeconds < 900),
-    "Pragma mainnet, through the relay", pairs.map((p) => `${p.sources}@${p.ageSeconds}s`).join(" "));
+    "Pragma mainnet, through the relay",
+    pairs
+      .map((p) =>
+        p.sources == null || p.ageSeconds == null
+          ? `${p.pair ?? "?"}: never relayed`
+          : `${p.pair ?? "?"}: ${p.sources}@${p.ageSeconds}s`,
+      )
+      .join(" · "));
   check("E3", ["ok", "degraded"].includes(body.chain?.status), "the Starknet RPC answers", body?.chain?.status);
 }
 {
