@@ -198,12 +198,12 @@ across three pairs that is roughly 4 STRK/hour — faster than any faucet.
 | --- | --- | --- |
 | 7.1 | Cairo tests (`pnpm test:cairo`). | **DONE** — 88, five of them new for the table dedup. |
 | 7.2 | 84 SDK tests + 9 keeper tests (`pnpm test`). | DONE |
-| 7.3 | Three packages typecheck clean (`pnpm typecheck`). | DONE |
+| 7.3 | Three packages typecheck clean. | DONE |
 | 7.4 | `pnpm api:check` — every endpoint including failure paths. | **DONE** — all checks pass against `https://molfi.fun`. Against a local dev server it reports a 502 on `/api/markets`; that is the rate-limited public node, not a regression. |
-| 7.5 | `pnpm verify` — 37 checks against the real network. **34 PASS, 1 FAIL, 2 UNTESTED.** | IN PROGRESS |
+| 7.5 | `pnpm verify` — 37 checks against the real network. | **IN PROGRESS — 34 PASS, 1 FAIL, 2 UNTESTED**, unchanged in substance from the start of this run: the FAIL is E1 (the relay is stale because the keeper cannot pay to republish) and the two UNTESTED are D11/D12. All three are 0.1 and B-1, not code. C17 was tightened during this run: it asserted the keeper is *well*, which is a funding fact, and now asserts its answer is *coherent*. |
 | 7.6 | `docs/TESTPLAN.md` — 156 items executed in a real browser. 143 PASS, 13 untestable, 0 outstanding FAIL. | DONE |
 | 7.7 | No mocks, stubs, fixtures, TODOs or debug leftovers in shipped source. | DONE |
-| 7.8 | Re-run 7.1–7.6 after every phase above; treat any regression as blocking. | NOT STARTED |
+| 7.8 | Re-run 7.1–7.6 after every change; treat any regression as blocking. | **DONE for this run** — and it caught one: the stall detection made the keeper answer 503, `/api/keeper` mirrored it, and the site's own badge started reporting "the keeper did not answer" about a keeper that had answered. Found by re-running, fixed, re-verified. |
 | 7.9 | README test count. | **DONE** — was 68, now 88 and correct. The "Live right now" and networks tables still need the mainnet row **once mainnet exists** (Phase 3). |
 | 7.10 | `docs/API.md` accuracy. | **DONE** — `/api/keeper` was entirely undocumented while the README claims the file covers every endpoint (`pnpm verify` G4 checks docs→code, not code→docs, so it could not catch this). `/api/markets` was described as "every market the contract holds" when it is the newest sixty; `count`, `chainNow` and `network` were undocumented. Corrected. |
 
@@ -242,6 +242,7 @@ Every gap is tied to the task it blocks. Ordered by consequence, not by effort.
 | **A stored position vanished from the list whenever `/api/markets` was slow.** The read cycle threw before it ever built the position list, so the local store — the only index of what a browser owns — went invisible during a node outage. | A payout looked lost because a node was busy. The market data is enrichment for a row; it now degrades the row to "not found on chain" rather than removing it. | 5.6 |
 | **`/api/keeper` was undocumented** while the README claims `docs/API.md` covers every endpoint, and **`/api/markets` was documented as returning every market** when it returns the newest sixty. | `pnpm verify` G4 checks that every path the docs name exists, not that every path that exists is named, so neither could be caught automatically. | 7.10 |
 | **The count-up would have shown `$0.00` in a tab that is not painting.** `requestAnimationFrame` does not fire there, and the initial value was zero. | Introduced and caught in the same run: the animation is decoration, the number is not. A timeout now guarantees the landing. | 5.5 |
+| **The site reported "the keeper did not answer" about a keeper that answered.** 6.5 made the keeper return 503 when stalled; `/api/keeper` mirrored the status; `fetchJson` throws on non-2xx; the badge concluded unreachable. | A regression this run introduced and this run caught, by re-running the checks after the change rather than at the end. `/api/keeper` now answers 200 with the verdict in the body; `/api/health` stays the 503 surface. | 6.5, 7.8 |
 
 ### Untestable, not gaps — recorded so they are not re-litigated
 
