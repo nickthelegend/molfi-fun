@@ -688,3 +688,28 @@ And the flow was broken, in the worst way available: not an error, a hang.
 | Re-verified | Same flow from the start on production: `state: DECK`, `/api/wallet/starknet → 200`, `ON CHAIN 0.0000 STRK` — the real balance of a real, brand-new, unfunded wallet. Zero console errors, zero failed requests |
 
 **Q6: PASS.**
+
+# Sixth run — pushing on the four that were parked
+
+## V · What the last four items actually needed
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| V1 | Privy's address is an account | `getClassHashAt` returns a class. | **FAIL, and it is not a bug.** *Contract not found.* Privy's `wallet.address` is counterfactual and matches **no** standard preset — seven class hashes × three salts × two constructor shapes, forty-two combinations, no hit |
+| V2 | Privy is a signer, not an account | The integration picks the account class, as Privy's own reference hands to StarkZap's `accountPreset`. | **PASS** — derived an OpenZeppelin address from Privy's public key |
+| V3 | The derived account deploys | `DEPLOY_ACCOUNT` signed by `rawSign` is accepted. | **PASS** — `0x5d8b16f6…` live at class `0x5b4b537e…`, tx `0x337e385a…`. First attempt failed on funding alone (0.02 STRK against ~0.149 of bounds), which is the same padded-bounds arithmetic already fixed in the keeper |
+| V4 | The desk can connect one | `connectWithPrivy` builds a working `Connection`. | **PASS** — `Connection.account` widened from `Strk20Account` to `Account`; the desk calls exactly one method on it |
+| V5 | Its capabilities are honest | No STRK20 actions, no shielded balance, direct route only. | **PASS** — and the two pool-only call sites now check `connection.wallet` structurally rather than trusting a flag |
+
+**So D13/D14/D15/D19 are not blocked by a missing dependency.** They are blocked by
+`useLiveDesk` still connecting through the extension path in the UI. That is our unfinished
+work and the register now says so.
+
+## W · A production stall, caught by the health check that was added for it
+
+| # | Item | Correct means | Result |
+| --- | --- | --- | --- |
+| W1 | The keeper keeps cycling | `lastCycleAt` moves every `CYCLE_MS`. | **FAIL → fixed.** `state.cycles` reached 98 while `lastCycleAt` stood still for **seven minutes**, with 2,004 STRK in the account and four markets past cutoff unsettled |
+| W2 | The cause | — | `waitForTransaction` has no timeout. A cycle entered it and never left; `setInterval` kept starting new ones. Its retry loop also printed a status line per poll — thousands of `RECEIVED` lines — which crossed Railway's 500/sec limit and dropped the logs, so the stall destroyed its own explanation |
+| W3 | The fix | A wait that ends. | 90s bound, then reported against the hash rather than waited on — the rule this function already applied to a failed confirmation. Poll interval 2s → 4s, since it was also the flood |
+| W4 | The health check noticed | 503 with a readable reason. | **PASS** — `ok:false`, *"no cycle in 410626ms, on a 120000ms loop"*. The fix added earlier this run doing exactly its job |
