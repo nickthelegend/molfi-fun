@@ -113,8 +113,8 @@ and deployment are proven on chain. What is missing is the UI path.
 | 3.1 | Affordability against the node's real fee, not starknet.js's padded bound. | DONE — `apps/keeper/src/bounds.ts`, 23 tests |
 | 3.2 | `send` treats a reverted transaction as a failure. | DONE |
 | 3.3 | `/health` distinguishes starting from stalled. | DONE |
-| 3.4 | Bound the confirmation wait so a cycle cannot hang for minutes. | **DONE in code, NOT LIVE** — committed; the Railway deploy has not taken over |
-| 3.5 | Verify the bound works: force a slow confirmation and check the cycle ends at 90s instead of blocking. | BLOCKED on 3.4 landing. *(The desk recovered on its own meanwhile — `ok: true`, 43 settled, 52 listed, zero past cutoff — so this is about preventing the next hang, not restoring service.)* |
+| 3.4 | Bound the confirmation wait so a cycle cannot hang for minutes. | **DONE and live** — deployed 18:44:45Z, cycling cleanly: 3 cycles, 4 relays, `lastError: None`, `ok: true` |
+| 3.5 | Verify the bound actually fires: force a slow confirmation and check the cycle ends at 90s rather than blocking. | NOT STARTED — the code path is live but the timeout has not yet been *exercised*. Only a genuinely slow transaction proves it, and none has been slow since the deploy |
 | 3.6 | Cap keeper log volume so a retry loop cannot cross Railway's 500/sec limit and destroy its own diagnostics. | NOT STARTED |
 | 3.7 | Alert when `ok:false` persists — right now nothing watches the health endpoint. | NOT STARTED |
 
@@ -183,11 +183,14 @@ waiting for a transaction that took about twelve minutes to confirm. On a 120-se
 is still a stall, and it is worse than a crash: nothing restarts, nothing alerts, and the
 retry polling floods the log while it happens.
 
-The fix is a 90-second bound, then report against the hash rather than keep waiting — the rule
-that function already applied to a failed confirmation. **Written and committed; not yet live.**
-Production is back to `ok: true`, 43 settled, 52 listed, zero markets past cutoff — so the desk
-is running again, on the unfixed build, and will hang the same way next time a transaction is
-slow.
+**Fixed and live** as of 18:44:45Z — a 90-second bound, then report against the hash rather
+than keep waiting, which is the rule that function already applied to a failed confirmation.
+The new build is cycling cleanly.
+
+**What is still open is the proof.** The bound is in the code path and has never fired, because
+no transaction has been slow since the deploy. Until one is — or is made to be — this is a fix
+believed rather than demonstrated, which is exactly the distinction the rest of this project
+holds itself to. That is task 3.5.
 
 ### Real, non-blocking
 
