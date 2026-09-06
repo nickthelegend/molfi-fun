@@ -185,6 +185,17 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     unavailable: liveBlockedReason(),
   });
   const connectionRef = useRef<Connection | null>(null);
+  /**
+   * Whether a chain read is already in flight.
+   *
+   * The poll runs on a fixed interval, and nothing stopped a second one starting while the
+   * first was still going. When the node is slow that is a feedback loop rather than a
+   * nuisance: a read that takes longer than the interval means two reads overlap, which
+   * makes the node slower, which makes more of them overlap. Observed against a public
+   * endpoint — the market read climbed from a second to twenty-five as the polls stacked up.
+   * Skipping a tick costs eight seconds of staleness; not skipping costs the endpoint.
+   */
+  const reading = useRef(false);
   const historyRef = useRef<PricePoint[]>([]);
   const [stored, setStored] = useState<StoredPosition[]>([]);
 
@@ -272,7 +283,8 @@ export function useLiveDesk(market: MarketDef, tier: number) {
 
   // ---- the markets the contract holds
   const refresh = useCallback(async () => {
-    if (!addresses) return;
+    if (!addresses || reading.current) return;
+    reading.current = true;
     try {
       /**
        * One request for the whole market list, not one per market.
@@ -327,7 +339,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       // it is a plain `starknet_call` from whatever node the browser is using.
       const positions: LivePosition[] = await Promise.all(
         allPositions().map(async (p) => {
-          const m = markets.find((x) => x.id === p.marketId) ?? null;
+          let market = markets.find((x) => x.id === p.marketId) ?? null;
           let onChain: LivePosition["onChain"] = null;
           try {
             // Through the app's own route, like the market list. It decodes the struct in
@@ -341,7 +353,31 @@ export function useLiveDesk(market: MarketDef, tier: number) {
                 claimed: boolean;
                 exists: boolean;
               };
+              market?: Record<string, string | number | boolean>;
             }>(`/api/position/${p.commitment}`);
+
+            // The market list is a recent window, so a position older than it would
+            // otherwise have no market and sit "unresolved" for ever. The position route
+            // returns the market it belongs to; use that when the window does not reach it.
+            if (!market && body.market) {
+              const b = body.market;
+              market = {
+                id: Number(b.id),
+                pair: String(b.pair),
+                cutoffAt: Number(b.cutoffAt),
+                sigma1e4: BigInt(String(b.sigma1e4)),
+                houseEdgeBps: Number(b.houseEdgeBps),
+                settledPrice: BigInt(String(b.settledPrice)),
+                settledAt: Number(b.settledAt),
+                settledSources: Number(b.settledSources),
+                isSettled: Boolean(b.isSettled),
+                staked: BigInt(String(b.staked)),
+                paid: BigInt(String(b.paid)),
+                bankroll: BigInt(String(b.bankroll)),
+                reserved: BigInt(String(b.reserved)),
+              };
+            }
+
             if (body.exists && body.position) {
               onChain = {
                 stake: BigInt(body.position.stake),
@@ -357,10 +393,10 @@ export function useLiveDesk(market: MarketDef, tier: number) {
             // are different facts and only one of them means "this does not exist".
           }
           const won =
-            m?.isSettled && m.settledPrice > 0n
-              ? m.settledPrice > p.bandLow && m.settledPrice < p.bandHigh
+            market?.isSettled && market.settledPrice > 0n
+              ? market.settledPrice > p.bandLow && market.settledPrice < p.bandHigh
               : null;
-          return { ...p, onChain, market: m, won };
+          return { ...p, onChain, market, won };
         }),
       );
 
@@ -391,6 +427,8 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       }));
     } catch (e) {
       setState((s) => ({ ...s, error: errorText(e) }));
+    } finally {
+      reading.current = false;
     }
   }, [addresses, stored]);
 

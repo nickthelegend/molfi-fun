@@ -1,7 +1,7 @@
 "use client";
 
 import { createStore, type Store } from "@starknet-io/get-starknet-core";
-import { WalletAccountV6 } from "starknet";
+import { WalletAccountV6, compareVersions, walletV6 } from "starknet";
 import type { STRK20_ACTION, STRK20_BALANCE_ENTRY } from "@starknet-io/types-js";
 import { CHAIN_IDS } from "@molfi/sdk";
 import { activeNetwork, provider } from "./chain";
@@ -125,43 +125,61 @@ export function networkOf(chainId: string): Network | "unknown" {
   return "unknown";
 }
 
+/** The Wallet API version that first carries the STRK20 actions. */
+export const STRK20_WALLET_API = "0.10.3";
+
 /**
- * What a wallet can actually do — asked, not inferred from the shape of the object.
+ * What a wallet can actually do — asked with a version query, never inferred from the shape
+ * of the object and never probed with a data call.
  *
- * This used to test `typeof account.strk20InvokeTransaction === "function"` and always got
- * `true`. starknet.js binds the STRK20 helpers onto every `WalletAccountV6` it builds; each
- * one is a thin wrapper that forwards `wallet_strk20InvokeTransaction` to the wallet, and
- * whether the wallet answers is a question only asking can settle. So every wallet reported
- * itself STRK20-capable, molfi offered the pool route to wallets that cannot take it, and —
- * worse — made it the *default*, because the pool route is listed first. The trade then
- * failed inside the wallet with a message about an unsupported method, on the one screen
- * where a trader is committing money.
+ * Two wrong answers preceded this one, and both would have hurt.
  *
- * The probe is `strk20Balances`, which is a read: no signature, no prompt, nothing spent. A
- * wallet that answers it speaks STRK20; one that rejects it does not, whatever methods
- * happen to exist on the object.
+ * It first tested `typeof account.strk20InvokeTransaction === "function"`, which is always
+ * true: starknet.js binds the STRK20 helpers onto every `WalletAccountV6` it builds, as thin
+ * wrappers that forward to the wallet. Every wallet therefore claimed STRK20 support, molfi
+ * offered the pool route to wallets that cannot take it, and — because pool is listed first
+ * — made it the default. The trade then failed inside the wallet, on the screen where
+ * someone is committing money.
  *
- * Only a successful answer counts as support. Treating an ambiguous failure as "probably
- * fine" is how the original bug behaved, and offering a route that cannot work is worse than
- * withholding one that might — molfi has a second route, and it works from any wallet.
+ * The fix for that probed `strk20Balances`, and the STRK20 wallet-API guidance says in as
+ * many words not to: it is a balance read, so wallets gate it behind a consent prompt for
+ * data the app has no reason to see. A bad trade on any app, an absurd one on this app — and
+ * worse in the other direction, since a wallet that gates or omits it would have had the
+ * private route hidden from it. That is the one capability molfi exists to use.
+ *
+ * `wallet_supportedWalletApi` is the question the spec says to ask. It is a version list, it
+ * prompts for nothing, and it reveals nothing.
  */
 export async function capabilitiesOf(
   account: Strk20Account,
-  token: string | null,
+  wallet: StarknetWallet,
 ): Promise<Capabilities> {
   const none: Capabilities = { privateActions: false, dryRun: false, balances: false };
-  if (!token || typeof account.strk20Balances !== "function") return none;
 
+  let versions: string[];
   try {
-    await account.strk20Balances([token as `0x${string}`]);
+    versions = (await walletV6.supportedWalletApi(asStarknetWallet(wallet))) as string[];
   } catch {
+    // A wallet that will not answer the version query is not one to route a private
+    // transaction through. molfi has a second route and it works from any wallet.
     return none;
   }
+
+  const speaksStrk20 =
+    Array.isArray(versions) &&
+    versions.some((v) => {
+      try {
+        return compareVersions(String(v), STRK20_WALLET_API) >= 0;
+      } catch {
+        return false;
+      }
+    });
+  if (!speaksStrk20) return none;
 
   return {
     privateActions: typeof account.strk20InvokeTransaction === "function",
     dryRun: typeof account.strk20PrepareInvoke === "function",
-    balances: true,
+    balances: typeof account.strk20Balances === "function",
   };
 }
 
@@ -182,7 +200,7 @@ export async function connectTo(
     chainId,
     network: networkOf(chainId),
     walletName: wallet.name,
-    capabilities: await capabilitiesOf(account, token),
+    capabilities: await capabilitiesOf(account, wallet),
     account,
     wallet,
   };
@@ -204,7 +222,7 @@ export async function reconnect(
       chainId: chainIdOf(wallet),
       network: networkOf(chainIdOf(wallet)),
       walletName: wallet.name,
-      capabilities: await capabilitiesOf(account, token),
+      capabilities: await capabilitiesOf(account, wallet),
       account,
       wallet,
     };

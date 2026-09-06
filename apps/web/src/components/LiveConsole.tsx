@@ -349,12 +349,18 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                   </button>
                 ))}
               </div>
-            ) : route === "direct" ? (
+            ) : route ? (
+              /* Only one route available — say which, and what it means. The pool-only case
+                 used to render nothing at all, so a trader on a privacy wallet got no
+                 confirmation that the private path was the one being used. That is the
+                 single fact this product exists to tell them. */
               <p
                 className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-white/30"
-                title={live.routeNote("direct", state.connection)}
+                title={live.routeNote(route, state.connection)}
               >
-                DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND
+                {route === "pool"
+                  ? "VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE BAND"
+                  : "DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND"}
               </p>
             ) : null}
 

@@ -17,6 +17,14 @@ export const revalidate = 0;
 
 const u256 = (lo: string, hi: string) => (BigInt(hi) << 128n) | BigInt(lo);
 
+/**
+ * How many markets a caller gets without asking for more.
+ *
+ * Comfortably more than the console or the live page renders, and small enough that the
+ * fan-out stays a fixed cost rather than one that grows with the contract's age.
+ */
+const DEFAULT_LIMIT = 60;
+
 /** felt → the short string it encodes, e.g. 'BTC/USD'. */
 function toLabel(felt: string): string {
   let n = BigInt(felt);
@@ -28,7 +36,8 @@ function toLabel(felt: string): string {
   return String.fromCharCode(...bytes);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url);
   const address = NETWORKS[NETWORK].market;
 
   // Null is the truthful answer before a deploy, and it is worth saying out loud rather than
@@ -49,8 +58,27 @@ export async function GET() {
     const [count] = await call(address, hash.getSelectorFromName("market_count"));
     const total = Number(BigInt(count));
 
+    /**
+     * Newest first, and bounded.
+     *
+     * The market list only grows — three new markets every round, for ever — and this route
+     * used to read every one of them on every request. At forty-four that is a second; the
+     * keeper adds roughly three hundred a day, so it is a wall rather than a slope, and the
+     * first symptom would have been the console quietly failing to load markets in a week's
+     * time. `/live` had already been bounded for exactly this reason; this route had not.
+     *
+     * The window is the recent tail because that is all any caller renders. Anything older
+     * is reachable by id — the verifier reads the chain directly, and a stored position
+     * carries its own market in the `/api/position` response — so nothing loses access to
+     * history by this being bounded.
+     */
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || DEFAULT_LIMIT, 1), 200);
+    const ids = Array.from({ length: Math.min(total, limit) }, (_, i) => total - i).filter(
+      (id) => id >= 1,
+    );
+
     const markets = await Promise.all(
-      Array.from({ length: total }, (_, i) => i + 1).map(async (id) => {
+      ids.map(async (id) => {
         const r = await call(address, hash.getSelectorFromName("get_market"), [
           "0x" + id.toString(16),
         ]);
@@ -93,7 +121,15 @@ export async function GET() {
     const chainNow = await latestTimestamp();
 
     return NextResponse.json(
-      { network: NETWORK, deployed: true, contract: address, chainNow, markets },
+      {
+        network: NETWORK,
+        deployed: true,
+        contract: address,
+        chainNow,
+        /** Every market the contract holds, so a caller can tell this list is a window. */
+        count: total,
+        markets,
+      },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (err) {
