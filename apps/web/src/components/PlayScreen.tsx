@@ -1,6 +1,7 @@
 "use client";
 
 import type { Wallet } from "@/components/PrivyGate";
+import { useWalletBalance } from "@/lib/useWalletBalance";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -11,6 +12,7 @@ import {
   MARKETS,
   ROUND_SECONDS,
   fmtMultiplier,
+  fmtStrk,
   fmtPrice,
   fmtUsd,
   payoutFor,
@@ -125,10 +127,11 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
    * The connected wallet, if the gate handed one down.
    *
    * Optional because the guided run and the attract loop render the same screen without one.
-   * Where it matters — the live desk's balance and its signer — the absence is the difference
-   * between "not connected" and "zero", and those must never look the same.
+   * Where it matters the absence is the difference between "not connected" and "zero", and
+   * those must never look the same — hence the three-state balance below rather than a number
+   * defaulted to nothing.
    */
-  void wallet;
+  const chain = useWalletBalance(wallet?.address);
   const router = useRouter();
   const { prefs, set: setPref, loaded: prefsLoaded } = usePrefs();
   const osReduced = usePrefersReducedMotion();
@@ -622,6 +625,31 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
                       <div className="tnum mt-1 text-[15px] font-semibold text-white">
                         {fmtUsd(state.balance)}
                       </div>
+                      {/*
+                        The real wallet, under the paper one.
+                        
+                        Two numbers on purpose, and labelled: the desk plays in paper while the
+                        chain balance is what a live position would actually cost. Showing only
+                        one of them is how a demo gets mistaken for the product, in either
+                        direction. `—` when the read has not landed, the route's own sentence
+                        when it failed, and never a zero standing in for either.
+                      */}
+                      {wallet ? (
+                        <div className="mono mt-[3px] text-[8.5px] tracking-[0.08em] text-dim-2">
+                          {chain.error ? (
+                            <span className="text-red">CHAIN UNREADABLE</span>
+                          ) : (
+                            <>
+                              ON CHAIN{" "}
+                              <span className="tnum text-dim">
+                                {chain.balance === null
+                                  ? "—"
+                                  : `${fmtStrk(chain.balance, 4)} STRK`}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
                       {session.n > 0 ? (
                         <div className="mono mt-[3px] flex items-center justify-end gap-2 text-[9px] tracking-[0.08em]">
                           <span className={session.pnl >= 0n ? "text-green" : "text-red"}>

@@ -23,14 +23,20 @@ const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 /**
  * The stand-in the development escape hands the console.
  *
- * Not a wallet — an address of zeroes and no id, so anything that tries to sign with it fails
- * loudly at the signer rather than quietly appearing to work. It exists to render the deck,
- * nothing else.
+ * The address is the keeper's — a real, public, funded account on Sepolia — so the balance
+ * strip exercises the real read path against a real number instead of rendering a dash. The
+ * wallet **id is empty on purpose**: signing looks the id up, so anything that tries to sign
+ * with this fails loudly at the signer rather than quietly appearing to work. It renders the
+ * deck, and that is all it can do.
  */
 const devWallet: Wallet | null =
   process.env.NODE_ENV === "production"
     ? null
-    : { id: "", address: "0x0", publicKey: "0x0" };
+    : {
+        id: "",
+        address: "0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f",
+        publicKey: "0x0",
+      };
 
 export interface Wallet {
   id: string;
