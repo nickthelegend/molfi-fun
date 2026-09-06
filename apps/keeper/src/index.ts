@@ -3,6 +3,7 @@ import type { Call } from "starknet";
 import { HOUSE_EDGE_BPS, MARKETS, ROUND_SECONDS } from "@molfi/sdk";
 import * as db from "./db.ts";
 import { requestDrip } from "./faucet.ts";
+import { aggregate } from "./exchanges.ts";
 import {
   MARKET,
   NETWORK,
@@ -47,6 +48,24 @@ import {
  */
 
 const CYCLE_MS = Number(process.env.KEEPER_CYCLE_MS ?? 60_000);
+
+/**
+ * The contract's publisher floor, mirrored here so a thin read is refused before it costs a fee.
+ *
+ * `market.cairo` and `updown.cairo` both assert `num_sources_aggregated >= 3`. Relaying a
+ * two-venue median would land, and then every settle against it would revert on THIN_PRICE —
+ * a market that can be opened and never resolved, which is the worst failure this system has.
+ */
+const MIN_SOURCES = 3;
+
+/**
+ * How stale molfi's own median may get before it is republished.
+ *
+ * The couriered pairs republish when Pragma publishes something newer. These have no upstream
+ * publisher to wait for, so age since the last relay is the whole test. Under the 600s the
+ * desk quotes on, so a quote is never refused for staleness molfi could have prevented.
+ */
+const RELAY_MIN_AGE_SECONDS = 240;
 const PORT = Number(process.env.PORT ?? 8080);
 const ONCE = process.argv.includes("--once");
 
@@ -121,15 +140,51 @@ async function relayPrices(): Promise<void> {
        */
       if (held.publishedAt > 0 && now - held.publishedAt < RELAY_MIN_AGE) continue;
 
-      const { print, check, block } = await readMainnetMedian(m.label);
-      if (!check.fresh) {
-        log(`relay ${m.label}: skipped, mainnet says ${check.reason}`);
-        continue;
-      }
+      /**
+       * Two sources of truth, and the market says which one it gets.
+       *
+       * A `settle: "pragma"` market is republished from Pragma mainnet's own median — molfi is
+       * a courier for it and nothing more. A `settle: "molfi"` market has no oracle to courier
+       * from: Pragma's `get_data_median` errors on the pair id, so molfi computes the median
+       * across five independent exchanges and publishes that.
+       *
+       * Both paths put a **counted** number of sources on chain, and the contract's
+       * `MIN_SOURCES >= 3` is checked against it. The count is never asserted: a venue that
+       * times out is a venue that did not answer, and three is refused rather than rounded up.
+       */
+      let print: { raw: bigint; decimals: number; updatedAt: number; sources: number };
+      let block: number;
 
-      // Nothing to do if the relay already holds this exact print. The contract would refuse
-      // an older one anyway; skipping saves a fee for no change.
-      if (held.publishedAt >= print.updatedAt) continue;
+      if (m.settle === "molfi") {
+        const agg = await aggregate(m.symbol);
+        if (agg.sources < MIN_SOURCES) {
+          log(`relay ${m.label}: skipped, only ${agg.sources} venues answered`);
+          continue;
+        }
+        /**
+         * Timestamped now, because that is when molfi observed it.
+         *
+         * A Pragma print carries the publisher's own timestamp and this must not borrow that
+         * shape: these prices were read this second, from live tickers, and claiming any other
+         * moment would be inventing provenance. Freshness downstream is then exactly true.
+         */
+        print = { raw: agg.price, decimals: 8, updatedAt: now, sources: agg.sources };
+        block = 0;
+        // Republish on the same age rule as the couriered pairs; there is no publisher
+        // timestamp to compare against, so age since the last relay is the whole test.
+        if (now - held.publishedAt < RELAY_MIN_AGE_SECONDS) continue;
+      } else {
+        const read = await readMainnetMedian(m.label);
+        if (!read.check.fresh) {
+          log(`relay ${m.label}: skipped, mainnet says ${read.check.reason}`);
+          continue;
+        }
+        print = read.print;
+        block = read.block;
+        // Nothing to do if the relay already holds this exact print. The contract would refuse
+        // an older one anyway; skipping saves a fee for no change.
+        if (held.publishedAt >= print.updatedAt) continue;
+      }
 
       calls.push(relayCall(m.label, print.raw, print.decimals, print.updatedAt, print.sources, block));
       relayed.push({ pair: m.label, price: print.raw, sources: print.sources, block });

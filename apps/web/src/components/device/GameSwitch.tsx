@@ -7,9 +7,10 @@
  * handheld and it has exactly two settings. The moving pill makes the change legible without
  * reading either label — on a device the eye learns positions long before it learns words.
  *
- * It sits above the chart rather than in the menu on purpose. Which game you are playing
- * changes what every control below it means, and a mode you can forget you are in is the
- * oldest interface bug there is.
+ * It sits on the deck rather than in the menu on purpose. Which game you are playing changes
+ * what every control around it means, and a mode you can forget you are in is the oldest
+ * interface bug there is. On the deck it is also the right size to hit with a thumb, which it
+ * was not when it lived on the glass.
  */
 export type Game = "range" | "direction";
 
@@ -26,7 +27,7 @@ export function GameSwitch({
     <div
       role="radiogroup"
       aria-label="Game"
-      className="relative mt-2 flex rounded-[9px] border border-[#171717] bg-screen-2 p-[3px]"
+      className="relative flex w-full rounded-[12px] border border-[#171717] bg-screen-2 p-[3px]"
     >
       {/*
         The pill is one element that slides, not two that swap colour. A cross-fade reads as
@@ -34,7 +35,7 @@ export function GameSwitch({
       */}
       <span
         aria-hidden
-        className="absolute inset-y-[3px] w-[calc(50%-3px)] rounded-[7px] bg-amber transition-transform duration-200 ease-out motion-reduce:duration-75"
+        className="absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-[9px] bg-amber transition-transform duration-200 ease-out motion-reduce:duration-75"
         style={{ transform: game === "range" ? "translateX(0)" : "translateX(100%)" }}
       />
       {(
@@ -51,7 +52,12 @@ export function GameSwitch({
           title={g.hint}
           disabled={disabled}
           onClick={() => onChange(g.key)}
-          className={`relative z-10 flex-1 rounded-[7px] py-[6px] text-[9.5px] font-bold tracking-[0.12em] transition-colors duration-200 disabled:opacity-40 ${
+          /*
+            `whitespace-nowrap`, because the label is two words with a slash and the frame is
+            narrow: without it "UP / DOWN" wrapped onto two lines inside the pill and the
+            control grew a second row that made the whole deck look broken.
+          */
+          className={`relative z-10 flex-1 whitespace-nowrap rounded-[9px] py-[9px] text-[10px] font-extrabold tracking-[0.1em] transition-colors duration-200 disabled:opacity-40 ${
             game === g.key ? "text-black" : "text-dim"
           }`}
         >

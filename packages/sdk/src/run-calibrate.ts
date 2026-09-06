@@ -13,6 +13,7 @@ import {
   fitHorizon,
 } from "./calibrate.ts";
 import { BPS, PROB_ONE } from "./pricing.ts";
+import { CALIBRATED_MARKETS as PUBLISHED } from "./generated/markets.ts";
 
 /** The pairs, and the tape each is fitted from. Binance is used to calibrate, never to settle. */
 /**
@@ -38,11 +39,54 @@ import { BPS, PROB_ONE } from "./pricing.ts";
  * a bet with no uncertainty in it.
  */
 const PAIRS = [
-  { key: "BTC", label: "BTC/USD", tape: "BTCUSDT" },
-  { key: "ETH", label: "ETH/USD", tape: "ETHUSDT" },
-  { key: "STRK", label: "STRK/USD", tape: "STRKUSDT" },
-  { key: "WBTC", label: "WBTC/USD", tape: "WBTCUSDT" },
+  // Settled from Pragma mainnet's own median. These four are the ones Pragma carries with
+  // enough publishers; everything below them is settled through molfi's relay instead.
+  { key: "BTC", label: "BTC/USD", tape: "BTCUSDT", settle: "pragma" as const },
+  { key: "ETH", label: "ETH/USD", tape: "ETHUSDT", settle: "pragma" as const },
+  { key: "STRK", label: "STRK/USD", tape: "STRKUSDT", settle: "pragma" as const },
+  { key: "WBTC", label: "WBTC/USD", tape: "WBTCUSDT", settle: "pragma" as const },
+
+  /**
+   * Settled from molfi's own median across five independent exchanges.
+   *
+   * Pragma does not carry these at all — not thinly, not staled: `get_data_median` errors on
+   * the pair id. So the choice was four markets or an oracle, and the audit already named the
+   * only defensible version of the second: "a real median across three or more independent
+   * exchanges with the true count attached, which is what an oracle is."
+   *
+   * That is what the keeper now computes and relays. Binance, Coinbase, Kraken, OKX and
+   * Bybit are queried per round, the median is taken, and the **number that actually
+   * answered** is what goes on chain — so `MIN_SOURCES >= 3` is enforced against a real
+   * count rather than a number molfi asserted. Measured at the time of writing: all five
+   * answer for all five pairs, agreeing to within 0.05%.
+   *
+   * The tape is deep for every one of them, which is the other bar: these are not thin
+   * Starknet-native pools where 94% of minutes have no trade, they are the most liquid
+   * alt pairs on earth.
+   */
+  { key: "SOL", label: "SOL/USD", tape: "SOLUSDT", settle: "molfi" as const },
+  { key: "XRP", label: "XRP/USD", tape: "XRPUSDT", settle: "molfi" as const },
+  { key: "DOGE", label: "DOGE/USD", tape: "DOGEUSDT", settle: "molfi" as const },
+  { key: "LINK", label: "LINK/USD", tape: "LINKUSDT", settle: "molfi" as const },
+  { key: "AVAX", label: "AVAX/USD", tape: "AVAXUSDT", settle: "molfi" as const },
 ];
+
+/**
+ * Pairs whose published table must not move, and why the tool enforces it rather than a note.
+ *
+ * `create_market` stores the table it was given, and the audit that makes the published
+ * calibration mean anything is "the table the contract prices with is the one molfi
+ * published". Refit an existing pair and every market already listed against it fails that
+ * check. It has happened once: adding WBTC refit all four pairs at once and broke forty-nine
+ * markets' audits.
+ *
+ * The previous defence was a paragraph at the top of the generated file asking the reader not
+ * to re-run the generator, which is not a defence — the next person runs `pnpm calibrate`,
+ * gets a clean-looking diff, and finds out later. These tables are now copied through from the
+ * existing generated file verbatim, so re-running is safe by construction and adding a pair is
+ * the only thing it can do.
+ */
+const FROZEN = new Set(["BTC", "ETH", "STRK", "WBTC"]);
 
 /**
  * Ninety days of minutes.
@@ -62,6 +106,10 @@ const report: string[] = [];
 const stamp = new Date().toISOString();
 
 out.push(`/** GENERATED — do not edit by hand. Produced by \`pnpm calibrate\` from real tape.`);
+out.push(` *`);
+out.push(` *  Tables for pairs already listed on chain are COPIED THROUGH unchanged — see FROZEN in`);
+out.push(` *  run-calibrate.ts. Re-running this is safe: it can add a pair, it cannot move a`);
+out.push(` *  published one out from under the markets already priced against it.`);
 out.push(` *`);
 out.push(` *  Distributions are MEASURED per round length, not assumed normal. Over fifteen`);
 out.push(` *  minutes an asset finishes very close to where it started far more often than a`);
@@ -88,8 +136,17 @@ out.push(`export interface CalibratedMarket {`);
 out.push(`  key: string;`);
 out.push(`  /** The Pragma pair label, and the short string the oracle is keyed by. */`);
 out.push(`  label: string;`);
-out.push(`  /** Where the tape came from. Calibration only — settlement is always Pragma. */`);
+out.push(`  /** Where the tape came from. Calibration only — never a settlement price. */`);
 out.push(`  source: string;`);
+out.push(`  /**`);
+out.push(`   * Which oracle settles this market.`);
+out.push(`   *`);
+out.push(`   * "pragma" is Pragma mainnet's own median, read straight off their aggregator.`);
+out.push(`   * "molfi" is molfi's median across five independent exchanges, relayed on chain with`);
+out.push(`   * the true number that answered. Both clear the contract's three-publisher floor; they`);
+out.push(`   * are not the same trust assumption and the UI says which is which.`);
+out.push(`   */`);
+out.push(`  settle: "pragma" | "molfi";`);
 out.push(`  live: boolean;`);
 out.push(`  rounds: CalibratedRound[];`);
 out.push(`}`);
@@ -103,6 +160,31 @@ out.push("");
 out.push(`export const CALIBRATED_MARKETS: CalibratedMarket[] = [`);
 
 for (const pair of PAIRS) {
+  if (FROZEN.has(pair.key)) {
+    const kept = PUBLISHED.find((m) => m.key === pair.key);
+    if (!kept) throw new Error(`${pair.key} is frozen but has no published table to keep`);
+    process.stderr.write(`  ${pair.key}: keeping the published table (frozen)\n`);
+    out.push(`  {`);
+    out.push(`    key: ${JSON.stringify(kept.key)},`);
+    out.push(`    label: ${JSON.stringify(kept.label)},`);
+    out.push(`    source: ${JSON.stringify(kept.source)},`);
+    out.push(`    settle: ${JSON.stringify(pair.settle)},`);
+    out.push(`    live: ${kept.live},`);
+    out.push(`    rounds: [`);
+    for (const r of kept.rounds) {
+      out.push(`      {`);
+      out.push(`        seconds: ${r.seconds},`);
+      out.push(`        sigma1e4: ${r.sigma1e4}n,`);
+      out.push(`        minProb1e6: ${r.minProb1e6}n,`);
+      out.push(`        maxMultiplierBps: ${r.maxMultiplierBps}n,`);
+      out.push(`        probTable: [${r.probTable.map((t) => `${t}n`).join(", ")}],`);
+      out.push(`      },`);
+    }
+    out.push(`    ],`);
+    out.push(`  },`);
+    continue;
+  }
+
   process.stderr.write(`  fetching ${pair.tape} …\n`);
   const candles = await fetchMinuteCloses(pair.tape, MINUTES);
   const closes = candles.map((c) => c.close);
@@ -158,6 +240,7 @@ for (const pair of PAIRS) {
   out.push(`    key: ${JSON.stringify(pair.key)},`);
   out.push(`    label: ${JSON.stringify(pair.label)},`);
   out.push(`    source: ${JSON.stringify(`binance:${pair.tape} 1m`)},`);
+  out.push(`    settle: ${JSON.stringify(pair.settle)},`);
   out.push(`    live: true,`);
   out.push(`    rounds: [`);
   out.push(rounds.join("\n"));

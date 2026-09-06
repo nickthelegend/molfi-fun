@@ -13,7 +13,7 @@
  * with it.
  */
 
-export type CoinKey = "BTC" | "ETH" | "STRK" | "WBTC";
+export type CoinKey = "BTC" | "ETH" | "STRK" | "WBTC" | "SOL" | "XRP" | "DOGE" | "LINK" | "AVAX";
 
 /** The brand field each mark sits on, matching `COIN_TONE` on the deck. */
 export const COIN_FIELD: Record<CoinKey, string> = {
@@ -28,6 +28,12 @@ export const COIN_FIELD: Record<CoinKey, string> = {
    * exactly that: read as Bitcoin, not mistaken for it.
    */
   WBTC: "#f09242",
+  /** Each project's own brand field, so the disc is recognised before the glyph is read. */
+  SOL: "#000000",
+  XRP: "#23292f",
+  DOGE: "#c3a634",
+  LINK: "#2a5ada",
+  AVAX: "#e84142",
 };
 
 function Bitcoin() {
@@ -97,11 +103,99 @@ function WrappedBitcoin() {
   );
 }
 
+
+function Solana() {
+  return (
+    <>
+      <circle cx="16" cy="16" r="16" fill={COIN_FIELD.SOL} />
+      {/*
+        Three slanted bars, sheared the same way the wordmark shears them — the middle one
+        mirrored, which is the detail that stops it reading as a hamburger menu. The gradient
+        is Solana's own purple-to-green and is defined per-instance so two marks on one page
+        cannot collide on the id.
+      */}
+      <defs>
+        <linearGradient id="molfi-sol" x1="6" y1="24" x2="26" y2="8" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#9945ff" />
+          <stop offset="1" stopColor="#14f195" />
+        </linearGradient>
+      </defs>
+      <path d="M9.6 21.3a.7.7 0 01.5-.2h13.2c.3 0 .5.4.3.6l-2.6 2.6a.7.7 0 01-.5.2H7.3c-.3 0-.5-.4-.3-.6z" fill="url(#molfi-sol)" />
+      <path d="M9.6 7.5a.7.7 0 01.5-.2h13.2c.3 0 .5.4.3.6l-2.6 2.6a.7.7 0 01-.5.2H7.3c-.3 0-.5-.4-.3-.6z" fill="url(#molfi-sol)" />
+      <path d="M21 14.4a.7.7 0 00-.5-.2H7.3c-.3 0-.5.4-.3.6l2.6 2.6a.7.7 0 00.5.2h13.2c.3 0 .5-.4.3-.6z" fill="url(#molfi-sol)" />
+    </>
+  );
+}
+
+function Ripple() {
+  return (
+    <>
+      <circle cx="16" cy="16" r="16" fill={COIN_FIELD.XRP} />
+      {/* The X: two strokes that meet at the centre, drawn as outlines rather than a letter. */}
+      <path
+        d="M21.9 9h3.4l-7.1 7a3.1 3.1 0 01-4.4 0l-7-7h3.4l5.3 5.2c.3.3.7.3 1 0z"
+        fill="#ffffff"
+      />
+      <path
+        d="M10.1 23H6.7l7.1-7.1a3.1 3.1 0 014.4 0l7.1 7.1h-3.4l-5.4-5.3a.7.7 0 00-1 0z"
+        fill="#ffffff"
+      />
+    </>
+  );
+}
+
+function Dogecoin() {
+  return (
+    <>
+      <circle cx="16" cy="16" r="16" fill={COIN_FIELD.DOGE} />
+      {/*
+        The Ð — a D with a bar through its stem. Drawn rather than typed for the same reason
+        the ₿ is: a font fallback would render a plain D and the coin stops being Dogecoin.
+      */}
+      <path
+        d="M12.2 8.4h5.1c4.4 0 7.3 3 7.3 7.6s-2.9 7.6-7.3 7.6h-5.1v-5.9H9.6v-2.6h2.6zm3.3 2.9v3.8h2.2v2.6h-2.2v3.9h1.6c2.6 0 4.2-1.8 4.2-5.2s-1.6-5.1-4.2-5.1z"
+        fill="#ffffff"
+      />
+    </>
+  );
+}
+
+function Chainlink() {
+  return (
+    <>
+      <circle cx="16" cy="16" r="16" fill={COIN_FIELD.LINK} />
+      {/* The hexagon, drawn as an outline the way the brand does — solid reads as a stop sign. */}
+      <path
+        d="M16 6.2l-2.6 1.5-7 4.1-2.6 1.5v5.4l2.6 1.5 7.1 4.1 2.6 1.5 2.6-1.5 7-4.1 2.6-1.5v-5.4l-2.6-1.5-7-4.1zm-7 12.3v-5l4.4-2.5 4.3-2.5 4.4 2.5 4.3 2.5v5l-4.3 2.5-4.4 2.5-4.3-2.5z"
+        fill="#ffffff"
+      />
+    </>
+  );
+}
+
+function Avalanche() {
+  return (
+    <>
+      <circle cx="16" cy="16" r="16" fill={COIN_FIELD.AVAX} />
+      {/* The A: one large peak and the small notch beside it. */}
+      <path
+        d="M19.6 21.8h3.9c.5 0 .9 0 1.1-.2.3-.1.5-.4.6-.7.1-.3 0-.7-.3-1.2l-4.6-8c-.3-.5-.5-.7-.8-.9a1.3 1.3 0 00-1.3 0c-.3.2-.5.4-.8.9l-1 1.7a1 1 0 000 1l3.6 6.3c.3.5.5.7.8.9.2.1.5.2.8.2zm-9.5 0h3.7c.5 0 .8 0 1.1-.2.3-.1.5-.4.6-.7.2-.3.1-.7-.2-1.2l-1.9-3.2a1.4 1.4 0 00-.8-.7 1.3 1.3 0 00-1.2 0c-.3.2-.5.4-.8.9l-1.9 3.2c-.3.5-.3.9-.2 1.2.1.3.3.5.6.7.2.1.5.2 1 .2z"
+        fill="#ffffff"
+      />
+    </>
+  );
+}
+
 const MARKS: Record<CoinKey, () => React.ReactElement> = {
   BTC: Bitcoin,
   ETH: Ethereum,
   STRK: Starknet,
   WBTC: WrappedBitcoin,
+  SOL: Solana,
+  XRP: Ripple,
+  DOGE: Dogecoin,
+  LINK: Chainlink,
+  AVAX: Avalanche,
 };
 
 /**

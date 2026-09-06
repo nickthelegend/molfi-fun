@@ -18,9 +18,16 @@ interface Props {
   market: MarketDef;
   history: PricePoint[];
   spot: bigint;
-  low: bigint;
-  high: bigint;
-  multiplierBps: bigint;
+  /**
+   * The band, or null on a game that has no band.
+   *
+   * Nullable rather than defaulted, because a default is a number and any number here draws
+   * a rectangle. The direction game has no band at all, and the honest way to render that is
+   * to render nothing.
+   */
+  low: bigint | null;
+  high: bigint | null;
+  multiplierBps: bigint | null;
   /** 0..1 — how far the live round has burned toward its cutoff. */
   progress: number;
   /**
@@ -283,24 +290,26 @@ export function RangeChart({
     // The band's actual prices. A player putting money on a range has to be able to
     // read the range, not just see it.
     g.fillStyle = C.amber;
+    if (low !== null && high !== null && multiplierBps !== null) {
     g.font = "600 10px ui-monospace, monospace";
-    g.textAlign = "left";
-    /**
-     * One label when the two edges are the same number.
-     *
-     * The direction game collapses the band to a single reference line, and labelling both
-     * ends of it printed the same price twice, eight pixels apart. Two identical numbers
-     * stacked on a chart look like a rendering fault whether or not the reader knows why.
-     */
-    if (low === high) {
-      g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
-    } else {
-      g.fillText(fmtPrice(high, market.dp), nowX + 6, Math.max(8, yHigh - 8));
-      g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
-    }
+      g.textAlign = "left";
+      /**
+       * One label when the two edges are the same number.
+       *
+       * The direction game collapses the band to a single reference line, and labelling both
+       * ends of it printed the same price twice, eight pixels apart. Two identical numbers
+       * stacked on a chart look like a rendering fault whether or not the reader knows why.
+       */
+      if (low === high) {
+        g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
+      } else {
+        g.fillText(fmtPrice(high, market.dp), nowX + 6, Math.max(8, yHigh - 8));
+        g.fillText(fmtPrice(low, market.dp), nowX + 6, Math.min(H - 8, yLow + 8));
+      }
 
-    g.textAlign = "right";
-    g.fillText(`NEXT ${fmtMultiplier(multiplierBps)}`, W - 4, 12);
+      g.textAlign = "right";
+      g.fillText(`NEXT ${fmtMultiplier(multiplierBps)}`, W - 4, 12);
+  }
     g.textAlign = "left";
   }, [history, size, spot, low, high, market, multiplierBps, progress, settleFlash, openBands, scale]);
 
@@ -314,7 +323,8 @@ export function RangeChart({
   };
 
   const onDown = (e: React.PointerEvent) => {
-    if (!onDragEdge) return;
+    // No band, nothing to drag. The direction game shares this chart and has no edges.
+    if (!onDragEdge || low === null || high === null) return;
     const rect = ref.current!.getBoundingClientRect();
     const { min, max } = scale();
     const yOf = (p: bigint) => (1 - (Number(p) - min) / (max - min)) * rect.height;

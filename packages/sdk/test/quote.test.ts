@@ -124,6 +124,15 @@ test("every width the painter offers is a width the desk will sell", () => {
     ETH: 245_703_500_000n,
     STRK: 2_853_000n,
     WBTC: 7_950_331_250_000n,
+    // Real spots for the pairs molfi aggregates itself, in the same 8dp fixed point. Taken
+    // from the live medians at the time they were added, not invented — the window a market
+    // can sell depends on the price it is measured against, so a made-up spot tests a market
+    // that does not exist.
+    SOL: 10_575_000_000n,
+    XRP: 141_830_000n,
+    DOGE: 9_023_000n,
+    LINK: 1_297_300_000n,
+    AVAX: 781_900_000n,
   };
 
   for (const market of MARKETS) {

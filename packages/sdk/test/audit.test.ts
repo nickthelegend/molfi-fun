@@ -166,7 +166,15 @@ test("an unsettled market leaves the price checks unrun rather than passing them
 
 test("an unlisted pair is audited but not vouched for", () => {
   const odd = honest();
-  odd.pair = "DOGE/USD";
+  /**
+   * A pair molfi genuinely does not list, and will not.
+   *
+   * This used to be DOGE/USD, which stopped being unlisted the moment DOGE became a market —
+   * so the test quietly started asserting the opposite of its own name. PEPE has no Pragma
+   * feed with any publishers at all, so it cannot become a market without that changing first,
+   * and if it ever does this test says so rather than passing by accident.
+   */
+  odd.pair = "PEPE/USD";
   const a = auditMarket(odd);
   assert.equal(a.definition, null);
   assert.equal(verdict(odd, "table-is-the-published-one"), "unchecked");

@@ -1,6 +1,5 @@
 "use client";
 
-import { RailKey, VolumeRail } from "./Controls";
 
 /**
  * The console body. Everything in molfi happens inside this chassis, on any screen size:
@@ -17,18 +16,10 @@ export function DeviceFrame({
   glass,
   deck,
   footer,
-  soundOn,
-  onToggleSound,
-  volume,
-  onVolume,
 }: {
   glass: React.ReactNode;
   deck: React.ReactNode;
   footer?: React.ReactNode;
-  soundOn: boolean;
-  onToggleSound: () => void;
-  volume: number;
-  onVolume: (v: number) => void;
 }) {
   return (
     <div className="mx-auto w-full max-w-[460px] px-3 py-4">
@@ -41,29 +32,13 @@ export function DeviceFrame({
         {footer}
 
         {/*
-          * Sound, next to the level it controls.
+          * The volume rail is gone.
           *
-          * There is no transport key beside it any more. A pause button implied the market
-          * stops when the console is not being watched, which is the opposite of the claim
-          * the rest of the device makes.
+          * It was a full-width slider across the bottom of the chassis — the widest control on
+          * the device — spending the most prominent strip of hardware on the least important
+          * setting. Sound is still mutable; the key moved into the footer row beside the other
+          * keys, where it is one key among four rather than a bar the eye lands on first.
           */}
-        <div className="mt-[11px] flex items-center gap-2 px-[3px] pb-[2px]">
-          <RailKey
-            onClick={onToggleSound}
-            active={soundOn}
-            title={soundOn ? "mute" : "unmute"}
-            label={soundOn ? "Mute sound" : "Unmute sound"}
-          >
-            <span style={{ color: soundOn ? "#fff" : "rgba(255,255,255,.32)" }}>♪</span>
-          </RailKey>
-          <VolumeRail level={soundOn ? volume : 0} onChange={onVolume} />
-          <span
-            className="mono tnum min-w-[34px] shrink-0 text-right text-[9.5px] tracking-[0.1em]"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {soundOn ? Math.round(volume * 100) : "MUTE"}
-          </span>
-        </div>
       </div>
     </div>
   );

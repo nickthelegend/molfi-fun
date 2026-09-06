@@ -53,12 +53,27 @@ const DISPLAY: Record<string, Pick<MarketDef, "symbol" | "dp">> = {
   ETH: { symbol: "ETH", dp: 2 },
   STRK: { symbol: "STRK", dp: 5 },
   WBTC: { symbol: "WBTC", dp: 2 },
+  // Decimals follow the price, not a house style: a market quoted to two places when it
+  // trades at nine cents shows every move as zero.
+  SOL: { symbol: "SOL", dp: 2 },
+  XRP: { symbol: "XRP", dp: 4 },
+  DOGE: { symbol: "DOGE", dp: 5 },
+  LINK: { symbol: "LINK", dp: 3 },
+  AVAX: { symbol: "AVAX", dp: 3 },
 };
 
 /**
- * The markets, chosen because Pragma aggregates them from enough publishers to settle
- * against. A pair with one publisher is a pair molfi will not list, however much anyone
- * would like to trade it.
+ * The markets, and the two different reasons a pair is on this list.
+ *
+ * Four settle against **Pragma mainnet's own median**, read straight off their aggregator.
+ * Five settle against **molfi's median across five independent exchanges**, relayed on chain
+ * with the count that actually answered. Pragma does not carry those five at all — the pair
+ * id errors — so the choice was four markets or building the oracle, and `settle` on each
+ * market says which one it got.
+ *
+ * Both clear the contract's three-publisher floor, and the floor is checked against a real
+ * count either way. They are not the same trust assumption, and the desk says so rather than
+ * flattening nine markets into one undifferentiated list.
  */
 export const MARKETS: MarketDef[] = CALIBRATED_MARKETS.map((m) => ({
   ...m,

@@ -23,12 +23,21 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /** The tape each market is marked and calibrated against. Never used to settle. */
-const BINANCE: Record<string, string> = {
-  BTC: "BTCUSDT",
-  ETH: "ETHUSDT",
-  STRK: "STRKUSDT",
-  WBTC: "WBTCUSDT",
-};
+/**
+ * The mark shown on the glass, per market.
+ *
+ * Derived from `MARKETS` rather than written out again. This list had drifted the moment five
+ * pairs were added: the map still held four, so `/api/price` answered `binance 400` for SOL,
+ * XRP, DOGE, LINK and AVAX — a 502 on the route the desk polls, and "CHAIN UNREACHABLE" on a
+ * screen where the chain was perfectly reachable. A second hand-maintained list of the markets
+ * is a list that will disagree with the first one.
+ *
+ * This is the *mark*, not the settlement price. Settlement is the on-chain median either way;
+ * this is only what the screen shows between publishes.
+ */
+const BINANCE: Record<string, string> = Object.fromEntries(
+  MARKETS.map((m) => [m.key, `${m.key}USDT`]),
+);
 
 /** Decimal string -> 8dp fixed point, without touching floating point. */
 function to8dp(s: string): bigint {

@@ -47,6 +47,15 @@ function errorFlash(e: unknown): string {
   return errorText(e).split("\n")[0].slice(0, 72).toUpperCase();
 }
 
+/**
+ * The height of the deck's control column, in pixels.
+ *
+ * A single number both games are laid out against, so switching between them cannot move the
+ * keys under the reader's thumb. It is the taller arrangement's natural height — a knob box
+ * over a 96px fire key with the frame padding and gap around them.
+ */
+const DECK_COLUMN_H = 261;
+
 /** Stakes the deck offers, in whole STRK. */
 const STAKE_STEPS = [1, 2, 5, 10, 25, 50].map((n) => parseStrk(n));
 
@@ -125,11 +134,9 @@ const COIN_TONE: Record<string, string> = {
  * only to confirm what it holds under a commitment the browser derived.
  */
 export function LiveConsole({
-  onBackToDemo,
   wallet: privyWallet,
   signer,
 }: {
-  onBackToDemo: () => void;
   /** The Privy account, when the visitor came through the gate rather than an extension. */
   wallet?: Wallet;
   signer?: PrivySigner;
@@ -397,7 +404,7 @@ export function LiveConsole({
    * band to validate, no route to choose, and the target is a round on the other contract
    * rather than a market on this one — so the checks that matter are different checks.
    */
-  const doFireDirection = useCallback(async () => {
+  const doFireDirection = useCallback(async (side: "up" | "down" = picked) => {
     if (!(await readyToAct())) return;
     const round = rounds.open;
     if (!round) {
@@ -414,9 +421,9 @@ export function LiveConsole({
       return;
     }
     try {
-      const hash = await live.fireDirection(round.id, picked, stake);
+      const hash = await live.fireDirection(round.id, side, stake);
       play("fire");
-      say(`OPENED ${picked.toUpperCase()} ${hash.slice(0, 10)}…`);
+      say(`OPENED ${side.toUpperCase()} ${hash.slice(0, 10)}…`);
     } catch (e) {
       play("reject");
       say(errorFlash(e));
@@ -482,12 +489,14 @@ export function LiveConsole({
         <div className="w-full max-w-[420px] rounded-[26px] bg-card p-6 text-center">
           <h2 className="text-[22px] font-extrabold">Live mode is not up yet</h2>
           <p className="mt-3 text-[14px] leading-relaxed text-white/55">{state.unavailable}</p>
-          <button
-            onClick={onBackToDemo}
-            className="mt-5 w-full rounded-full bg-amber-2 py-3.5 text-[14px] font-extrabold text-black"
+          {/* No "back to demo" — there is no demo to go back to. The honest offer when the
+              chain is unreachable is to leave, not to be handed play money instead. */}
+          <a
+            href="/"
+            className="mt-5 block w-full rounded-full bg-amber-2 py-3.5 text-[14px] font-extrabold text-black"
           >
-            BACK TO DEMO
-          </button>
+            BACK
+          </a>
         </div>
       </div>
     );
@@ -499,13 +508,6 @@ export function LiveConsole({
   return (
     <div className="tiled min-h-dvh">
       <DeviceFrame
-        soundOn={prefs.sound}
-        onToggleSound={() => setPref("sound", !prefs.sound)}
-        volume={prefs.volume}
-        onVolume={(v) => {
-          setPref("volume", v);
-          if (!prefs.sound && v > 0) setPref("sound", true);
-        }}
         glass={
           <div className="screen overflow-hidden rounded-[15px]">
             <StatusBar
@@ -557,9 +559,18 @@ export function LiveConsole({
                 market={market}
                 history={state.history}
                 spot={state.spot}
-                low={band.low}
-                high={band.high}
-                multiplierBps={band.multiplierBps}
+                /*
+                 * The band is the range game's, so it is drawn only on the range game.
+                 *
+                 * On the direction game the chart was still painting a dashed band and a
+                 * "NEXT 1.25x" label — furniture from the other game, showing a price that
+                 * had nothing to do with the ticket the deck was about to sell, on the one
+                 * surface a trader reads before committing. There is no band in this game;
+                 * the chart now says so by not drawing one.
+                 */
+                low={game === "range" ? band.low : null}
+                high={game === "range" ? band.high : null}
+                multiplierBps={game === "range" ? band.multiplierBps : null}
                 progress={0}
                 /* Range positions only: a direction ticket has no band, and drawing one as a
                    zero-height rectangle at the reference is a line that means nothing. */
@@ -594,10 +605,17 @@ export function LiveConsole({
             ) : null}
           </div>
 
-              <div className="mb-2">
-                <GameSwitch game={game} onChange={setGame} />
-              </div>
-
+              {/*
+                * A fixed slot, so switching games does not move the deck.
+                *
+                * The band control is two rows tall and the direction game's price line is one,
+                * so the whole console — the payout panel, the keys, the footer — jumped every
+                * time the switch was pressed. On a handheld that reads as the device
+                * rebuilding itself, and worse, the key you are reaching for is somewhere else
+                * by the time your thumb lands. The taller of the two controls sets the height
+                * and the shorter one sits inside it.
+                */}
+              <div className="flex h-[52px] flex-col justify-center">
               {game === "range" ? (
                 <BandControl
                   widthPct={widthPct}
@@ -609,36 +627,30 @@ export function LiveConsole({
                   asymmetric={Boolean(halves && halves[0] !== halves[1])}
                 />
               ) : (
-                <div className="flex items-center gap-2">
-                  {(["up", "down"] as const).map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setPicked(d)}
-                      aria-pressed={picked === d}
-                      className={`key flex-1 rounded-lg py-2 text-[12px] font-extrabold tracking-tight ${
-                        picked === d
-                          ? d === "up"
-                            ? "bg-green text-black"
-                            : "bg-red text-white"
-                          : "bg-[#161616] text-dim"
-                      }`}
-                    >
-                      {d === "up" ? "▲ UP" : "▼ DOWN"}
-                    </button>
-                  ))}
-                  <span className="mono ml-1 text-[9px] tracking-[0.12em] text-dim">
+                /*
+                 * On the glass, the direction game shows its price and nothing else.
+                 *
+                 * The UP and DOWN keys used to live here, which put the most consequential
+                 * choice on the device behind glass — a thing you look at — while the keys
+                 * that do less sat on the deck under your thumbs. They are hardware now, in
+                 * the slot the band knob occupies on the other game: one physical place that
+                 * means "how you are betting", whichever game is loaded.
+                 */
+                <div className="flex items-center">
+                  <span className="mono text-[9px] tracking-[0.12em] text-dim">
                     {/*
                       One price for both sides, which is the point: a different multiplier per
                       side would make the public reserve disclose which way a ticket went.
                     */}
                     {rounds.open
-                      ? `EITHER WAY ${fmtMultiplier(BigInt(rounds.open.multiplierBps))}`
+                      ? `EITHER WAY ${fmtMultiplier(BigInt(rounds.open.multiplierBps))} · PICK A SIDE ON THE DECK`
                       : rounds.ready
                         ? "NO OPEN ROUND"
                         : "READING…"}
                   </span>
                 </div>
               )}
+              </div>
 
               <div className="mt-2 flex items-center justify-between border-t border-[#161616] pt-2">
                 <span className="mono tnum text-[9px] tracking-[0.15em] text-dim">
@@ -708,12 +720,6 @@ export function LiveConsole({
                     >
                       GET BRAAVOS
                     </a>
-                    <button
-                      onClick={onBackToDemo}
-                      className="mono flex-1 rounded-md bg-amber/15 py-1.5 text-[9px] tracking-[0.08em] text-amber"
-                    >
-                      DEMO DESK
-                    </button>
                   </div>
                 </div>
               ) : null}
@@ -932,48 +938,124 @@ export function LiveConsole({
                 </div>
               </div>
 
-              <KeyFrame className="flex gap-[7px]">
-                <BlueKey label="DEMO" onClick={onBackToDemo} />
+              {/*
+                * The game switch, on the deck rather than on the glass.
+                *
+                * It was sitting inside the screen, above the controls — which made it look
+                * like a readout of the market rather than a control of the device, and put
+                * the one decision that changes what every other control *does* in the place
+                * the eye reads last. It is hardware: it belongs on the deck, at the size of a
+                * key, next to the keys it re-labels.
+                *
+                * It takes the slot the DEMO key had. That key led back to the paper desk from
+                * a screen that is already the real one, which is a door out of the product
+                * placed inside the product — the menu still has it for anyone who wants it.
+                */}
+              <KeyFrame>
+                <GameSwitch game={game} onChange={setGame} />
               </KeyFrame>
             </div>
 
-            <div className="flex min-w-0 flex-col gap-[9px]">
+            {/*
+              * One height for the control column, set once, whichever game is loaded.
+              *
+              * Range fills it with a knob and a fire key; direction fills it with two action
+              * keys. Pinning the *column* rather than each game's contents is what makes them
+              * agree — the previous attempt gave each mode its own minimum and they came out
+              * 35px apart, so the chassis still resized under the switch. The deck is
+              * hardware, and hardware does not change shape when you flip a mode selector.
+              */}
+            <div className="flex min-w-0 flex-col gap-[9px]" style={{ minHeight: DECK_COLUMN_H }}>
               <div
                 className="flex flex-1 flex-col items-center rounded-[18px] p-2"
                 style={{
-                  minHeight: 120,
                   background: "var(--color-frame)",
                   boxShadow:
                     "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
                 }}
               >
-                <Knob
-                  value={Math.min(stakeStep, Math.max(ladder.length, 1))}
-                  max={Math.max(ladder.length, 1)}
-                  onChange={setStakeStep}
-                />
+                {/*
+                  * One slot, two controls, because the two games need different things here.
+                  *
+                  * The range game has a size ladder to dial through. The direction game has
+                  * no ladder to turn — it has a side to pick — and a knob left there in that
+                  * mode is a control that looks live and does nothing to the bet you are
+                  * about to place. So the slot carries whichever control the loaded game
+                  * actually uses, and the keys sit directly above FIRE where the decision
+                  * they make is the last one before it.
+                  */}
+                {game === "direction" ? (
+                  /**
+                   * On this game UP and DOWN *are* the action, so there is no separate key.
+                   *
+                   * There used to be a red diamond beside them and it was doing nothing the
+                   * two keys did not already say. The sequence was: choose a side, then press
+                   * an unrelated shape to mean "yes, that side" — two presses for one decision,
+                   * and a colour that reads as danger sitting on the confirm step of a bet.
+                   * Pressing UP takes the up side. That is the whole interaction.
+                   *
+                   * They are still two keys rather than one toggle because the choice and the
+                   * commitment are the same act here; a toggle would make you aim twice.
+                   */
+                  <div className="flex h-full w-full flex-col gap-[9px] px-[2px] py-[2px]">
+                    {(["up", "down"] as const).map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => {
+                          setPicked(d);
+                          void doFireDirection(d);
+                        }}
+                        disabled={
+                          Boolean(state.pending) ||
+                          (Boolean(state.connection) && !rounds.open)
+                        }
+                        aria-label={
+                          state.connection
+                            ? `Take the ${d} side for ${fmtStake(stake)} STRK`
+                            : "Connect a wallet"
+                        }
+                        className={`key flex-1 rounded-[14px] text-[15px] font-extrabold tracking-tight transition-colors disabled:opacity-45 ${
+                          d === "up" ? "bg-green text-black" : "bg-red text-white"
+                        }`}
+                      >
+                        {d === "up" ? "▲ UP" : "▼ DOWN"}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <Knob
+                    value={Math.min(stakeStep, Math.max(ladder.length, 1))}
+                    max={Math.max(ladder.length, 1)}
+                    onChange={setStakeStep}
+                  />
+                )}
               </div>
 
-              <div
-                className="flex-none rounded-[18px] p-2"
-                style={{
-                  background: "var(--color-frame)",
-                  boxShadow:
-                    "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
-                }}
-              >
-                <FireKey
-                  onClick={() => void (game === "direction" ? doFireDirection() : doFire())}
-                  disabled={
-                    Boolean(state.pending) ||
-                    (Boolean(state.connection) &&
-                      (game === "direction"
-                        ? !rounds.open
-                        : !band.ready || !target))
-                  }
-                  armed={state.positions.some((p) => p.market && !p.market.isSettled)}
-                />
-              </div>
+              {/*
+                * The fire key belongs to the range game only.
+                *
+                * On the range game there is a band to shape and then a separate moment where
+                * you commit to it, so a distinct key is the commitment. On the direction game
+                * the side *is* the commitment — UP and DOWN above already send the trade — and
+                * leaving the key here would mean one screen with two different things that
+                * both look like "go".
+                */}
+              {game === "range" ? (
+                <div
+                  className="flex-none rounded-[18px] p-2"
+                  style={{
+                    background: "var(--color-frame)",
+                    boxShadow:
+                      "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
+                  }}
+                >
+                  <FireKey
+                    onClick={() => void doFire()}
+                    disabled={Boolean(state.pending) || (Boolean(state.connection) && (!band.ready || !target))}
+                    armed={state.positions.some((p) => p.market && !p.market.isSettled)}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
         }
@@ -986,6 +1068,11 @@ export function LiveConsole({
               />
               <DeckKey label="MENU" onClick={() => setMenuOpen(true)} />
               <DeckKey label="HOME" onClick={() => router.push("/")} />
+              {/* Mute, as one key among the others rather than a rail across the chassis. */}
+              <DeckKey
+                label={prefs.sound ? "SOUND" : "MUTED"}
+                onClick={() => setPref("sound", !prefs.sound)}
+              />
             </div>
             <div
               className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] px-3 py-2"
