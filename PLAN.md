@@ -83,11 +83,30 @@ Probed against the live ABI. The deployed class has `privacy_invoke`, `settle`, 
 pass against it. Fixing this needs a declare: **9,752 Sierra felts ≈ 57 STRK on mainnet, ~60 on
 Sepolia.** No change to this repository can clear it.
 
-**B-2 · The keeper is out of STRK, by 0.013.**
+**B-2 · The keeper is out of STRK — but not by as much as it said, and for a day not at all.**
 
-Measured against the chain rather than estimated: **one relay costs 0.09319 STRK and the
-keeper holds 0.08084.** Not a padding problem — the bare fee is unaffordable, and no bound
-can close it. It is short by about 0.013 STRK to make a single price republish.
+This was recorded as *"one relay costs 0.09319 STRK and the keeper holds 0.08084 — not a
+padding problem, the bare fee is unaffordable, and no bound can close it."* **That was wrong,
+and it was the padding.** Asked directly, the node put the same relay at **0.041559 STRK**;
+`account.estimateInvokeFee` returns **0.092841** because starknet.js multiplies the gas amount
+by ~1.5 and the price by ~1.5 before handing the figure back, and the two compound to 2.23x.
+The keeper compared that against its balance and spent a day refusing a transaction it could
+have paid for twice over, reporting a shortfall that did not exist.
+
+Fixed: affordability is asked of the node's own estimate, and the bound is built from its gas
+components with one margin (`apps/keeper/src/bounds.ts`, 21 tests). The first relay sent under
+the corrected check **landed on chain and then reverted** — `Insufficient max L2Gas: max
+amount 1,635,760, actual used 1,742,400` — because the node estimates with `SKIP_VALIDATE` and
+the account's `__validate__` is 22.5% of this call's L2 gas, not the rounding error the comment
+claimed. Amount margin restored to 1.5x with a hard 1.35x floor, and `send` now reads
+`execution_status`, because that revert had been counted as a successful relay with its hash
+written to the ledger.
+
+**Where that leaves it.** A relay costs about **0.047 STRK** all in, so the keeper needs
+roughly **0.062** spendable to send one — not the 0.101 the old arithmetic implied. It holds
+**0.0336**, having paid the fee on the reverted transaction, and the faucet is on cooldown
+until this evening. So the block is still funding, but it is a third of the size it was
+recorded as, and the 5 STRK drip now buys about **twice** as many relays as it would have.
 
 Funding avenues, all checked this run rather than assumed:
 
