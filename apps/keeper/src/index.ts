@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import type { Call } from "starknet";
 import { MARKETS } from "@molfi/sdk";
 import * as db from "./db.ts";
 import {
@@ -50,6 +51,16 @@ const BANKROLL = BigInt(process.env.KEEPER_BANKROLL ?? "200000000000000000");
 /** Below this the keeper stops listing new markets rather than stranding an unfunded one. */
 const LOW_BALANCE = BigInt(process.env.KEEPER_LOW_BALANCE ?? "3000000000000000000");
 
+/**
+ * How stale the on-chain print may get before it is republished, in seconds.
+ *
+ * The contract refuses to settle against anything older than 900s and the desk stops quoting
+ * at 600s, so this has to sit below both with room for a cycle. Lower is not better: each
+ * republish is real L2 gas, and the keeper's balance is the thing that decides whether the
+ * desk stays open at all.
+ */
+const RELAY_MIN_AGE = Number(process.env.KEEPER_RELAY_MIN_AGE ?? 420);
+
 const state = {
   startedAt: new Date().toISOString(),
   cycles: 0,
@@ -71,8 +82,25 @@ const log = (s: string) => console.log(`[${new Date().toISOString()}] ${s}`);
  * and must not launder one, so a stale or thin mainnet print simply does not cross.
  */
 async function relayPrices(): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  const calls: Call[] = [];
+  const relayed: { pair: string; price: bigint; sources: number; block: number }[] = [];
+
   for (const m of MARKETS) {
     try {
+      const held = await readRelayed(m.label);
+
+      /**
+       * Republish on age, not on every change mainnet happens to have.
+       *
+       * The contract settles against anything under 900s old and the desk quotes under 600s,
+       * so a print that is four minutes old is not worth 0.1 STRK of L2 gas to replace —
+       * and replacing it every time Pragma moved was most of what this keeper spent its
+       * balance on. Relaying at RELAY_MIN_AGE keeps the on-chain print comfortably inside
+       * both windows with a whole cycle of margin.
+       */
+      if (held.publishedAt > 0 && now - held.publishedAt < RELAY_MIN_AGE) continue;
+
       const { print, check, block } = await readMainnetMedian(m.label);
       if (!check.fresh) {
         log(`relay ${m.label}: skipped, mainnet says ${check.reason}`);
@@ -81,25 +109,46 @@ async function relayPrices(): Promise<void> {
 
       // Nothing to do if the relay already holds this exact print. The contract would refuse
       // an older one anyway; skipping saves a fee for no change.
-      const held = await readRelayed(m.label);
       if (held.publishedAt >= print.updatedAt) continue;
 
-      const tx = await send(
-        relayCall(m.label, print.raw, print.decimals, print.updatedAt, print.sources, block),
-        `relayed ${m.label} @ ${print.raw}`,
-      );
-      state.relayed += 1;
-      await db.record({
-        kind: "relay", network: NETWORK, pair: m.label, marketId: null, txHash: tx,
-        ok: true,
-        detail: `${print.raw} from ${print.sources} publishers, mainnet block ${block}`,
-        meta: { price: print.raw.toString(), sources: print.sources, sourceBlock: block },
-      });
+      calls.push(relayCall(m.label, print.raw, print.decimals, print.updatedAt, print.sources, block));
+      relayed.push({ pair: m.label, price: print.raw, sources: print.sources, block });
     } catch (e) {
       const why = reason(e);
       log(`relay ${m.label}: FAILED ${why}`);
       await db.record({
         kind: "relay", network: NETWORK, pair: m.label, marketId: null, txHash: null,
+        ok: false, detail: why,
+      });
+    }
+  }
+
+  if (calls.length === 0) return;
+
+  /**
+   * Every pair in one transaction.
+   *
+   * Three pairs meant three transactions and three lots of per-transaction L2 gas for what
+   * is three storage writes. The relay is the keeper's most frequent action, so this is
+   * where the fee was actually going.
+   */
+  try {
+    const tx = await send(calls, `relayed ${relayed.map((r) => r.pair).join(", ")}`);
+    state.relayed += relayed.length;
+    for (const r of relayed) {
+      await db.record({
+        kind: "relay", network: NETWORK, pair: r.pair, marketId: null, txHash: tx,
+        ok: true,
+        detail: `${r.price} from ${r.sources} publishers, mainnet block ${r.block}`,
+        meta: { price: r.price.toString(), sources: r.sources, sourceBlock: r.block },
+      });
+    }
+  } catch (e) {
+    const why = reason(e);
+    log(`relay batch: FAILED ${why}`);
+    for (const r of relayed) {
+      await db.record({
+        kind: "relay", network: NETWORK, pair: r.pair, marketId: null, txHash: null,
         ok: false, detail: why,
       });
     }
@@ -115,15 +164,43 @@ async function relayPrices(): Promise<void> {
  */
 async function settleDue(markets: Awaited<ReturnType<typeof allMarkets>>): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  for (const m of markets) {
-    if (m.isSettled || m.cutoffAt > now) continue;
+  const due = markets.filter((m) => !m.isSettled && m.cutoffAt <= now);
+  if (due.length === 0) return;
+
+  const record = async (m: (typeof due)[number], tx: string) => {
+    state.settled += 1;
+    await db.record({
+      kind: "settle", network: NETWORK, pair: m.pair, marketId: m.id, txHash: tx,
+      ok: true, detail: `settled ${m.roundSeconds}s round`,
+    });
+  };
+
+  /**
+   * All of them in one transaction, and one at a time only if that fails.
+   *
+   * Rounds are listed together and expire together, so the batch is the normal case and it
+   * pays one transaction's L2 gas instead of three. It is not the only case: settlement
+   * needs a fresh print *per pair*, so one stale oracle would revert the whole batch and
+   * take two good settlements down with it. Hence the fallback — cheap when everything is
+   * ready, correct when it is not.
+   */
+  if (due.length > 1) {
+    try {
+      const tx = await send(
+        due.map((m) => settleCall(m.id)),
+        `settled markets ${due.map((m) => m.id).join(", ")}`,
+      );
+      for (const m of due) await record(m, tx);
+      return;
+    } catch (e) {
+      log(`settle batch: ${reason(e)} — falling back to one at a time`);
+    }
+  }
+
+  for (const m of due) {
     try {
       const tx = await send(settleCall(m.id), `settled market ${m.id} (${m.pair})`);
-      state.settled += 1;
-      await db.record({
-        kind: "settle", network: NETWORK, pair: m.pair, marketId: m.id, txHash: tx,
-        ok: true, detail: `settled ${m.roundSeconds}s round`,
-      });
+      await record(m, tx);
     } catch (e) {
       const why = reason(e);
       // STALE_PRICE means the relay has not caught up yet — normal, and the next cycle
@@ -149,9 +226,7 @@ async function settleDue(markets: Awaited<ReturnType<typeof allMarkets>>): Promi
  * market with no bankroll can sell nothing at all and an unfunded listing is worse than no
  * listing.
  */
-async function openNewRounds(
-  markets: Awaited<ReturnType<typeof allMarkets>>,
-): Promise<void> {
+async function openNewRounds(): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const balance = await strkBalance(account.address);
   state.balance = balance.toString();
@@ -165,58 +240,64 @@ async function openNewRounds(
   }
   state.stoppedListing = null;
 
-  for (const m of MARKETS) {
-    const open = markets.filter((x) => x.pair === m.label && !x.isSettled && x.cutoffAt > now);
-    if (open.length > 0) continue;
+  /**
+   * Re-read immediately before listing, and decide the whole round from that one snapshot.
+   *
+   * The list this function is handed was taken before settlement ran, so acting on it can
+   * list a round that already exists. Reading once here and deriving every id from it makes
+   * a duplicate arithmetic rather than a race — ids are assigned sequentially from one and
+   * nothing else creates markets.
+   */
+  const fresh = await allMarkets();
+  const chainNow = Math.floor(Date.now() / 1000);
+  const wanted = MARKETS.filter(
+    (m) => !fresh.some((x) => x.pair === m.label && !x.isSettled && x.cutoffAt > chainNow),
+  );
+  if (wanted.length === 0) return;
 
-    try {
-      /**
-       * Re-read immediately before listing, and check this pair specifically.
-       *
-       * The snapshot this loop is walking was taken before any of its own listings, so by
-       * the third pair it is several transactions out of date. Combined with a confirmation
-       * that timed out on a transaction that had actually landed, that produced two ETH
-       * markets and no STRK market in one cycle — each with a bankroll paid for it.
-       *
-       * The chain is the only thing that knows what exists. Asking it costs one call and
-       * makes a duplicate structurally impossible rather than merely unlikely.
-       */
-      const fresh = await allMarkets();
-      const alreadyOpen = fresh.some(
-        (x) => x.pair === m.label && !x.isSettled && x.cutoffAt > Math.floor(Date.now() / 1000),
-      );
-      if (alreadyOpen) {
-        log(`list ${m.label}: already open on chain, skipping`);
-        continue;
-      }
+  /**
+   * The whole round — every pair, created and funded — in one transaction.
+   *
+   * This was nine transactions: create, transfer and fund for each of three pairs, at
+   * roughly 0.1 STRK of L2 gas apiece. Nearly a STRK per round in per-transaction overhead,
+   * against a 0.05 STRK bankroll, on an account topped up 5 STRK a day. The overhead, not
+   * the bankroll, is what emptied the keeper and left the desk with nothing open.
+   *
+   * Order matters inside the batch: `fund_market` records a balance delta, so each transfer
+   * has to execute before the fund call that claims it. Multicalls run in order.
+   */
+  const planned = wanted.map((m, i) => ({
+    pair: m.label,
+    id: fresh.length + 1 + i,
+    seconds: m.rounds[TIER].seconds,
+    cutoffAt: now + m.rounds[TIER].seconds,
+  }));
 
-      const seconds = MARKETS.find((x) => x.label === m.label)!.rounds[TIER].seconds;
-      const cutoffAt = now + seconds;
-      const tx = await send(createMarketCall(m.label, TIER, cutoffAt), `listed ${m.label}`);
-      state.listed += 1;
+  const calls = planned.flatMap((p) => [
+    createMarketCall(p.pair, TIER, p.cutoffAt),
+    transferCall(MARKET, BANKROLL),
+    fundMarketCall(p.id, BANKROLL),
+  ]);
 
-      // The new id is the count, because ids are assigned sequentially from one.
-      const created = await allMarkets();
-      const listedMarket = created[created.length - 1];
-
-      // Fund it in the same cycle. The contract measures funding as a balance delta, so the
-      // tokens have to arrive before the call that records them.
-      await send(transferCall(MARKET, BANKROLL), `sent bankroll for market ${listedMarket.id}`);
-      const fundTx = await send(
-        fundMarketCall(listedMarket.id, BANKROLL),
-        `funded market ${listedMarket.id}`,
-      );
-
+  try {
+    const tx = await send(
+      calls,
+      `listed and funded ${planned.map((p) => `${p.pair} as ${p.id}`).join(", ")}`,
+    );
+    state.listed += planned.length;
+    for (const p of planned) {
       await db.record({
-        kind: "list", network: NETWORK, pair: m.label, marketId: listedMarket.id, txHash: tx,
-        ok: true, detail: `${seconds}s round, cutoff ${cutoffAt}`,
-        meta: { cutoffAt, seconds, bankroll: BANKROLL.toString(), fundTx },
+        kind: "list", network: NETWORK, pair: p.pair, marketId: p.id, txHash: tx,
+        ok: true, detail: `${p.seconds}s round, cutoff ${p.cutoffAt}`,
+        meta: { cutoffAt: p.cutoffAt, seconds: p.seconds, bankroll: BANKROLL.toString(), fundTx: tx },
       });
-    } catch (e) {
-      const why = reason(e);
-      log(`list ${m.label}: FAILED ${why}`);
+    }
+  } catch (e) {
+    const why = reason(e);
+    log(`list ${planned.map((p) => p.pair).join(", ")}: FAILED ${why}`);
+    for (const p of planned) {
       await db.record({
-        kind: "list", network: NETWORK, pair: m.label, marketId: null, txHash: null,
+        kind: "list", network: NETWORK, pair: p.pair, marketId: null, txHash: null,
         ok: false, detail: why,
       });
     }
@@ -226,13 +307,12 @@ async function openNewRounds(
 /**
  * Step 2.5 — fund anything open that has no bankroll.
  *
- * A listing is three transactions: create, transfer, fund. Any of them can fail on its own,
- * and when the funding leg does the market is left open, quotable-looking, and able to sell
- * nothing at all — the contract refuses every position it cannot already cover. That is the
- * worst of the three outcomes, because it looks fine from outside.
- *
- * Recovering it here rather than at listing time means a transient failure heals on the next
- * cycle instead of stranding a market until someone notices.
+ * Listing now creates, transfers and funds in one transaction, so the three legs succeed or
+ * fail together and this should never fire. It stays because the failure it repairs is the
+ * worst one available — a market open, quotable-looking, and able to sell nothing at all,
+ * because the contract refuses every position it cannot already cover — and because markets
+ * listed before the batch existed can still be in that state. It costs one balance read per
+ * cycle when there is nothing to do.
  */
 async function fundUnfunded(
   markets: Awaited<ReturnType<typeof allMarkets>>,
@@ -242,8 +322,10 @@ async function fundUnfunded(
     if (m.isSettled || m.cutoffAt <= now || m.bankroll > 0n) continue;
     log(`market ${m.id} (${m.pair}) is open with no bankroll — funding it`);
     try {
-      await send(transferCall(MARKET, BANKROLL), `sent bankroll for market ${m.id}`);
-      const tx = await send(fundMarketCall(m.id, BANKROLL), `funded market ${m.id}`);
+      const tx = await send(
+        [transferCall(MARKET, BANKROLL), fundMarketCall(m.id, BANKROLL)],
+        `funded market ${m.id}`,
+      );
       await db.record({
         kind: "fund", network: NETWORK, pair: m.pair, marketId: m.id, txHash: tx,
         ok: true, detail: `recovered an unfunded market with ${BANKROLL}`,
@@ -288,8 +370,7 @@ async function cycle(): Promise<void> {
     await settleDue(markets);
     markets = await allMarkets();
     await fundUnfunded(markets);
-    markets = await allMarkets();
-    await openNewRounds(markets);
+    await openNewRounds();
     await indexMarkets(await allMarkets());
     state.lastError = null;
   } catch (e) {

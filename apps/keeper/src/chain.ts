@@ -199,7 +199,14 @@ function transient(why: string): boolean {
   return /nonce|rate|timeout|fetch failed|ECONN|502|503|504|Gateway|temporarily/i.test(why);
 }
 
-export async function send(call: Call, label: string, attempts = 3): Promise<string> {
+/**
+ * `call` may be several calls, and when it is they land as one transaction.
+ *
+ * Fees on Sepolia are dominated by per-transaction L2 gas — a listing cost three separate
+ * transactions at about 0.1 STRK each, which on a faucet-funded keeper is the difference
+ * between a desk that stays open and one that runs dry inside an hour.
+ */
+export async function send(call: Call | Call[], label: string, attempts = 3): Promise<string> {
   let last = "";
   for (let i = 0; i < attempts; i += 1) {
     let hash: string | null = null;
