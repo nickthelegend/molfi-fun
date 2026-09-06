@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ConsoleStage } from "@/components/ConsoleStage";
+import { LiveStrip } from "@/components/LiveStrip";
 import { Wordmark } from "@/components/Wordmark";
 
 /** One of the three doors under the fold. Small, and the sub-label does the work. */
@@ -43,6 +44,8 @@ export default function Home() {
           <div className="mt-4 h-[330px]">
             <ConsoleStage />
           </div>
+
+          <LiveStrip />
 
           <h1 className="mt-2 text-center text-[27px] font-extrabold leading-tight tracking-tight">
             Take a position nobody can see.
