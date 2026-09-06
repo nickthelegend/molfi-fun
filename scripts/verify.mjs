@@ -203,8 +203,18 @@ check("C13", (await get("/api/position/nothex")).status === 400, "a malformed co
 }
 {
   const { status, body } = await get("/api/keeper");
-  check("C17", status === 200 && body.configured === true && body.reachable === true && body.cycles > 0,
-    "/api/keeper", `${body?.cycles} cycles, ${(Number(body?.balance) / 1e18).toFixed(2)} STRK`);
+  /**
+   * The route answered and its verdict is coherent — not that the keeper is well.
+   *
+   * Whether the keeper can list is a funding fact, not a property of this repository, and
+   * asserting it here made a truthful "I cannot list" read as a code failure. What is worth
+   * pinning is that `ok` agrees with the reason beside it: a keeper reporting `ok: true`
+   * while it has stopped listing is the bug that let the desk go dark unnoticed.
+   */
+  const stalled = Number(body?.stalledCycles ?? 0) >= 2;
+  const coherent = body?.ok === true ? !stalled && !body?.stoppedListing : Boolean(body?.unhealthy);
+  check("C17", status === 200 && body.configured === true && body.reachable === true && body.cycles > 0 && coherent,
+    "/api/keeper", `${body?.cycles} cycles, ${(Number(body?.balance) / 1e18).toFixed(2)} STRK, ok=${body?.ok}`);
 }
 {
   const { body: a } = await get("/api/position/0x1");

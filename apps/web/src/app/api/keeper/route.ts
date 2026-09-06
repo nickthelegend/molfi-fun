@@ -54,12 +54,24 @@ export async function GET(req: Request) {
       return NextResponse.json({ configured: true, ...body }, { headers: { "cache-control": "no-store" } });
     }
 
-    const { status, body } = await ask("/health");
+    const { body } = await ask("/health");
+    /**
+     * 200 whenever the keeper answered, with its verdict in the body.
+     *
+     * This used to mirror the keeper's own 503 on the reasoning that a proxy laundering a
+     * downstream failure is worse than no proxy. That is right for a health check and wrong
+     * here: this route reports *on* the keeper, and it succeeded in doing so. Mirroring the
+     * status conflated "this endpoint works" with "the thing it describes is well" — and
+     * every caller that treats a non-2xx as unreachable then says the keeper did not answer,
+     * which the site's own badge did, replacing an accurate "answering, but no longer
+     * listing rounds" with a flatly untrue one.
+     *
+     * `/api/health` remains the monitoring surface and still returns a real 503; it already
+     * reports the keeper as one of its components.
+     */
     return NextResponse.json(
       { configured: true, reachable: true, ...body },
-      // The keeper's own 503 travels through rather than being flattened to a 200. A proxy
-      // that launders a downstream failure is worse than no proxy.
-      { status: status === 503 ? 503 : 200, headers: { "cache-control": "no-store" } },
+      { status: 200, headers: { "cache-control": "no-store" } },
     );
   } catch (e) {
     return NextResponse.json(
