@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { Call } from "starknet";
 import { MARKETS } from "@molfi/sdk";
 import * as db from "./db.ts";
+import { requestDrip } from "./faucet.ts";
 import {
   MARKET,
   NETWORK,
@@ -80,6 +81,9 @@ const state = {
    */
   stalledCycles: 0,
   stalledSince: null as string | null,
+  /** Unix seconds before which asking the faucet again is pointless. */
+  faucetRetryAfter: 0,
+  lastDrip: null as string | null,
 };
 
 const log = (s: string) => console.log(`[${new Date().toISOString()}] ${s}`);
@@ -254,8 +258,41 @@ async function settleDue(markets: Awaited<ReturnType<typeof allMarkets>>): Promi
  */
 async function openNewRounds(): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  const balance = await strkBalance(account.address);
+  let balance = await strkBalance(account.address);
   state.balance = balance.toString();
+
+  /**
+   * Ask the faucet before giving up on the round.
+   *
+   * The desk stopping is the failure this project can least afford, and the only reason it
+   * stopped was that nobody was there to run a script. A keeper that settles markets
+   * unattended and then needs a person to keep its own lights on is not unattended.
+   *
+   * Once per stall, never against the stated cooldown, and never for a second address.
+   */
+  if (balance < LOW_BALANCE && Math.floor(Date.now() / 1000) >= state.faucetRetryAfter) {
+    log(`balance ${balance} is below the floor — asking the faucet`);
+    const drip = await requestDrip(account.address).catch((e) => ({
+      ok: false as const,
+      detail: reason(e),
+    }));
+    state.lastDrip = `${new Date().toISOString()} · ${drip.detail}`;
+    // Whatever the answer, do not ask again this soon. A refusal that carries its own
+    // retry time is honoured exactly; anything else waits an hour.
+    state.faucetRetryAfter =
+      ("retryAfter" in drip && drip.retryAfter) || Math.floor(Date.now() / 1000) + 3600;
+    await db.record({
+      kind: "fund", network: NETWORK, pair: null, marketId: null,
+      txHash: ("txHash" in drip && drip.txHash) || null,
+      ok: drip.ok, detail: `faucet: ${drip.detail}`,
+    });
+    log(`faucet: ${drip.detail}`);
+    if (drip.ok) {
+      // Re-read rather than assume: the drip is confirmed on chain before it is spendable.
+      balance = await strkBalance(account.address);
+      state.balance = balance.toString();
+    }
+  }
 
   if (balance < LOW_BALANCE) {
     // Stop listing before the account cannot fund what it lists. Settling still runs: it is
