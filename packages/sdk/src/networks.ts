@@ -156,7 +156,16 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
      */
     oracle: SEPOLIA_PRICE_RELAY,
     market: marketFor("sepolia"),
-    firstEventBlock: 14_605_143,
+    /**
+     * Where **this** contract's first event landed — 14,648,162, the block it was deployed in.
+     *
+     * It read 14,605,143 after the redeploy, which was the *previous* contract's first block:
+     * the address on `/verify`'s copyable `starknet_getEvents` had moved and this had not, so
+     * the command handed to a sceptic scanned forty-three thousand blocks of nothing before
+     * reaching anything. Correct, and useless to someone running it once — which is the whole
+     * audience for that box.
+     */
+    firstEventBlock: 14_648_162,
     explorer: "https://sepolia.starkscan.co",
     realPool: true,
   },
