@@ -276,6 +276,47 @@ let publicRouteLive = false;
     "declare the class (~60 STRK) then `pnpm golive`");
 }
 {
+  /**
+   * The headline claim, checked against the class that is actually deployed.
+   *
+   * `cairo/src/market.cairo` stores a pair of reach ratios and never the band. That is not
+   * the same statement as "the band is not on chain", because a class is deployed rather
+   * than compiled — and the class live here predates that change: its `Position` carries
+   * `band_low` and `band_high`. Commitments are indexed event keys, so on that class anyone
+   * can enumerate a market's positions and read what each one bought.
+   *
+   * A FAIL rather than a blocked item. It cannot be fixed from this repository either, but
+   * unlike D11 it is not a missing feature — it is a promise the site makes that the
+   * deployment does not keep, and it should read as loudly as that.
+   */
+  let bandOnChain = null;
+  let detail = "";
+  try {
+    const res = await chain(() => provider.getClassAt(d.market));
+    const abi = typeof res.abi === "string" ? JSON.parse(res.abi) : res.abi;
+    const flat = [];
+    const walk = (items) => {
+      for (const item of items ?? []) {
+        flat.push(item);
+        if (item.items) walk(item.items);
+      }
+    };
+    walk(abi);
+    const position = flat.find((x) => x.type === "struct" && /::Position$/.test(x.name ?? ""));
+    if (position) {
+      const names = (position.members ?? []).map((m) => m.name);
+      bandOnChain = names.includes("band_low") || names.includes("band_high");
+      detail = bandOnChain
+        ? `Position stores ${names.filter((n) => n.startsWith("band")).join(" and ")}`
+        : `Position stores ${names.filter((n) => n.includes("off")).join(" and ") || "no band"}`;
+    }
+  } catch (e) {
+    detail = String(e.message).slice(0, 60);
+  }
+  check("D13", bandOnChain === false,
+    "the deployed class does not store the band", detail || "class unreadable");
+}
+{
   const staked = markets.reduce((t, m) => t + m.staked, 0n);
   if (publicRouteLive) {
     check("D12", staked > 0n, "somebody has actually traded this market", `${staked} units staked in total`);

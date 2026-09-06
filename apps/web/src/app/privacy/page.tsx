@@ -11,7 +11,7 @@ import {
   secondsLabel,
 } from "@molfi/sdk";
 import { hash } from "starknet";
-import { NETWORK, ORACLE_ADDRESS, call } from "@/lib/rpc";
+import { NETWORK, ORACLE_ADDRESS, bandIsOnChain, call } from "@/lib/rpc";
 import { PrivateOrder } from "@/components/PrivateOrder";
 import { marketAddress, readMarket, readMarketCount } from "@/lib/market-reads";
 
@@ -69,6 +69,17 @@ export default async function PrivacyPage() {
    * same source that module reads anyway.
    */
   const chain = NETWORKS[NETWORK];
+
+  /**
+   * Asked of the chain, not of this repository.
+   *
+   * The source stores a pair of reach ratios and never the band. The class deployed to
+   * Sepolia predates that change and stores `band_low` and `band_high` outright — so on the
+   * contract this page links to, the headline claim is currently false. A page about what
+   * leaks cannot take its own word for it, and hardcoding either answer would make it wrong
+   * on one side of the redeploy.
+   */
+  const bandLeaks = address ? await bandIsOnChain(address) : null;
   let totals = { markets: 0, staked: 0n, positions: "unknowable" as const };
 
   /**
@@ -198,6 +209,35 @@ export default async function PrivacyPage() {
           </div>
         </header>
 
+        {bandLeaks ? (
+          <section className="mt-3 rounded-[22px] border border-red/40 bg-card p-6">
+            <div className="mono flex items-center gap-2 text-[9.5px] tracking-[0.15em] text-red">
+              <span
+                aria-hidden
+                className="h-1.5 w-1.5 rounded-[1px] bg-red"
+                style={{ boxShadow: "0 0 6px rgba(232,69,60,.8)" }}
+              />
+              THE CLASS DEPLOYED HERE DOES NOT KEEP THIS PROMISE
+            </div>
+            <h2 className="mt-2 text-[18px] font-extrabold leading-snug">
+              Right now, on this contract, the band is public.
+            </h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/55">
+              The class live at the address below stores <code className="text-white/70">band_low</code>{" "}
+              and <code className="text-white/70">band_high</code> in each position, and every
+              commitment is an indexed event key — so anyone can list this market&rsquo;s positions
+              and read what each one bought. The contract in the repository replaced both fields
+              with reach ratios and never stores the band, and it has not been deployed: the
+              declare costs about 60 STRK and has not been paid.
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-white/55">
+              This box is drawn from the deployed class&rsquo;s own ABI, read when you loaded the
+              page. It disappears on its own when a class without the band is live — the page is
+              not asserting this from a config file, and neither should you take it from one.
+            </p>
+          </section>
+        ) : null}
+
         {order && order.stake > 0n && chain.privacyPool && chain.stakeToken && address ? (
           <PrivateOrder
             addresses={{ pool: chain.privacyPool, token: chain.stakeToken, market: address }}
@@ -213,8 +253,18 @@ export default async function PrivacyPage() {
         <Group title="Hidden" tone="green">
           <Row
             what="Which band you bought"
-            how={`The contract stores poseidon(${POSITION_TAG}, secret, market, low, high) and, to price it, how far the band reaches from its own midpoint — a pair of ratios with the price divided out. Never the band.`}
-            evidence="Nothing on chain reveals a band until its holder claims. True on both routes; it is the one claim molfi will not trade away for reach."
+            how={
+              bandLeaks
+                ? `NOT ON THE CLASS CURRENTLY DEPLOYED. Its Position struct stores band_low and band_high outright, and commitments are indexed event keys — so anyone can enumerate this market's positions and read the band each one bought. The contract in this repository stores poseidon(${POSITION_TAG}, secret, market, low, high) and a pair of reach ratios instead, and never the band; it is not the class live at the address above.`
+                : `The contract stores poseidon(${POSITION_TAG}, secret, market, low, high) and, to price it, how far the band reaches from its own midpoint — a pair of ratios with the price divided out. Never the band.`
+            }
+            evidence={
+              bandLeaks
+                ? "Read from the deployed class's own ABI just now, not from this repository. This row corrects itself the moment a class without the band is deployed."
+                : bandLeaks === null
+                  ? "The deployed class could not be read just now, so this claim is unverified rather than confirmed."
+                  : "Nothing on chain reveals a band until its holder claims. True on both routes; it is the one claim molfi will not trade away for reach."
+            }
           />
           <Row
             what="How much you staked"

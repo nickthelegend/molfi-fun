@@ -143,3 +143,56 @@ export async function latestTimestamp(): Promise<number> {
     `could not read the chain's clock${last ? `: ${String((last as Error).message).slice(0, 80)}` : ""}`,
   );
 }
+
+/**
+ * Whether the deployed class stores a position's band in the clear.
+ *
+ * Not a question the source can answer. `cairo/src/market.cairo` stores a pair of reach
+ * ratios and never the band — but a class is deployed, not compiled, and the class currently
+ * live on Sepolia predates that change: its `Position` carries `band_low` and `band_high`.
+ * Commitments are indexed event keys, so on that class anyone can enumerate positions and
+ * read the band each one bought.
+ *
+ * The privacy page states what leaks. It cannot state it from the repository, because the
+ * repository is not what a reader's trade would execute against — so it asks the chain, and
+ * corrects itself the moment a class without the band is deployed.
+ *
+ * `null` when the class could not be read: unknown is not "safe".
+ */
+export async function bandIsOnChain(contract: string): Promise<boolean | null> {
+  for (const endpoint of ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "starknet_getClassAt",
+          params: ["latest", contract],
+        }),
+        cache: "no-store",
+      });
+      const json = (await res.json()) as { result?: { abi?: unknown }; error?: unknown };
+      if (!json.result) continue;
+      const abi = typeof json.result.abi === "string" ? JSON.parse(json.result.abi) : json.result.abi;
+      const flat: Array<Record<string, unknown>> = [];
+      const walk = (items: unknown) => {
+        for (const item of (items as Array<Record<string, unknown>>) ?? []) {
+          flat.push(item);
+          if (item.items) walk(item.items);
+        }
+      };
+      walk(abi);
+      const position = flat.find(
+        (x) => x.type === "struct" && typeof x.name === "string" && /::Position$/.test(x.name),
+      );
+      if (!position) return null;
+      const members = (position.members as Array<{ name?: string }>) ?? [];
+      return members.some((m) => m.name === "band_low" || m.name === "band_high");
+    } catch {
+      // Try the next endpoint; a node having a bad minute is not an answer.
+    }
+  }
+  return null;
+}
