@@ -92,7 +92,26 @@ export const MOLFI_MARKET: Record<NetworkName, string | null> = {
    * The relay is a testnet stand-in with one publisher, and every value it serves carries
    * the mainnet block it was read at. On mainnet molfi reads Pragma directly.
    */
-  sepolia: "0x03b00e6e0efd3d35aeb6885ccb5e21a32f5f68a54222094196a7264da158b068",
+  /**
+   * The class where the band is never stored.
+   *
+   * Replaces `0x03b00e6e…`, which carried 52 settled markets and a `Position` struct holding
+   * `band_low` and `band_high` in the clear — so on that deployment anyone could enumerate a
+   * market and read what each position had bought, which is the one claim molfi is named for.
+   * `/privacy` and `/verify` said so in a red banner drawn from the deployed ABI, and
+   * `pnpm verify` D13 failed, for as long as the ~60 STRK declare went unpaid.
+   *
+   * This one stores `low_off_1e8` and `high_off_1e8` — the reach of the band from its own
+   * midpoint, with the price divided out — which prices a position exactly and says nothing
+   * about what it predicts. It also carries the public route (`open_position`,
+   * `claim_position`, `quote_offsets`) the old class never had, and the three fixes from
+   * `docs/AUDIT.md`.
+   *
+   * The history is the cost, and it is real: the 52 markets on the old address stay there and
+   * their `/m/<id>` pages go with them. A privacy claim that holds is worth more than a
+   * settlement count that does not.
+   */
+  sepolia: "0x053b17219aa45008548e3633b9fcd78ec9540b00d71fd34ec6217599d3298f1f",
   mainnet: null,
 };
 
