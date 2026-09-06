@@ -23,7 +23,7 @@
     "relay": "node --experimental-strip-types scripts/relay.mjs",
     "start": "pnpm --filter @molfi/web exec next start -p ${PORT:-3400}",
     "submission": "node --experimental-strip-types scripts/fill-submission.mjs",
-    "test": "pnpm --filter @molfi/sdk test",
+    "test": "pnpm --filter @molfi/sdk test && pnpm --filter @molfi/keeper test",
     "test:all": "bash scripts/test-all.sh",
     "test:cairo": "cd cairo && snforge test",
     "test:integration": "node --experimental-strip-types scripts/integration.mjs --network devnet",

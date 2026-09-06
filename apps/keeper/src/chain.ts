@@ -1,4 +1,5 @@
 import { Account, CallData, RpcProvider, hash, type Call } from "starknet";
+
 import {
   CALIBRATED_MARKETS,
   ROUND_SECONDS,
@@ -8,6 +9,10 @@ import {
   pairId,
 } from "@molfi/sdk";
 import { PRAGMA } from "@molfi/sdk";
+import { reason } from "./reason.ts";
+
+/** Re-exported so callers keep importing their failure explanations from one place. */
+export { reason };
 
 /**
  * Everything the keeper does on chain.
@@ -56,46 +61,6 @@ export function toLabel(felt: string): string {
   return String.fromCharCode(...bytes);
 }
 
-/**
- * The one line worth reading out of a Starknet revert.
- *
- * A failed call comes back as several hundred characters of nested addresses wrapped around
- * a single quoted felt. Logging the envelope buries the reason; logging the felt loses
- * nothing anyone needs.
- */
-export function reason(e: unknown): string {
-  const text = String((e as Error)?.message ?? e);
-
-  // A Cairo revert names itself in a quoted felt. That is the whole answer.
-  const named = text.match(/\('([A-Z0-9_]+)'\)/);
-  if (named) return named[1];
-
-  // An RPC rejection does not. starknet.js formats it across several lines with the request
-  // params first, so the first line is `RPC: starknet_addInvokeTransaction with params {` —
-  // which identifies the *method* and says nothing about the failure. Taking it as the
-  // reason made six different problems look like one, and cost a round trip to notice.
-  const rpc = text.match(/"message"\s*:\s*"([^"]+)"/);
-  if (rpc) {
-    /**
-     * `message` is often the category, not the cause.
-     *
-     * A validation failure comes back as `"message": "Account validation failed"` with the
-     * actual sentence — the one naming the max fee and the balance — in `data`. Logging only
-     * the message printed "Account validation failed:" with nothing after the colon, which
-     * is the least useful string the node could have been asked for.
-     */
-    const data = text.match(/"data"\s*:\s*"([^"]+)"/);
-    const detail = data ? data[1].replace(/\\n/g, " ").trim() : "";
-    return (detail ? `${rpc[1]} — ${detail}` : rpc[1]).slice(0, 220);
-  }
-  const bare = text.match(/(Invalid transaction nonce|Account validation failed|insufficient|exceed balance)[^\n"]*/i);
-  if (bare) return bare[0].slice(0, 160);
-
-  // Last resort: the longest line that is not the params echo.
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const useful = lines.find((l) => !/^RPC:/.test(l) && !/^[{}\[\],]/.test(l) && l.length > 12);
-  return (useful ?? lines[0] ?? "unknown").slice(0, 200);
-}
 
 export interface MarketState {
   id: number;
