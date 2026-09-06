@@ -20,6 +20,7 @@ import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
 import { useBand } from "@/lib/useBand";
 import { usePrefs } from "@/lib/usePrefs";
+import { MenuSheet } from "./menu/MenuSheet";
 import { useSound } from "@/lib/useSound";
 import { ADDRESSES, activeNetwork, explorerTx, shortAddress } from "@/lib/chain";
 import { DeviceFrame } from "./device/DeviceFrame";
@@ -141,6 +142,15 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
    * refuse every trade.
    */
   const [routePref, setRoutePref] = useState<Route | null>(null);
+  /**
+   * The menu, which the live desk never had.
+   *
+   * Shield, withdraw, your positions, and the export/import that is the only way to recover
+   * a payout all live behind it — and `MenuSheet` has always taken a `live` prop for exactly
+   * this, which nothing ever passed. The result was that the pool interaction screens could
+   * only be reached from the demo desk, where they correctly report there is no pool.
+   */
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const market = useMemo(
     () => MARKETS.find((m) => m.key === marketKey) ?? MARKETS[0],
@@ -716,6 +726,7 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
                 label={state.connection ? "OPEN" : "CONNECT"}
                 onClick={() => void doFire()}
               />
+              <DeckKey label="MENU" onClick={() => setMenuOpen(true)} />
               <DeckKey label="HOME" onClick={() => router.push("/")} />
             </div>
             <div
@@ -739,6 +750,24 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
           </div>
         }
       />
+
+      {menuOpen ? (
+        <MenuSheet
+          onClose={() => setMenuOpen(false)}
+          live={{
+            connection: state.connection,
+            wallets: state.wallets,
+            shielded: state.shielded,
+            positions: state.positions,
+            pending: state.pending,
+            connect: live.connect,
+            disconnect: live.disconnect,
+            shield: live.shield,
+            unshield: live.unshield,
+            claim: live.claim,
+          }}
+        />
+      ) : null}
 
       {state.lastTx ? (
         <p className="mono pb-6 text-center text-[10px] text-white/40">

@@ -55,10 +55,17 @@ export function MenuSheet({
   live,
 }: {
   onClose: () => void;
-  balance: bigint;
-  tickets: PaperTicket[];
-  pnl: bigint;
-  onReset: () => void;
+  /**
+   * The paper session, absent when the menu is opened from the live desk.
+   *
+   * These are demo-desk concepts. A live desk holds STRK inside the pool and has no paper
+   * balance to show and nothing to reset, so the rows that act on them are not rendered
+   * rather than rendered inert.
+   */
+  balance?: bigint;
+  tickets?: PaperTicket[];
+  pnl?: bigint;
+  onReset?: () => void;
   /** Start attract mode: the desk plays itself until someone touches it. */
   onAttract?: () => void;
   /** Start the narrated run: the same engine, with a line saying what each step is doing. */
@@ -71,13 +78,17 @@ export function MenuSheet({
    */
   live?: LiveMenu;
 }) {
+  // A live desk has no paper plays; the history, leaderboard and achievements views already
+  // print honest empty states for that, so they need no special casing beyond this.
+  const plays = tickets ?? [];
+  const paperPnl = pnl ?? 0n;
   const [view, setView] = useState<View>("menu");
   const back = () => setView("menu");
 
   if (view === "leaderboard")
     return (
       <Sheet onClose={onClose} onBack={back} title="Leaderboard">
-        <Leaderboard pnl={pnl} played={tickets.length > 0} />
+        <Leaderboard pnl={paperPnl} played={plays.length > 0} />
       </Sheet>
     );
 
@@ -91,7 +102,7 @@ export function MenuSheet({
   if (view === "history")
     return (
       <Sheet onClose={onClose} onBack={back} title="History">
-        <History tickets={tickets} />
+        <History tickets={plays} />
       </Sheet>
     );
 
@@ -154,7 +165,7 @@ export function MenuSheet({
   if (view === "awards")
     return (
       <Sheet onClose={onClose} onBack={back} title="Achievements">
-        <Achievements tickets={tickets} />
+        <Achievements tickets={plays} />
       </Sheet>
     );
 
@@ -196,7 +207,7 @@ export function MenuSheet({
       </Sheet>
     );
 
-  const played = tickets.length;
+  const played = plays.length;
 
   return (
     <Sheet onClose={onClose} title="Menu">
@@ -214,7 +225,7 @@ export function MenuSheet({
           <p className="truncate text-[13px] text-white/45">
             {played === 0
               ? "No plays yet. Make your first play."
-              : `${played} ${played === 1 ? "play" : "plays"} · ${pnl >= 0n ? "+" : "−"}${fmtUsd(pnl < 0n ? -pnl : pnl)}`}
+              : `${played} ${played === 1 ? "play" : "plays"} · ${paperPnl >= 0n ? "+" : "−"}${fmtUsd(paperPnl < 0n ? -paperPnl : paperPnl)}`}
           </p>
         </div>
         <button
@@ -258,7 +269,9 @@ export function MenuSheet({
               ? live.shielded === null
                 ? "—"
                 : `${fmtStrk(live.shielded, 2)}`
-              : fmtUsd(balance)}
+              : balance === undefined
+                ? "—"
+                : fmtUsd(balance)}
           </span>
           <button
             onClick={() => setView("funds")}
@@ -314,12 +327,16 @@ export function MenuSheet({
         <Row icon="ℹ️" label="About molfi" onClick={() => setView("about")} />
       </div>
 
-      <button
-        onClick={onReset}
-        className="mt-5 w-full rounded-xl bg-red py-3.5 text-[14px] font-bold tracking-wide"
-      >
-        ⎋ RESET DEMO DESK
-      </button>
+      {/* Paper-only. There is nothing on a live desk this could reset, and a key that does
+          nothing is worse than a gap. */}
+      {onReset ? (
+        <button
+          onClick={onReset}
+          className="mt-5 w-full rounded-xl bg-red py-3.5 text-[14px] font-bold tracking-wide"
+        >
+          ⎋ RESET DEMO DESK
+        </button>
+      ) : null}
 
       <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-5">
         <a

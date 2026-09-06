@@ -300,14 +300,29 @@ export function useLiveDesk(market: MarketDef, tier: number) {
        * every direction: fewer requests, cached, and no second copy of the struct offsets to
        * drift out of step.
        */
-      const body = await fetchJson<{
+      /**
+       * A market list that cannot be read must not take the position list with it.
+       *
+       * This used to throw straight out of the read cycle, which meant `positions` was never
+       * computed and the desk showed "Nothing here yet" — while the local store, the only
+       * index of what this browser owns, still held them. A slow node made a payout look
+       * lost. The market data is enrichment for a row; its absence degrades the row to
+       * "unread", which the join below already handles, and never removes it.
+       */
+      let body: {
         deployed?: boolean;
         reason?: string;
         error?: string;
         markets?: Array<Record<string, string | number | boolean>>;
         chainNow?: number;
-      }>("/api/markets");
-      if (body.error) throw new Error(body.error);
+      } = {};
+      let marketsError: string | null = null;
+      try {
+        body = await fetchJson<typeof body>("/api/markets");
+        if (body.error) throw new Error(body.error);
+      } catch (e) {
+        marketsError = errorText(e);
+      }
 
       const markets: LiveMarket[] = (body.markets ?? []).map((m) => ({
         id: Number(m.id),
@@ -417,7 +432,9 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       setState((s) => ({
         ...s,
         ready: true,
-        error: null,
+        // Still reported, still visible over the chart — the desk just no longer forgets
+        // what it owns while saying so.
+        error: marketsError,
         markets,
         chainNow,
         chainNowReadAt: Date.now(),
