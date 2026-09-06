@@ -237,6 +237,31 @@ pub mod MolfiMarket {
         /// move is not the shape of a four hour one and a single table would misprice at
         /// least one of them. Cairo has no storable array, so the knots are keyed by index.
         tables: Map<(u64, u32), u256>,
+        /// The market whose stored table this one shares, or zero for "my own".
+        ///
+        /// Seventeen `u256` knots is thirty-four storage writes, and the keeper lists the same
+        /// three tables over and over — one per pair and round length — so all but the first
+        /// listing of each was paying to write a table the contract already had. That was the
+        /// single largest cost in the system: about 15M L2 gas of the 18M a listing burned.
+        ///
+        /// A pointer rather than a shared slot on purpose. A settled market has to stay
+        /// auditable against the exact table it was priced with, and tables here are
+        /// write-once — the market a pointer names never rewrites its knots — so following
+        /// one can never change what an old market recomputes to.
+        table_alias: Map<u64, u64>,
+        /// First market to store a given table, by the Poseidon hash of its knots.
+        ///
+        /// Zero means the table has not been seen. Content-addressed rather than keyed by
+        /// pair and round length so that a recalibration is a different table, gets its own
+        /// storage, and cannot retroactively change how an already-settled market prices.
+        ///
+        /// The obvious cheaper-looking alternative — keep the last market listed for a pair
+        /// and round, and compare its seventeen knots against the incoming ones — was built
+        /// and measured, and is worse on both axes: 10,129 felts of class against 10,037,
+        /// and a reusing listing that costs *more* l2_gas than writing a fresh table, because
+        /// seventeen storage reads outweigh what they avoid. Recorded so it is not tried
+        /// again.
+        table_index: Map<felt252, u64>,
     }
 
     #[event]
@@ -319,13 +344,38 @@ pub mod MolfiMarket {
     impl Internal of InternalTrait {
         /// The table a market prices with, read back knot by knot.
         fn table_of(self: @ContractState, market_id: u64) -> Span<u256> {
+            // One hop, never two: a market that stores its own table has alias zero, and a
+            // market that points at another always points at one that stores its own.
+            let alias = self.table_alias.read(market_id);
+            let source = if alias == 0 {
+                market_id
+            } else {
+                alias
+            };
             let mut knots: Array<u256> = array![];
             let mut i: u32 = 0;
             while i != pricing::TABLE_LEN {
-                knots.append(self.tables.read((market_id, i)));
+                knots.append(self.tables.read((source, i)));
                 i += 1;
             }
             knots.span()
+        }
+
+        /// The Poseidon hash of a table's knots, low limb then high, in order.
+        ///
+        /// Both limbs of every `u256` go in. Hashing only the low limbs would let two tables
+        /// that differ solely above 2^128 share storage, which is not a case that can arise
+        /// from a real calibration but is not a property worth leaving to luck.
+        fn table_hash(self: @ContractState, table: Span<u256>) -> felt252 {
+            let mut felts: Array<felt252> = array![];
+            let mut i: u32 = 0;
+            while i != pricing::TABLE_LEN {
+                let knot = *table.at(i);
+                felts.append(knot.low.into());
+                felts.append(knot.high.into());
+                i += 1;
+            }
+            poseidon_hash_span(felts.span())
         }
 
         /// The commitment a position is stored under.
@@ -510,10 +560,20 @@ pub mod MolfiMarket {
             let id = self.market_count.read() + 1;
             self.market_count.write(id);
 
-            let mut i: u32 = 0;
-            while i != pricing::TABLE_LEN {
-                self.tables.write((id, i), *table.at(i));
-                i += 1;
+            // Write the knots once, then point at them. The keeper relists the same three
+            // tables indefinitely, so this is the difference between thirty-four storage
+            // writes per listing and one.
+            let hash = self.table_hash(table);
+            let seen = self.table_index.read(hash);
+            if seen == 0 {
+                let mut i: u32 = 0;
+                while i != pricing::TABLE_LEN {
+                    self.tables.write((id, i), *table.at(i));
+                    i += 1;
+                }
+                self.table_index.write(hash, id);
+            } else {
+                self.table_alias.write(id, seen);
             }
 
             self

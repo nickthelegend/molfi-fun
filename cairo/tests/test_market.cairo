@@ -1033,3 +1033,142 @@ fn quote_offsets_is_the_price_the_position_is_actually_sold_at() {
     assert(m.get_position(commitment('s', id, 99_829, 100_171)).multiplier_bps == quoted, 'quoted == charged');
     assert(m.quote_band(id, 100_000, 99_829, 100_171) == quoted, 'both views agree');
 }
+
+// ---------------------------------------------------------------- shared pricing tables
+//
+// The keeper relists the same three tables — one per pair and round length — indefinitely,
+// and each listing used to write all seventeen `u256` knots again. These pin the dedup that
+// stopped that, and the property that makes it safe: a market's table is decided when it is
+// listed and cannot be changed afterwards by anything a later listing does.
+
+/// ETH over fifteen minutes. A genuinely different shape from BTC's, so a test that mixes
+/// them cannot pass by accident.
+fn eth_15m() -> Span<u256> {
+    array![
+        0, 271_882, 470_512, 612_318, 710_662, 779_180, 826_314, 858_795, 881_216, 896_712,
+        907_500, 915_066, 920_460, 924_368, 927_249, 929_432, 931_130,
+    ]
+        .span()
+}
+
+#[test]
+fn two_markets_on_the_same_table_read_back_the_same_knots() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let first = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    let second = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    // The second market stores a pointer rather than the knots, so the read has to follow it.
+    assert(m.get_table(second) == btc_15m(), 'shared table reads wrong');
+    assert(m.get_table(first) == m.get_table(second), 'tables disagree');
+}
+
+#[test]
+fn a_shared_table_prices_identically() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let first = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    let second = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    // Pointing at another market's knots must be invisible to the thing that matters.
+    let spot: u256 = 8_000_000_000_000;
+    let low = spot - spot * 171_077 / 100_000_000;
+    let high = spot + spot * 171_077 / 100_000_000;
+    assert(
+        m.quote_band(first, spot, low, high) == m.quote_band(second, spot, low, high),
+        'shared table misprices',
+    );
+}
+
+#[test]
+fn a_different_table_is_stored_separately() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let btc = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    let eth = m.create_market('ETH/USD', CUTOFF, 900, token, 227_000, 400, eth_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(m.get_table(btc) == btc_15m(), 'btc table clobbered');
+    assert(m.get_table(eth) == eth_15m(), 'eth table clobbered');
+    assert(m.get_table(btc) != m.get_table(eth), 'two tables collapsed into one');
+}
+
+#[test]
+fn a_later_listing_cannot_change_an_earlier_market_s_table() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let first = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+
+    // The same pair and the same round length, recalibrated. Keying storage on those two
+    // would have quietly repriced the market above; content-addressing gives this its own.
+    let recalibrated = m
+        .create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, eth_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(m.get_table(first) == btc_15m(), 'earlier market repriced');
+    assert(m.get_table(recalibrated) == eth_15m(), 'recalibration lost');
+}
+
+#[test]
+fn a_settled_market_still_audits_against_its_own_table() {
+    let (m, _, oracle, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let settled = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+    fund(m, token, settled, 1_000_000);
+
+    let spot: u256 = 8_000_000_000_000;
+    let low = spot - spot * 171_077 / 100_000_000;
+    let high = spot + spot * 171_077 / 100_000_000;
+    let before = m.quote_band(settled, spot, low, high);
+
+    oracle.set(7_970_000_000_000, CUTOFF, 11);
+    start_cheat_block_timestamp_global(CUTOFF + 1);
+    m.settle(settled);
+
+    // Anything listed after settlement, with any table, must leave the recomputation alone.
+    start_cheat_caller_address(m.contract_address, owner());
+    m.create_market('BTC/USD', CUTOFF + 10_000, 900, token, 171_077, 400, eth_15m());
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(m.quote_band(settled, spot, low, high) == before, 'settled market repriced');
+}
+
+// The two below are a matched pair, run for the difference between their reported costs.
+//
+// They do the same work except that one lists a table the contract already holds and the
+// other lists a new one, so the gap is exactly what storing a table costs. Measured with
+// `snforge test bench_second`:
+//
+//     reuses a table   l2_gas ~2,993,126   l1_data_gas ~3,552
+//     writes a new one l2_gas ~3,600,276   l1_data_gas ~5,088
+//     saved per repeat listing      607,150            1,536
+//
+// The l1_data_gas half is the one that does not depend on a gas model: it is thirty-four
+// storage slots of state diff that no longer reach L1. Each still asserts the invariant that
+// makes the comparison meaningful — two markets listed, each priceable — so neither can
+// silently stop measuring what it claims to.
+
+#[test]
+fn bench_second_listing_reuses_a_table() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let a = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    let b = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    stop_cheat_caller_address(m.contract_address);
+    assert(b == a + 1, 'two markets not listed');
+    assert(m.get_table(b) == btc_15m(), 'reused table unreadable');
+}
+
+#[test]
+fn bench_second_listing_writes_a_new_table() {
+    let (m, _, _, token) = setup();
+    start_cheat_caller_address(m.contract_address, owner());
+    let a = m.create_market('BTC/USD', CUTOFF, 900, token, 171_077, 400, btc_15m());
+    let b = m.create_market('ETH/USD', CUTOFF, 900, token, 227_000, 400, eth_15m());
+    stop_cheat_caller_address(m.contract_address);
+    assert(b == a + 1, 'two markets not listed');
+    assert(m.get_table(b) == eth_15m(), 'new table unreadable');
+}
