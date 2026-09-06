@@ -99,6 +99,8 @@ Funding avenues, all checked this run rather than assumed:
 | Any other account in this repo | `account-1` 0 STRK, `e2e-stranger` 0 STRK. Nothing else holds any. |
 | Draining a second address to dodge the cooldown | Abuse of a shared testnet. The faucet script says so in its own header, and it was not done. |
 | 100 STRK form / 3,000 STRK with GitHub | Both need a person at a browser. |
+| Deploying an already-declared class instead of declaring | **Checked, and there is none.** The current build hashes to `0x70734b12…` and the last revision carrying the public route hashes to `0x3a954d59…`; neither is declared on Sepolia or mainnet. There is no cheap deploy hiding behind an existing class. |
+| Waiting | **12 days.** At 5 STRK per 24h the keeper self-funds past the ~60 STRK declare around 2026-09-18 with nobody doing anything. One 100 STRK form submission collapses that to the same afternoon. |
 
 Balance `0.0808 STRK` against a `0.8 STRK` listing floor. It stops listing before it can strand
 an unfunded market (correct), but it also cannot pay for a relay, so the on-chain print is
