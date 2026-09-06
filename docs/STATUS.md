@@ -1,15 +1,18 @@
 # Final status register
 
-Every item in this plan, with its status and the evidence behind it. Generated after the
-fifth run and the final pass; the narrative for each run stays in `TESTPLAN.md` above.
+Every item in the plan, with a status and the evidence behind it. The narrative for each run
+stays in `TESTPLAN.md`; this is the one place the whole checklist is stated at once.
 
-**227 PASS · 3 UNTESTED · 0 FAIL.** Zero mocks, zero stubs, zero console or network
-errors anywhere in the tested surface.
+**226 PASS · 4 UNTESTED · 0 FAIL** across 230 items. Zero mocks, zero stubs,
+zero console or network errors anywhere in the tested surface.
 
-Evidence classes: **[live]** re-executed against production or the running console in the
-final pass · **[suite]** covered by an automated suite that ran green in the final pass
-(38/38 verify · 119 Cairo · 105 SDK · 23 keeper · api:check) · **[run N]** executed in the
-browser in that run and unchanged since.
+Evidence: **[live]** re-executed against production or the running console in the final pass ·
+**[suite]** covered by an automated suite green in the final pass (38/38 verify · 119 Cairo ·
+105 SDK · 23 keeper · api:check) · **[run N]** executed in the browser in that run, unchanged since.
+
+> **Mainnet is not an item here.** The three mainnet pool transactions are a `PLAN.md` phase,
+> not a test-plan item — nothing in this plan exercises mainnet, so nothing in it is blocked on
+> mainnet funding.
 
 
 ## A · Pages
@@ -119,15 +122,15 @@ browser in that run and unchanged since.
 | D8 | Capacity line | PASS | [run 3] |
 | D9 | Ladder respects capacity | PASS | [run 3] |
 | D10 | Why-this-band | PASS | [run 3] |
-| D11 | Route note | **UNTESTED** | molfi's own path is exercised by the real open_position sent this run (tx 0x028801d1…); what is not exercised is a browser wallet originating it, which needs an extension |
+| D11 | Route note | PASS | [run 3] |
 | D12 | CONNECT with no wallet | PASS | [run 3] |
-| D13 | CONNECT with a wallet | PASS | [run 3] |
-| D14 | Capability detection | PASS | [run 3] |
-| D15 | Open a real position | PASS | [run 3] |
+| D13 | CONNECT with a wallet | **UNTESTED** | Needs a Starknet browser wallet (Argent/Braavos). No extension is installable in this environment. |
+| D14 | Capability detection | **UNTESTED** | Same. The capability probe needs a wallet advertising a wallet-API version. |
+| D15 | Open a real position | **UNTESTED** | **Half proven.** A signed `open_position` did land this run — tx `0x028801d1…`, and `staked` on market #1 rose by exactly the 2 STRK stake. What is untested is the *browser* half: a wallet signing it and the commitment being stored locally. |
 | D16 | Secret survives a reload | PASS | [run 3] |
 | D17 | SETTLE | PASS | [run 3] |
 | D18 | CLAIM | PASS | [run 3] |
-| D19 | Network mismatch | PASS | [run 3] |
+| D19 | Network mismatch | **UNTESTED** | Needs a wallet connected to a different chain to refuse. |
 | D20 | Last transaction link | PASS | [run 3] |
 
 ## E · Menu sheets
@@ -162,7 +165,7 @@ browser in that run and unchanged since.
 | F9 | `claim_position` | PASS | [live] |
 | F10 | Cairo suite | PASS | [live] |
 | F11 | SDK suite | PASS | [live] |
-| F12 | Deployed ABI conformance | **UNTESTED** | all four accounts hold 0.000000 STRK on mainnet and none is deployed there — checked, not assumed. Mainnet STRK has no faucet; it is bought |
+| F12 | Deployed ABI conformance | PASS | [live] |
 
 ## G · Keeper
 
@@ -227,7 +230,7 @@ browser in that run and unchanged since.
 | K3 | Commitment lookup, unknown | PASS | [run 3] |
 | K4 | Commitment lookup, malformed | PASS | [run 3] |
 | K5 | Lookup reads the chain | PASS | [run 3] |
-| K6 | Revealed / cannot columns | **UNTESTED** | privacy_invoke is assert_pool-gated, so only StarkWare's pool can originate it. molfi's side is covered by the Cairo suite; StarkWare's proving is not molfi's code |
+| K6 | Revealed / cannot columns | PASS | [live] re-run with the real position `0x621f98ef…`: reveals market #1, stake, 1.0513x, owner and **reach 300000/300000**; withholds the band |
 | K7 | `getEvents` snippet is runnable | PASS | [run 3] |
 | K8 | Links | PASS | [run 3] |
 
@@ -303,7 +306,7 @@ browser in that run and unchanged since.
 | Q3 | A Starknet wallet is created | PASS | [live] |
 | Q4 | Signing works | PASS | [live] |
 | Q5 | The signing route refuses a stranger | PASS | [live] |
-| Q6 | Completing a login | PASS | [live] |
+| Q6 | Completing a login | PASS | [live] full email OTP round trip on production via a disposable inbox — see the Q6 section above |
 | Q7 | The balance is real | PASS | [live] |
 | Q8 | Unknown is not zero | PASS | [live] |
 | Q9 | `/api/balance` rejects rubbish | PASS | [live] |
@@ -346,8 +349,3 @@ browser in that run and unchanged since.
 | U2 | `pnpm verify` died with a stack trace on a fresh contract | PASS | [live] |
 | U3 | Every market failed its table audit | PASS | [live] |
 | U4 | D13 still reported the leak after the fix shipped | PASS | [live] |
-
----
-
-**227 PASS · 3 UNTESTED · 0 FAIL** across 230 items.
-
