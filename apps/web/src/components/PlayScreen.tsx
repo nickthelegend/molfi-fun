@@ -8,7 +8,6 @@ import {
   fmtMultiplier,
   fmtPrice,
   fmtUsd,
-  DEFAULT_CONFIG,
   payoutFor,
   roundLabel,
   secondsLabel,
@@ -19,7 +18,11 @@ import { usePrefs, useApplyTheme, usePrefersReducedMotion } from "@/lib/usePrefs
 import { useSound } from "@/lib/useSound";
 import { DeviceFrame } from "./device/DeviceFrame";
 import { RangeChart } from "./device/RangeChart";
-import { BlueKey, CoinKey, CoinStack, DeckKey, FireKey } from "./device/Controls";
+import { BandControl } from "./device/BandControl";
+import { StatusBar } from "./device/StatusBar";
+import { Knob } from "./device/Knob";
+import { Positions } from "./device/Positions";
+import { BlueKey, DeckKey, FireKey, KeyFrame, MarketChip } from "./device/Controls";
 import { OracleStrip } from "./device/OracleStrip";
 import { HouseBattery } from "./device/HouseBattery";
 import { CutoffRing } from "./device/CutoffRing";
@@ -34,20 +37,26 @@ import { LIVE_CONFIGURED } from "@/lib/chain";
 const STAKE_STEPS = [1_000_000n, 1_500_000n, 2_000_000n, 3_000_000n, 5_000_000n, 10_000_000n];
 
 /**
- * Stake as a share of what you actually hold, alongside the fixed rail.
+ * Quick stakes, in the same units as the ladder.
  *
- * The rail is a hardware control with six detents and it should stay one — but a fixed
- * ladder means the same $1.50 whether the desk is at $250 or $12, and at $12 the sixth
- * detent is more than half the balance with nothing on screen saying so. The percentage
- * keys answer "how much of what I have" directly, which is the question the player is
- * actually asking, and they are clamped to the same floor the market enforces.
+ * These replaced a row of percentage keys. The market floors a position at `minStake` and
+ * caps it at `maxStake`, so at any healthy balance every percentage of the balance landed
+ * outside that window and all four keys rendered disabled — four controls that looked
+ * broken. A fixed ladder of amounts the market always accepts cannot do that.
  */
-const PERCENT_PRESETS = [5, 10, 25, 50] as const;
+const QUICK_STAKES = [1_000_000n, 2_500_000n, 5_000_000n, 10_000_000n];
 
+/**
+ * Coin tones, per `packages/sdk/src/markets.ts`.
+ *
+ * This map still carried MON from the Monad build and had no STRK entry at all, so the
+ * Starknet market rendered in Bitcoin orange — the one market whose colour a Starknet judge
+ * would recognise, wearing another chain's.
+ */
 const COIN_TONE: Record<string, string> = {
   BTC: "#f7931a",
   ETH: "#8098ee",
-  MON: "#836ef9",
+  STRK: "#8b5cf6",
 };
 
 export function PlayScreen() {
@@ -64,6 +73,7 @@ export function PlayScreen() {
   const play = useSound(prefs.sound);
 
   const [stakeStep, setStakeStep] = useState(2); // $1.5
+  const [screen, setScreen] = useState<"range" | "positions">("range");
   const [sheet, setSheet] = useState<null | "menu" | "howto">(null);
   const [live, setLive] = useState(false);
   const [flash, setFlash] = useState<null | { kind: "won" | "lost"; text: string }>(null);
@@ -169,6 +179,7 @@ export function PlayScreen() {
    */
   const [pctStake, setPctStake] = useState<bigint | null>(null);
   const stake = pctStake ?? STAKE_STEPS[stakeStep - 1];
+  const stakeAt = (i: number) => (i >= 1 && i <= STAKE_STEPS.length ? STAKE_STEPS[i - 1] : null);
   const payout = payoutFor(stake, band.multiplierBps);
   const round = state.market.rounds[state.tier];
 
@@ -321,7 +332,26 @@ export function PlayScreen() {
     return { pnl, streak, kind, n: settled.length };
   })();
 
-  const coins = Math.round(Number(state.balance) / 25_000_000); // one coin per $25
+  /**
+   * Where the band sits inside the window the market will actually sell.
+   *
+   * The fill has to mean something specific or it is a decoration that moves. Zero is the
+   * tightest band on offer, one is the widest, and both ends are the contract's, not a
+   * design choice — which is why the keys stop rather than the band going somewhere it
+   * would be refused.
+   */
+  const bandSpan = band.limits
+    ? Number(band.limits.maxHalfWidth1e4 - band.limits.minHalfWidth1e4)
+    : 0;
+  const widthPct =
+    band.band && bandSpan > 0
+      ? Number(band.band.lowHalf1e4 - band.limits!.minHalfWidth1e4) / bandSpan
+      : 0;
+  const reachLabel = band.band
+    ? `${(Number(band.band.lowHalf1e4) / 1_000_000).toFixed(2)}%`
+    : "—";
+
+  const settledTickets = state.tickets.filter((t) => t.status === "won" || t.status === "lost");
 
   // The console opens on paper: a first round in under fifteen seconds, no wallet and
   // nothing to fund. Live is one key away and runs identical pricing.
@@ -330,257 +360,360 @@ export function PlayScreen() {
   return (
     <div className="tiled min-h-dvh">
       <DeviceFrame
-        stakeStep={stakeStep}
-        maxStake={STAKE_STEPS.length}
-        onStakeStep={(n) => {
-          setPctStake(null); // the physical control always takes over
-          setStakeStep(n);
-        }}
         soundOn={prefs.sound}
         onToggleSound={() => setPref("sound", !prefs.sound)}
-        running={state.running}
-        onToggleRunning={() => setRunning(!state.running)}
-      >
-        {/* ------------------------------------------------------- main screen */}
-        <div
-          className={`screen rounded-xl px-4 pb-2 pt-3 ${shaking ? "shake" : ""}`}
-          onAnimationEnd={() => setShaking(false)}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="label">Range · {state.market.symbol}</div>
-              <div className="tnum mt-1 text-[30px] font-bold leading-none text-white">
-                {state.ready ? (
-                  <Odometer
-                    value={fmtPrice(state.spot, state.market.dp)}
-                    reducedMotion={reducedMotion}
-                  />
-                ) : (
-                  "—"
-                )}
-              </div>
-            </div>
-            {/* The nearest open ticket's time to cutoff, if there is one. */}
-            {nearest ? (
-              <div className="flex items-center gap-2">
-                <CutoffRing
-                  openedAt={nearest.openedAt}
-                  expiresAt={nearest.expiresAt}
-                  now={state.now}
-                />
-                {state.openTickets.length > 1 ? (
-                  <span className="tnum text-[10px] text-dim">
-                    +{state.openTickets.length - 1}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="text-right">
-              <div className="label">Available</div>
-              <div className="tnum mt-1 text-[15px] font-semibold text-white">
-                {fmtUsd(state.balance)}
-              </div>
-              {session.n > 0 ? (
-                <div className="mono mt-1 flex items-center justify-end gap-2 text-[9px] tracking-[0.08em]">
-                  <span className={session.pnl >= 0n ? "text-green" : "text-red"}>
-                    {session.pnl >= 0n ? "+" : "−"}
-                    {fmtUsd(session.pnl < 0n ? -session.pnl : session.pnl)}
-                  </span>
-                  {session.streak > 1 ? (
-                    <span className={session.kind === "won" ? "text-green" : "text-red"}>
-                      {session.streak}
-                      {session.kind === "won" ? "W" : "L"}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="relative mt-3 h-[228px]">
-            {!state.ready ? (
-              state.priceError ? (
-                <div className="grid h-full place-items-center px-6 text-center">
-                  <span className="label leading-relaxed">
-                    no {state.market.symbol} price: {state.priceError}
-                  </span>
-                </div>
-              ) : (
-                <BootSequence symbol={state.market.symbol} />
-              )
-            ) : (
-            <RangeChart
-              market={state.market}
-              history={state.history}
-              spot={state.spot}
-              low={band.low}
-              high={band.high}
-              multiplierBps={band.multiplierBps}
-              progress={reducedMotion ? 0 : progress}
-              settleFlash={settleFlash}
-              openBands={state.openTickets.map((t) => ({
-                low: t.low,
-                high: t.high,
-                won: state.spot >= t.low && state.spot <= t.high,
-              }))}
-              onDragEdge={band.setEdge}
+        volume={prefs.volume}
+        onVolume={(v) => {
+          setPref("volume", v);
+          if (!prefs.sound && v > 0) setPref("sound", true);
+        }}
+        glass={
+          <div
+            className={`screen overflow-hidden rounded-[15px] ${shaking ? "shake" : ""}`}
+            onAnimationEnd={() => setShaking(false)}
+          >
+            <StatusBar
+              network="PAPER DESK · PRAGMA TAPE"
+              connected={state.ready}
+              riding={state.openTickets.length}
+              attract={attract}
             />
-            )}
 
-            {flash ? (
-              <div
-                className={`pop pointer-events-none absolute inset-0 grid place-items-center text-[34px] font-bold ${
-                  flash.kind === "won" ? "text-green glow-green" : "text-red"
-                }`}
-              >
-                {flash.text}
-              </div>
-            ) : null}
-          </div>
+            {/* One fixed height for every screen, or the device changes size on a tab. */}
+            <div className="h-[421px]">
+              {screen === "positions" ? (
+                <Positions
+                  open={state.openTickets}
+                  settled={settledTickets}
+                  now={state.now}
+                  demoClock
+                  session={{ pnl: session.pnl, n: session.n }}
+                />
+              ) : (
+                <div className="px-[11px] pb-[9px] pt-[11px]">
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div>
+                      <MarketChip
+                        symbol={state.market.symbol}
+                        tone={COIN_TONE[state.market.key] ?? "#f7931a"}
+                        onClick={() => {
+                          const i = MARKETS.findIndex((m) => m.key === state.market.key);
+                          const next = MARKETS[(i + 1) % MARKETS.length].key;
+                          setMarketKey(next);
+                          setPref("market", next);
+                          play("key");
+                        }}
+                      />
+                      <div className="tnum mt-1 font-display text-[34px] font-bold leading-none text-white">
+                        {state.ready ? (
+                          <Odometer
+                            value={fmtPrice(state.spot, state.market.dp)}
+                            reducedMotion={reducedMotion}
+                          />
+                        ) : (
+                          "—"
+                        )}
+                      </div>
+                    </div>
 
-          {/* round selector, on the glass */}
-          <div className="mt-1 flex items-center justify-between border-t border-[#161616] pt-2">
-            <HouseBattery utilisationBps={state.utilisationBps} />
-            <div className="flex gap-1">
-              {ROUND_SECONDS.map((seconds, i) => (
-                <button
-                  key={seconds}
-                  onClick={() => {
-                    setTier(i);
-                    setPref("tier", i);
-                    play("key");
-                  }}
-                  className={`mono rounded px-1.5 py-0.5 text-[10px] tracking-wide ${
-                    i === state.tier ? "bg-amber text-black" : "text-dim hover:text-white"
-                  }`}
-                >
-                  {roundLabel(i)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+                    {/* The nearest open position's time to cutoff, if there is one. */}
+                    {nearest ? (
+                      <div className="flex items-center gap-[7px] pt-1">
+                        <CutoffRing
+                          openedAt={nearest.openedAt}
+                          expiresAt={nearest.expiresAt}
+                          now={state.now}
+                        />
+                        {state.openTickets.length > 1 ? (
+                          <span className="tnum text-[10px] text-dim">
+                            +{state.openTickets.length - 1}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
 
-        {/* The oracle, on the deck. Every market settles against it, so it is never hidden. */}
-        <OracleStrip
-          oracle={state.oracle}
-          error={state.oracleError}
-          mark={state.spot}
-          onOpen={() => setSheet("menu")}
-        />
+                    <div className="text-right">
+                      <div className="mono text-[9.5px] tracking-[0.15em] text-dim">AVAILABLE</div>
+                      <div className="tnum mt-1 text-[15px] font-semibold text-white">
+                        {fmtUsd(state.balance)}
+                      </div>
+                      {session.n > 0 ? (
+                        <div className="mono mt-[3px] flex items-center justify-end gap-2 text-[9px] tracking-[0.08em]">
+                          <span className={session.pnl >= 0n ? "text-green" : "text-red"}>
+                            {session.pnl >= 0n ? "+" : "−"}
+                            {fmtUsd(session.pnl < 0n ? -session.pnl : session.pnl)}
+                          </span>
+                          {session.streak > 1 ? (
+                            <span className={session.kind === "won" ? "text-green" : "text-red"}>
+                              {session.streak}
+                              {session.kind === "won" ? "W" : "L"}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
 
-        {/* --------------------------------------------- pays panel + fire key */}
-        <div className="mt-2 flex gap-2">
-          <div className="screen flex-1 rounded-xl px-4 py-3">
-            <div className="flex items-baseline justify-between">
-              <span className="label">Pays</span>
-              <span className="tnum text-[13px] text-white">
-                {fmtUsd(stake)} <span className="text-dim">→</span>{" "}
-                <span className="text-green">{fmtUsd(payout)}</span>
-              </span>
-            </div>
+                  <div className="relative mt-[9px] h-[206px]">
+                    {!state.ready ? (
+                      state.priceError ? (
+                        <div className="grid h-full place-items-center px-6 text-center">
+                          <span className="label leading-relaxed">
+                            no {state.market.symbol} price: {state.priceError}
+                          </span>
+                        </div>
+                      ) : (
+                        <BootSequence symbol={state.market.symbol} />
+                      )
+                    ) : (
+                      <RangeChart
+                        market={state.market}
+                        history={state.history}
+                        spot={state.spot}
+                        low={band.low}
+                        high={band.high}
+                        multiplierBps={band.multiplierBps}
+                        progress={reducedMotion ? 0 : progress}
+                        settleFlash={settleFlash}
+                        openBands={state.openTickets.map((t) => ({
+                          low: t.low,
+                          high: t.high,
+                          won: state.spot >= t.low && state.spot <= t.high,
+                        }))}
+                        onDragEdge={band.setEdge}
+                      />
+                    )}
 
-            <div className="tnum glow-amber mt-1 text-[34px] font-bold leading-none text-amber">
-              {state.ready ? fmtMultiplier(band.multiplierBps) : "—"}
-            </div>
+                    {flash ? (
+                      <div
+                        className={`pop pointer-events-none absolute inset-0 grid place-items-center font-display text-[34px] font-bold ${
+                          flash.kind === "won" ? "text-green glow-green" : "text-red"
+                        }`}
+                      >
+                        {flash.text}
+                      </div>
+                    ) : null}
+                  </div>
 
-            {/* No win-probability on the deck. The number the model prices from is
-                deliberately conservative — sigma is shaded so the vault stays solvent
-                through a volatility regime change — so it is not a truthful forecast to
-                put in front of a player. The multiplier is the actual contract; the
-                model and its bias are explained in How it works. */}
-            {/* Stake as a share of the balance, and the last band again. */}
-            <div className="mt-2 flex items-center gap-1">
-              {PERCENT_PRESETS.map((pct) => {
-                const want = (state.balance * BigInt(pct)) / 100n;
-                /**
-                 * A preset the market would refuse is not offered.
-                 *
-                 * The market caps a ticket at $10 and floors it at $1, so on a healthy
-                 * balance most percentages land outside that — and a key that sets a
-                 * stake the desk then rejects with "CAN'T FIRE" is worse than a key that
-                 * is visibly unavailable. Disabled with the cap named, rather than
-                 * silently clamped to a number the label does not describe.
-                 */
-                const legal = want >= DEFAULT_CONFIG.minStake && want <= DEFAULT_CONFIG.maxStake;
-                const on = legal && pctStake === want;
-                return (
-                  <button
-                    key={pct}
-                    disabled={!legal}
-                    title={
-                      legal
-                        ? `${pct}% of your balance`
-                        : `${pct}% is ${fmtUsd(want)} — outside the ${fmtUsd(DEFAULT_CONFIG.minStake)}–${fmtUsd(DEFAULT_CONFIG.maxStake)} the market takes`
-                    }
-                    onClick={() => {
-                      setPctStake(want);
+                  <BandControl
+                    widthPct={widthPct}
+                    onNudge={(d) => {
+                      band.nudge(d);
                       play("key");
                     }}
-                    className={`mono flex-1 rounded py-1 text-[9px] tracking-[0.08em] disabled:opacity-25 ${
-                      on ? "bg-amber text-black" : "bg-white/8 text-dim"
-                    }`}
-                  >
-                    {pct}%
-                  </button>
-                );
-              })}
-              <button
-                disabled={!lastBand}
-                onClick={() => {
-                  if (!lastBand) return;
-                  band.setShape(lastBand);
-                  play("key");
-                }}
-                title="repeat the last band you fired"
-                className="mono flex-[1.4] rounded bg-white/8 py-1 text-[9px] tracking-[0.08em] text-dim disabled:opacity-30"
-              >
-                AGAIN
-              </button>
+                    label={reachLabel}
+                    disabled={!band.ready}
+                  />
+
+                  <div className="mt-2 flex items-center justify-between border-t border-[#161616] pt-2">
+                    <HouseBattery utilisationBps={state.utilisationBps} />
+                    <div className="flex gap-1">
+                      {ROUND_SECONDS.map((seconds, i) => (
+                        <button
+                          key={seconds}
+                          onClick={() => {
+                            setTier(i);
+                            setPref("tier", i);
+                            play("key");
+                          }}
+                          className={`mono rounded-md px-[9px] py-1 text-[10px] tracking-[0.06em] ${
+                            i === state.tier ? "bg-amber text-black" : "text-dim hover:text-white"
+                          }`}
+                        >
+                          {roundLabel(i)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* The oracle every market settles against, never behind a tap. */}
+                  <OracleStrip
+                    oracle={state.oracle}
+                    error={state.oracleError}
+                    mark={state.spot}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        }
+        deck={
+          /*
+           * One grid, two columns.
+           *
+           * Stacked rows were each sized by their tallest child, which left a band of empty
+           * chassis beside the short one. The right column is a continuous rail whose knob
+           * flexes to whatever height the left stack takes, so there is none.
+           */
+          <div className="mt-[9px] grid grid-cols-[1fr_112px] items-stretch gap-[9px]">
+            <div className="flex min-w-0 flex-col gap-[9px]">
+              {/* Flexes, so the left column always matches the control rail beside it and
+                  the deck cannot contain a band of empty chassis. */}
+              <div className="recess flex flex-1 rounded-[18px] p-2">
+                <div className="screen flex-1 rounded-xl px-3 pb-3 pt-[11px]">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="mono text-[9.5px] tracking-[0.15em] text-dim">PAYS</span>
+                    <span className="tnum text-[12.5px] text-white">
+                      {fmtUsd(stake)} <span className="text-dim">→</span>{" "}
+                      <span className="text-green">{fmtUsd(payout)}</span>
+                    </span>
+                  </div>
+
+                  <div className="tnum glow-amber mt-[5px] font-display text-[38px] font-bold leading-none text-amber">
+                    {state.ready ? fmtMultiplier(band.multiplierBps) : "—"}
+                  </div>
+
+                  {/* No win-probability on the deck. Sigma is shaded so the vault stays
+                      solvent through a regime change, which makes the model deliberately
+                      conservative and a probability drawn from it a forecast it is not.
+                      The multiplier is the actual contract. */}
+                  <div className="mt-2 flex gap-1">
+                    {QUICK_STAKES.map((v) => {
+                      const affordable = v <= state.balance;
+                      const on = stake === v;
+                      return (
+                        <button
+                          key={String(v)}
+                          disabled={!affordable}
+                          title={
+                            affordable
+                              ? `stake ${fmtUsd(v)}`
+                              : `${fmtUsd(v)} is more than you hold`
+                          }
+                          onClick={() => {
+                            setPctStake(v);
+                            play("key");
+                          }}
+                          className={`mono flex-1 rounded-md py-[5px] text-[9px] tracking-[0.08em] disabled:opacity-30 ${
+                            on ? "bg-amber text-black" : "bg-white/8 text-dim"
+                          }`}
+                        >
+                          {fmtUsd(v, Number(v) % 1_000_000 === 0 ? 0 : 2)}
+                        </button>
+                      );
+                    })}
+                    <button
+                      disabled={!lastBand}
+                      onClick={() => {
+                        if (!lastBand) return;
+                        band.setShape(lastBand);
+                        play("key");
+                      }}
+                      title="repeat the last band the market accepted"
+                      className="mono flex-[1.4] rounded-md bg-white/8 py-[5px] text-[9px] tracking-[0.08em] text-dim disabled:opacity-30"
+                    >
+                      AGAIN
+                    </button>
+                  </div>
+
+                  <p className="mono mt-[9px] text-[9px] leading-[1.5] tracking-[0.09em] text-dim">
+                    TOP UP AS OFTEN AS YOU LIKE.
+                    <br />
+                    THEY ALL SETTLE AT THE CUTOFF
+                    <br />
+                    {secondsLabel(round.seconds).toUpperCase()} ROUND ·{" "}
+                    {state.openTickets.length} RIDING
+                  </p>
+                </div>
+              </div>
+
+              {/* Two destinations, one frame. GO LIVE is the most consequential key on
+                  the device — it swaps a paper engine for a signed transaction — and it had
+                  no home at all once the market switcher moved into the price header. */}
+              <KeyFrame className="flex gap-[7px]">
+                <BlueKey
+                  label={screen === "positions" ? "RANGE" : "POSITIONS"}
+                  count={screen === "positions" ? 0 : state.openTickets.length}
+                  onClick={() => {
+                    setScreen((v) => (v === "range" ? "positions" : "range"));
+                    play("key");
+                  }}
+                />
+                <BlueKey
+                  label={LIVE_CONFIGURED ? "GO LIVE" : "HOW TO"}
+                  onClick={() => (LIVE_CONFIGURED ? setLive(true) : setSheet("howto"))}
+                />
+              </KeyFrame>
             </div>
 
-            <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
-              TOP UP AS OFTEN AS YOU LIKE.
-              <br />
-              THEY ALL SETTLE AT THE
-              <br />
-              CUTOFF · {secondsLabel(round.seconds).toUpperCase()} ROUND
-            </p>
-          </div>
+            <div className="flex min-w-0 flex-col gap-[9px]">
+              <div
+                className="flex flex-1 flex-col items-center rounded-[18px] p-2"
+                style={{
+                  minHeight: 120,
+                  background: "var(--color-frame)",
+                  boxShadow:
+                    "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
+                }}
+              >
+                <Knob
+                  value={stakeStep}
+                  max={STAKE_STEPS.length}
+                  onChange={(n) => {
+                    setPctStake(null); // the physical control always takes over
+                    setStakeStep(n);
+                    play("key");
+                  }}
+                />
+              </div>
 
-          <FireKey onClick={doFire} disabled={!state.ready} armed={state.openTickets.length > 0} />
-        </div>
-
-        {/* ------------------------------------------------------- lower deck */}
-        <div className="mt-2 flex items-stretch gap-2">
-          <BlueKey onClick={() => (LIVE_CONFIGURED ? setLive(true) : setSheet("howto"))}>
-            {LIVE_CONFIGURED ? "GO LIVE" : "HOW TO"}
-          </BlueKey>
-          <CoinKey
-            symbol={state.market.symbol}
-            tone={COIN_TONE[state.market.key] ?? "#f7931a"}
-            onClick={() => {
-              const i = MARKETS.findIndex((m) => m.key === state.market.key);
-              const next = MARKETS[(i + 1) % MARKETS.length].key;
-              setMarketKey(next);
-              setPref("market", next);
-              play("key");
-            }}
-          />
-          <CoinStack count={coins} />
-        </div>
-
-        <div className="mt-3 flex items-end justify-between px-1 pb-1">
-          <div className="flex gap-3">
-            <DeckKey label="MENU" onClick={() => setSheet("menu")} />
-            <DeckKey label="HOME" onClick={() => router.push("/")} />
+              <div
+                className="flex-none rounded-[18px] p-2"
+                style={{
+                  background: "var(--color-frame)",
+                  boxShadow:
+                    "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
+                }}
+              >
+                <FireKey
+                  onClick={doFire}
+                  disabled={!state.ready}
+                  armed={state.openTickets.length > 0}
+                />
+              </div>
+            </div>
           </div>
-          <div className="tnum rounded-lg bg-black px-3 py-2 text-[15px] font-semibold text-white">
-            {fmtUsd(stake, Number(stake) % 1_000_000 === 0 ? 0 : 1)}
+        }
+        footer={
+          <div className="mt-[11px] flex items-stretch gap-2.5 px-[3px] pb-[3px]">
+            <div className="flex gap-3">
+              <DeckKey label="MENU" onClick={() => setSheet("menu")} />
+              <DeckKey label="HOME" onClick={() => router.push("/")} />
+            </div>
+
+            {/* The stake, under the control that sets it. The detents either side are the
+                whole ladder made legible without turning anything. */}
+            <div
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] px-3 py-2"
+              style={{
+                background: "#0a0a0b",
+                boxShadow: "inset 0 2px 7px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,255,255,.04)",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="mono text-[9.5px] tracking-[0.16em] text-dim">STAKE</div>
+                <div className="tnum mt-0.5 font-display text-2xl font-bold leading-none text-white">
+                  {fmtUsd(stake, Number(stake) % 1_000_000 === 0 ? 0 : 2)}
+                </div>
+              </div>
+              <div className="mono tnum flex-none text-right text-[9.5px] leading-[1.6] text-dim">
+                <div>
+                  ▲{" "}
+                  {stakeAt(stakeStep + 1)
+                    ? fmtUsd(stakeAt(stakeStep + 1)!, 0)
+                    : "—"}
+                </div>
+                <div>
+                  ▼{" "}
+                  {stakeAt(stakeStep - 1)
+                    ? fmtUsd(stakeAt(stakeStep - 1)!, 0)
+                    : "—"}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </DeviceFrame>
+        }
+      />
 
       {sheet === "menu" ? (
         <MenuSheet

@@ -100,10 +100,21 @@ export function OracleStrip({
 
   const v = verdictOf(oracle, error, driftBps);
 
+  /**
+   * A readout, not a button — unless something is given for it to open.
+   *
+   * A tappable strip invites the reading that the detail is behind the tap and the line
+   * itself is decoration. It is the opposite: this is the only place the freshness of the
+   * number every position settles against is stated, and it has to be legible without
+   * anyone pressing anything.
+   */
+  const Tag = onOpen ? "button" : "div";
   return (
-    <button
+    <Tag
       onClick={onOpen}
-      className="mono mt-1 flex w-full items-center justify-between gap-2 rounded-lg bg-[#0b0b0b] px-2 py-1.5 text-[9px] tracking-[0.08em] transition-colors hover:bg-[#111]"
+      className={`mono mt-2 flex w-full items-center justify-between gap-2 rounded-[9px] border border-[#171717] bg-screen-2 px-[9px] py-[7px] text-[9px] tracking-[0.08em] ${
+        onOpen ? "transition-colors hover:bg-[#111]" : ""
+      }`}
       title={v.why}
     >
       <span className="flex items-center gap-1.5">
@@ -133,7 +144,7 @@ export function OracleStrip({
           </>
         ) : null}
       </span>
-    </button>
+    </Tag>
   );
 }
 

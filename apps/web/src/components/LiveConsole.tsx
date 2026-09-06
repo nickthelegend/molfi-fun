@@ -8,6 +8,7 @@ import {
   fmtCountdown,
   fmtMultiplier,
   fmtPrice,
+  HOUSE_EDGE_BPS,
   fmtStrk,
   maxStakeFor,
   parseStrk,
@@ -18,10 +19,14 @@ import { useLiveDesk, type LiveMarket } from "@/lib/useLiveDesk";
 import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
 import { useBand } from "@/lib/useBand";
+import { usePrefs } from "@/lib/usePrefs";
 import { ADDRESSES, activeNetwork, explorerTx, shortAddress } from "@/lib/chain";
 import { DeviceFrame } from "./device/DeviceFrame";
 import { RangeChart } from "./device/RangeChart";
-import { BlueKey, CoinKey, CoinStack, DeckKey, FireKey } from "./device/Controls";
+import { BandControl } from "./device/BandControl";
+import { StatusBar } from "./device/StatusBar";
+import { Knob } from "./device/Knob";
+import { BlueKey, DeckKey, FireKey, KeyFrame, MarketChip } from "./device/Controls";
 
 /**
  * A thrown error, as a line the console can show.
@@ -49,6 +54,33 @@ const STAKE_STEPS = [1, 2, 5, 10, 25, 50].map((n) => parseStrk(n));
  * detents scaled to the desk itself. A small desk is a real constraint and the honest thing
  * is to let it be traded at its real size, not to offer sizes it will refuse.
  */
+/**
+ * The multiplier, explained in the terms it was actually computed from.
+ *
+ * The pricing kernel is the most defensible thing in this project and the screen showed only
+ * its output — a number a reader has to take on faith, next to a claim that nothing here
+ * should be taken on faith. This is the whole derivation: how wide the band is in sigmas of
+ * the round's own calibrated move, how often a move that size stayed inside it, and the edge
+ * taken off the fair price. One over the probability, less the edge, is the multiplier.
+ */
+function whyThisBand(
+  band: { lowHalf1e4: bigint; highHalf1e4: bigint } | null,
+  sigma1e4: bigint,
+  prob1e6: bigint,
+  round: string,
+  symbol: string,
+): string | null {
+  if (!band || sigma1e4 <= 0n || prob1e6 <= 0n) return null;
+  const z = (h: bigint) => (Number(h) / Number(sigma1e4)).toFixed(2);
+  const reach =
+    band.lowHalf1e4 === band.highHalf1e4
+      ? `±${z(band.lowHalf1e4)}σ`
+      : `−${z(band.lowHalf1e4)}σ / +${z(band.highHalf1e4)}σ`;
+  const pct = (Number(prob1e6) / 10_000).toFixed(1);
+  const edge = (Number(HOUSE_EDGE_BPS) / 100).toFixed(0);
+  return `${reach} OF A ${round.toUpperCase()} ${symbol} MOVE · ${pct}% OF THEM LANDED INSIDE · LESS ${edge}% EDGE`;
+}
+
 /**
  * A stake, at a precision that can show it.
  *
@@ -89,7 +121,7 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
   const [marketKey, setMarketKey] = useState("BTC");
   const [tier, setTier] = useState(0);
   const [stakeStep, setStakeStep] = useState(3);
-  const [sound, setSound] = useState(false);
+  const { prefs, set: setPref } = usePrefs();
   const [flash, setFlash] = useState<string | null>(null);
   /**
    * The route the next position takes, or null to take the most private one available.
@@ -155,6 +187,18 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
     [target, band.ready, band.multiplierBps],
   );
   const ladder = useMemo(() => stakeLadder(capacity), [capacity]);
+
+  /** Where the band sits inside the window the market will sell, and its reach in words. */
+  const bandSpan = band.limits
+    ? Number(band.limits.maxHalfWidth1e4 - band.limits.minHalfWidth1e4)
+    : 0;
+  const widthPct =
+    band.band && bandSpan > 0
+      ? Number(band.band.lowHalf1e4 - band.limits!.minHalfWidth1e4) / bandSpan
+      : 0;
+  const reachLabel = band.band
+    ? `${(Number(band.band.lowHalf1e4) / 1_000_000).toFixed(2)}%`
+    : "—";
   const stake = ladder[Math.min(stakeStep, ladder.length) - 1] ?? 0n;
 
   const claimable = state.positions.filter((p) => p.won === true && !p.claimedTxHash);
@@ -266,35 +310,49 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
   return (
     <div className="tiled min-h-dvh">
       <DeviceFrame
-        stakeStep={stakeStep}
-        maxStake={Math.max(ladder.length, 1)}
-        onStakeStep={setStakeStep}
-        soundOn={sound}
-        onToggleSound={() => setSound((s) => !s)}
-        running
-        onToggleRunning={() => {}}
-      >
-        <div className="screen rounded-xl px-4 pb-2 pt-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="label">
-                Live · {market.symbol} · Starknet {activeNetwork.name}
-              </div>
-              <div className="tnum mt-1 text-[30px] font-bold leading-none text-white">
-                {state.spot > 0n ? fmtPrice(state.spot, market.dp) : "—"}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="label">Shielded</div>
-              <div className="tnum mt-1 text-[15px] font-semibold text-white">
-                {/* Unknown is shown as unknown. Rendering an unreadable balance as
-                    "0.000 STRK" is a lie with a decimal point in it. */}
-                {state.shielded === null ? "—" : `${fmtStrk(state.shielded, 2)}`}
-              </div>
-            </div>
-          </div>
+        soundOn={prefs.sound}
+        onToggleSound={() => setPref("sound", !prefs.sound)}
+        volume={prefs.volume}
+        onVolume={(v) => {
+          setPref("volume", v);
+          if (!prefs.sound && v > 0) setPref("sound", true);
+        }}
+        glass={
+          <div className="screen overflow-hidden rounded-[15px]">
+            <StatusBar
+              network={`STARKNET ${activeNetwork.name.toUpperCase()}`}
+              connected={!state.error && state.spot > 0n}
+              riding={state.positions.filter((p) => p.market && !p.market.isSettled).length}
+            />
 
-          <div className="relative mt-3 h-[228px]">
+            {/* One fixed height, the same one the paper desk uses: switching between them
+                must not resize the device in the reader's hand. */}
+            <div className="h-[421px] px-[11px] pb-[9px] pt-[11px]">
+              <div className="flex items-start justify-between gap-2.5">
+                <div>
+                  <MarketChip
+                    symbol={market.symbol}
+                    tone={COIN_TONE[market.key] ?? "#f7931a"}
+                    onClick={() => {
+                      const i = MARKETS.findIndex((m) => m.key === market.key);
+                      setMarketKey(MARKETS[(i + 1) % MARKETS.length].key);
+                    }}
+                  />
+                  <div className="tnum mt-1 font-display text-[34px] font-bold leading-none text-white">
+                    {state.spot > 0n ? fmtPrice(state.spot, market.dp) : "—"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="mono text-[9.5px] tracking-[0.15em] text-dim">SHIELDED</div>
+                  <div className="tnum mt-1 text-[15px] font-semibold text-white">
+                    {/* Unknown is shown as unknown. Rendering an unreadable balance as
+                        "0.000 STRK" is a lie with a decimal point in it. */}
+                    {state.shielded === null ? "—" : `${fmtStrk(state.shielded, 2)}`}
+                  </div>
+                </div>
+              </div>
+
+          <div className="relative mt-3 h-[206px]">
             {state.history.length > 1 && state.spot > 0n ? (
               <RangeChart
                 market={market}
@@ -332,171 +390,239 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
             ) : null}
           </div>
 
-          <div className="mt-1 flex items-center justify-between border-t border-[#161616] pt-2">
-            <span className="label tnum">
-              {target ? `closes in ${fmtCountdown(target.cutoffAt - now)}` : "no open market"}
-            </span>
-            <div className="flex gap-1">
-              {ROUND_SECONDS.map((seconds, i) => (
-                <button
-                  key={seconds}
-                  onClick={() => setTier(i)}
-                  className={`mono rounded px-1.5 py-0.5 text-[10px] ${
-                    i === tier ? "bg-amber text-black" : "text-dim hover:text-white"
-                  }`}
-                >
-                  {roundLabel(i)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+              <BandControl
+                widthPct={widthPct}
+                onNudge={(d) => band.nudge(d)}
+                label={reachLabel}
+                disabled={!band.ready}
+              />
 
-        <div className="mt-2 flex gap-2">
-          <div className="screen flex-1 rounded-xl px-4 py-3">
-            <div className="flex items-baseline justify-between">
-              <span className="label">Pays</span>
-              <span className="tnum text-[13px] text-white">
-                {fmtStake(stake)} <span className="text-dim">→</span>{" "}
-                <span className="text-green">
-                  {band.ready ? fmtStrk(payoutFor(stake, band.multiplierBps), 2) : "—"}
+              <div className="mt-2 flex items-center justify-between border-t border-[#161616] pt-2">
+                <span className="mono tnum text-[9px] tracking-[0.15em] text-dim">
+                  {target ? `CLOSES IN ${fmtCountdown(target.cutoffAt - now)}` : "NO OPEN MARKET"}
                 </span>
-              </span>
-            </div>
-            <div className="tnum glow-amber mt-1 text-[34px] font-bold leading-none text-amber">
-              {band.ready ? fmtMultiplier(band.multiplierBps) : "—"}
-            </div>
-            {/* The desk's own limit, shown only when it actually binds. A market that can
-                cover the whole rail has nothing to say here, and a permanent line reading
-                "capacity: plenty" is furniture. */}
-            {capacity !== null && capacity < STAKE_STEPS[STAKE_STEPS.length - 1] ? (
-              <p className="mono mt-1.5 text-[9px] leading-[1.45] tracking-[0.08em] text-amber-2/60">
-                {capacity > 0n
-                  ? `DESK COVERS ${fmtStake(capacity)} STRK AT THIS BAND`
-                  : "DESK IS FULL — NO SIZE AVAILABLE AT THIS BAND"}
-              </p>
-            ) : null}
-            <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
-              {/* What is actually hidden depends on the route, and saying "your band and
-                  size stay hidden" on a direct trade would be a lie printed on the screen
-                  the trade is made from. */}
-              {route === "direct" ? "YOUR BAND STAYS HIDDEN." : "YOUR BAND AND SIZE STAY HIDDEN."}
-              <br />
-              {roundLabel(tier).toUpperCase()} ROUND ·{" "}
-              {state.connection ? shortAddress(state.connection.address, 6, 4) : "NOT CONNECTED"}
-            </p>
-
-            {/* The route picker.
-                *
-                * Shown as two keys rather than a toggle because they are not more and less
-                * of one thing: one hides three facts and the other hides one, and a trader
-                * should be choosing between them knowingly. Only offered when the wallet can
-                * actually take both — a disabled button explaining a capability nobody asked
-                * about is noise on a screen this small. */}
-            {routes.length > 1 ? (
-              <div className="mt-2 flex gap-1">
-                {(["pool", "direct"] as const).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRoutePref(r)}
-                    title={live.routeNote(r, state.connection)}
-                    className={`mono flex-1 rounded px-1.5 py-1 text-[9px] tracking-[0.08em] ${
-                      route === r ? "bg-amber text-black" : "bg-white/8 text-dim hover:text-white"
-                    }`}
-                  >
-                    {r === "pool" ? "VIA POOL" : "DIRECT"}
-                  </button>
-                ))}
+                <div className="flex gap-1">
+                  {ROUND_SECONDS.map((seconds, i) => (
+                    <button
+                      key={seconds}
+                      onClick={() => setTier(i)}
+                      className={`mono rounded-md px-[9px] py-1 text-[10px] tracking-[0.06em] ${
+                        i === tier ? "bg-amber text-black" : "text-dim hover:text-white"
+                      }`}
+                    >
+                      {roundLabel(i)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ) : route ? (
-              /* Only one route available — say which, and what it means. The pool-only case
-                 used to render nothing at all, so a trader on a privacy wallet got no
-                 confirmation that the private path was the one being used. That is the
-                 single fact this product exists to tell them. */
-              <p
-                className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-white/30"
-                title={live.routeNote(route, state.connection)}
-              >
-                {route === "pool"
-                  ? "VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE BAND"
-                  : "DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND"}
+
+                  <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
+                {/* What is actually hidden depends on the route, and saying "your band and
+                    size stay hidden" on a direct trade would be a lie printed on the screen
+                    the trade is made from. */}
+                {route === "direct" ? "YOUR BAND STAYS HIDDEN." : "YOUR BAND AND SIZE STAY HIDDEN."}
+                <br />
+                {roundLabel(tier).toUpperCase()} ROUND ·{" "}
+                {state.connection ? shortAddress(state.connection.address, 6, 4) : "NOT CONNECTED"}
               </p>
-            ) : null}
 
-            {/* Settlement is permissionless: the contract lets anyone poke an expired
-                market, and a desk that only ever settles its own quietly implies otherwise. */}
-            {state.dueMarkets.length > 0 ? (
-              <button
-                onClick={() =>
-                  void (async () => {
-                    if (!(await readyToAct())) return;
-                    await live
-                      .settle(state.dueMarkets[0].id)
-                      .then((h) => say(`SETTLED · ${h.slice(0, 10)}…`))
-                      .catch((e) => say(errorFlash(e)));
-                  })()
-                }
-                disabled={Boolean(state.pending)}
-                title="Anyone may settle an expired market, not only its participants"
-                className="mono mt-2 w-full rounded-lg bg-white/8 py-1.5 text-[9px] tracking-[0.08em] text-amber disabled:opacity-40"
+              {/* The route picker.
+                  *
+                  * Shown as two keys rather than a toggle because they are not more and less
+                  * of one thing: one hides three facts and the other hides one, and a trader
+                  * should be choosing between them knowingly. Only offered when the wallet can
+                  * actually take both — a disabled button explaining a capability nobody asked
+                  * about is noise on a screen this small. */}
+              {routes.length > 1 ? (
+                <div className="mt-2 flex gap-1">
+                  {(["pool", "direct"] as const).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setRoutePref(r)}
+                      title={live.routeNote(r, state.connection)}
+                      className={`mono flex-1 rounded px-1.5 py-1 text-[9px] tracking-[0.08em] ${
+                        route === r ? "bg-amber text-black" : "bg-white/8 text-dim hover:text-white"
+                      }`}
+                    >
+                      {r === "pool" ? "VIA POOL" : "DIRECT"}
+                    </button>
+                  ))}
+                </div>
+              ) : route ? (
+                /* Only one route available — say which, and what it means. The pool-only case
+                   used to render nothing at all, so a trader on a privacy wallet got no
+                   confirmation that the private path was the one being used. That is the
+                   single fact this product exists to tell them. */
+                <p
+                  className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-white/30"
+                  title={live.routeNote(route, state.connection)}
+                >
+                  {route === "pool"
+                    ? "VIA THE STRK20 POOL · NOT YOU, NOT THE SIZE, NOT THE BAND"
+                    : "DIRECT ROUTE · THE CHAIN SEES THE STAKE, NEVER THE BAND"}
+                </p>
+              ) : null}
+
+              {/* Settlement is permissionless: the contract lets anyone poke an expired
+                  market, and a desk that only ever settles its own quietly implies otherwise. */}
+              {state.dueMarkets.length > 0 ? (
+                <button
+                  onClick={() =>
+                    void (async () => {
+                      if (!(await readyToAct())) return;
+                      await live
+                        .settle(state.dueMarkets[0].id)
+                        .then((h) => say(`SETTLED · ${h.slice(0, 10)}…`))
+                        .catch((e) => say(errorFlash(e)));
+                    })()
+                  }
+                  disabled={Boolean(state.pending)}
+                  title="Anyone may settle an expired market, not only its participants"
+                  className="mono mt-2 w-full rounded-lg bg-white/8 py-1.5 text-[9px] tracking-[0.08em] text-amber disabled:opacity-40"
+                >
+                  SETTLE {state.dueMarkets[0].pair} · {state.dueMarkets.length} DUE
+                </button>
+              ) : null}
+
+              {claimable.length > 0 ? (
+                <button
+                  onClick={() =>
+                    void (async () => {
+                      if (!(await readyToAct())) return;
+                      await live
+                        .claim(claimable[0])
+                        .then((h) => say(`CLAIMED · ${h.slice(0, 10)}…`))
+                        .catch((e) => say(errorFlash(e)));
+                    })()
+                  }
+                  disabled={Boolean(state.pending)}
+                  className="mono mt-2 w-full rounded-lg bg-green/15 py-1.5 text-[9px] tracking-[0.08em] text-green disabled:opacity-40"
+                >
+                  CLAIM {claimable.length} WINNING POSITION{claimable.length > 1 ? "S" : ""}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        }
+        deck={
+          <div className="mt-[9px] grid grid-cols-[1fr_112px] items-stretch gap-[9px]">
+            <div className="flex min-w-0 flex-col gap-[9px]">
+              {/* Flexes, so the left column always matches the control rail beside it. */}
+              <div className="recess flex flex-1 rounded-[18px] p-2">
+                <div className="screen flex-1 rounded-xl px-3 pb-3 pt-[11px]">
+                  <div className="flex items-baseline justify-between">
+                    <span className="label">Pays</span>
+                    <span className="tnum text-[13px] text-white">
+                      {fmtStake(stake)} <span className="text-dim">→</span>{" "}
+                      <span className="text-green">
+                        {band.ready ? fmtStrk(payoutFor(stake, band.multiplierBps), 2) : "—"}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="tnum glow-amber mt-1 text-[34px] font-bold leading-none text-amber">
+                    {band.ready ? fmtMultiplier(band.multiplierBps) : "—"}
+                  </div>
+                  {/* The desk's own limit, shown only when it actually binds. A market that can
+                      cover the whole rail has nothing to say here, and a permanent line reading
+                      "capacity: plenty" is furniture. */}
+                  {band.ready
+                    ? (() => {
+                        const why = whyThisBand(
+                          band.band,
+                          market.rounds[tier].sigma1e4,
+                          band.prob1e6,
+                          roundLabel(tier),
+                          market.symbol,
+                        );
+                        return why ? (
+                          <p className="mono mt-1.5 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
+                            {why}
+                          </p>
+                        ) : null;
+                      })()
+                    : null}
+                  {capacity !== null && capacity < STAKE_STEPS[STAKE_STEPS.length - 1] ? (
+                    <p className="mono mt-1.5 text-[9px] leading-[1.45] tracking-[0.08em] text-amber-2/60">
+                      {capacity > 0n
+                        ? `DESK COVERS ${fmtStake(capacity)} STRK AT THIS BAND`
+                        : "DESK IS FULL — NO SIZE AVAILABLE AT THIS BAND"}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <KeyFrame className="flex gap-[7px]">
+                <BlueKey label="DEMO" onClick={onBackToDemo} />
+              </KeyFrame>
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-[9px]">
+              <div
+                className="flex flex-1 flex-col items-center rounded-[18px] p-2"
+                style={{
+                  minHeight: 120,
+                  background: "var(--color-frame)",
+                  boxShadow:
+                    "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
+                }}
               >
-                SETTLE {state.dueMarkets[0].pair} · {state.dueMarkets.length} DUE
-              </button>
-            ) : null}
+                <Knob
+                  value={Math.min(stakeStep, Math.max(ladder.length, 1))}
+                  max={Math.max(ladder.length, 1)}
+                  onChange={setStakeStep}
+                />
+              </div>
 
-            {claimable.length > 0 ? (
-              <button
-                onClick={() =>
-                  void (async () => {
-                    if (!(await readyToAct())) return;
-                    await live
-                      .claim(claimable[0])
-                      .then((h) => say(`CLAIMED · ${h.slice(0, 10)}…`))
-                      .catch((e) => say(errorFlash(e)));
-                  })()
-                }
-                disabled={Boolean(state.pending)}
-                className="mono mt-2 w-full rounded-lg bg-green/15 py-1.5 text-[9px] tracking-[0.08em] text-green disabled:opacity-40"
+              <div
+                className="flex-none rounded-[18px] p-2"
+                style={{
+                  background: "var(--color-frame)",
+                  boxShadow:
+                    "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
+                }}
               >
-                CLAIM {claimable.length} WINNING POSITION{claimable.length > 1 ? "S" : ""}
-              </button>
-            ) : null}
+                <FireKey
+                  onClick={() => void doFire()}
+                  disabled={
+                    Boolean(state.pending) ||
+                    (Boolean(state.connection) && (!band.ready || !target))
+                  }
+                  armed={state.positions.some((p) => p.market && !p.market.isSettled)}
+                />
+              </div>
+            </div>
           </div>
-          <FireKey
-            onClick={() => void doFire()}
-            disabled={
-              Boolean(state.pending) ||
-              (Boolean(state.connection) && (!band.ready || !target))
-            }
-          />
-        </div>
-
-        <div className="mt-2 flex items-stretch gap-2">
-          <BlueKey onClick={onBackToDemo}>DEMO</BlueKey>
-          <CoinKey
-            symbol={market.symbol}
-            tone={COIN_TONE[market.key] ?? "#f7931a"}
-            onClick={() => {
-              const i = MARKETS.findIndex((m) => m.key === market.key);
-              setMarketKey(MARKETS[(i + 1) % MARKETS.length].key);
-            }}
-          />
-          <CoinStack count={coins} />
-        </div>
-
-        <div className="mt-3 flex items-end justify-between px-1 pb-1">
-          <div className="flex gap-3">
-            <DeckKey
-              label={state.connection ? "OPEN" : "CONNECT"}
-              onClick={() => void doFire()}
-            />
-            <DeckKey label="HOME" onClick={() => router.push("/")} />
+        }
+        footer={
+          <div className="mt-[11px] flex items-stretch gap-2.5 px-[3px] pb-[3px]">
+            <div className="flex gap-3">
+              <DeckKey
+                label={state.connection ? "OPEN" : "CONNECT"}
+                onClick={() => void doFire()}
+              />
+              <DeckKey label="HOME" onClick={() => router.push("/")} />
+            </div>
+            <div
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] px-3 py-2"
+              style={{
+                background: "#0a0a0b",
+                boxShadow: "inset 0 2px 7px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,255,255,.04)",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="mono text-[9.5px] tracking-[0.16em] text-dim">STAKE</div>
+                <div className="tnum mt-0.5 font-display text-2xl font-bold leading-none text-white">
+                  {fmtStake(stake)}
+                </div>
+              </div>
+              <div className="mono tnum flex-none text-right text-[9.5px] leading-[1.6] text-dim">
+                <div>▲ {ladder[stakeStep] ? fmtStake(ladder[stakeStep]) : "—"}</div>
+                <div>▼ {ladder[stakeStep - 2] ? fmtStake(ladder[stakeStep - 2]) : "—"}</div>
+              </div>
+            </div>
           </div>
-          <div className="tnum rounded-lg bg-black px-3 py-2 text-[15px] font-semibold text-white">
-            {fmtStrk(stake, 0)}
-          </div>
-        </div>
-      </DeviceFrame>
+        }
+      />
 
       {state.lastTx ? (
         <p className="mono pb-6 text-center text-[10px] text-white/40">

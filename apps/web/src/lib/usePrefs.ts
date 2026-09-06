@@ -12,23 +12,26 @@ import { useCallback, useEffect, useState } from "react";
  */
 export interface Prefs {
   sound: boolean;
+  /** Output level, 0–1. Lives beside `sound` because the rail that sets it sits beside the key. */
+  volume: number;
   reducedMotion: boolean;
   /** Market the desk opens on. */
   market: string;
   /** Round tier the desk opens on. */
   tier: number;
-  /** Console shell colour. */
-  theme: "cream" | "charcoal" | "mint" | "rose";
+  /** Console shell colour. Four graphites — the body never competes with the glass. */
+  theme: "graphite" | "gunmetal" | "olive" | "oxblood";
   /** Show the oracle strip alongside the chart. */
   showOracle: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   sound: false,
+  volume: 0.7,
   reducedMotion: false,
   market: "BTC",
   tier: 0,
-  theme: "cream",
+  theme: "graphite",
   showOracle: false,
 };
 
@@ -40,7 +43,13 @@ function read(): Prefs {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
-    return { ...DEFAULT_PREFS, ...parsed };
+    const merged = { ...DEFAULT_PREFS, ...parsed };
+    // The cream cabinets were repainted graphite and their ids went with them. A stored
+    // "cream" would otherwise survive as a theme nothing can render and nothing can select.
+    if (!(merged.theme in THEME_VARS)) merged.theme = DEFAULT_PREFS.theme;
+    if (!Number.isFinite(merged.volume)) merged.volume = DEFAULT_PREFS.volume;
+    merged.volume = Math.max(0, Math.min(1, merged.volume));
+    return merged;
   } catch {
     // A private window, cleared storage, or a browser refusing site data. Defaults are
     // a correct answer here, so there is nothing to report.
@@ -125,49 +134,45 @@ export function usePrefersReducedMotion(): boolean {
  * would be a worse console rather than a personalised one.
  */
 export const THEME_VARS: Record<Prefs["theme"], Record<string, string>> = {
-  cream: {
-    "--color-shell": "#f7efc2",
-    "--color-shell-hi": "#fbf6d6",
-    "--color-shell-lo": "#efe4b0",
-    "--color-shell-dark": "#e6dca6",
-    "--color-shell-edge": "#cfc48c",
-    "--color-key": "#9b8cf0",
-    "--color-cap": "#f0e7bd",
-    "--color-cap-hi": "#ffffff",
-    "--color-ink": "rgba(0,0,0,0.55)",
+  graphite: {
+    "--color-shell": "#2e3138",
+    "--color-shell-hi": "#3d4049",
+    "--color-shell-lo": "#242629",
+    "--color-shell-dark": "#1b1d21",
+    "--color-shell-edge": "#0f1013",
+    "--color-cap": "#343840",
+    "--color-cap-hi": "#4d515b",
+    "--color-ink": "rgba(255,255,255,0.62)",
   },
-  charcoal: {
-    "--color-shell": "#3a3a3c",
-    "--color-shell-hi": "#4a4a4d",
-    "--color-shell-lo": "#2e2e30",
-    "--color-shell-dark": "#2a2a2c",
-    "--color-shell-edge": "#1e1e20",
-    "--color-key": "#8f7fe8",
-    "--color-cap": "#4e4e51",
-    "--color-cap-hi": "#6b6b6f",
-    "--color-ink": "rgba(255,255,255,0.6)",
+  gunmetal: {
+    "--color-shell": "#33363b",
+    "--color-shell-hi": "#44484e",
+    "--color-shell-lo": "#26282c",
+    "--color-shell-dark": "#1c1e21",
+    "--color-shell-edge": "#101214",
+    "--color-cap": "#3a3e44",
+    "--color-cap-hi": "#565b62",
+    "--color-ink": "rgba(255,255,255,0.62)",
   },
-  mint: {
-    "--color-shell": "#cfe8d5",
-    "--color-shell-hi": "#e0f2e4",
-    "--color-shell-lo": "#bcd9c3",
-    "--color-shell-dark": "#b3d2ba",
-    "--color-shell-edge": "#96bb9f",
-    "--color-key": "#7fa8f0",
-    "--color-cap": "#c2ddc9",
-    "--color-cap-hi": "#e8f5eb",
-    "--color-ink": "rgba(0,0,0,0.55)",
+  olive: {
+    "--color-shell": "#2f342c",
+    "--color-shell-hi": "#3e453a",
+    "--color-shell-lo": "#252a23",
+    "--color-shell-dark": "#1a1e19",
+    "--color-shell-edge": "#0e110d",
+    "--color-cap": "#353b32",
+    "--color-cap-hi": "#4e5649",
+    "--color-ink": "rgba(255,255,255,0.62)",
   },
-  rose: {
-    "--color-shell": "#f0d3d8",
-    "--color-shell-hi": "#f8e3e7",
-    "--color-shell-lo": "#e3bfc6",
-    "--color-shell-dark": "#d9b6bd",
-    "--color-shell-edge": "#bf979f",
-    "--color-key": "#a88cf0",
-    "--color-cap": "#e6c6cc",
-    "--color-cap-hi": "#faeaed",
-    "--color-ink": "rgba(0,0,0,0.55)",
+  oxblood: {
+    "--color-shell": "#36292b",
+    "--color-shell-hi": "#463639",
+    "--color-shell-lo": "#2b2123",
+    "--color-shell-dark": "#1f1719",
+    "--color-shell-edge": "#120c0d",
+    "--color-cap": "#3d2f31",
+    "--color-cap-hi": "#574346",
+    "--color-ink": "rgba(255,255,255,0.62)",
   },
 };
 
@@ -175,7 +180,7 @@ export const THEME_VARS: Record<Prefs["theme"], Record<string, string>> = {
 export function useApplyTheme(theme: Prefs["theme"]) {
   useEffect(() => {
     const root = document.documentElement;
-    const vars = THEME_VARS[theme] ?? THEME_VARS.cream;
+    const vars = THEME_VARS[theme] ?? THEME_VARS.graphite;
     for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   }, [theme]);
 }

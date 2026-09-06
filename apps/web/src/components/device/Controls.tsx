@@ -1,22 +1,25 @@
 "use client";
 
-/** Small raised key on the shell's top rail. Follows the cabinet's colourway. */
+/** Small raised key on the shell. Follows the cabinet's colourway. */
 export function RailKey({
   children,
   onClick,
   active,
   title,
+  label,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   active?: boolean;
   title?: string;
+  label?: string;
 }) {
   return (
     <button
       onClick={onClick}
       title={title}
-      className={`key grid h-8 w-10 place-items-center rounded-lg text-[13px] ${
+      aria-label={label ?? title}
+      className={`key grid h-8 w-[46px] shrink-0 place-items-center rounded-[10px] text-[13px] ${
         active ? "bg-[var(--color-cap-hi)]" : "bg-[var(--color-cap)]"
       }`}
     >
@@ -26,44 +29,79 @@ export function RailKey({
 }
 
 /**
- * Stake slider dressed as a hardware volume rail — the red fill is how much of the
- * max stake is dialled in.
+ * Output level, on the shell's bottom rail beside the key that mutes it.
+ *
+ * One scale drives the fill and the cap or the thumb drifts from the pointer: the fill is
+ * `level%` wide, the cap sits at `level% − 7.5px` (half its own width), and a click reads
+ * back as `(clientX − left) / width`. Three numbers, one source.
  */
-export function StakeRail({
-  value,
-  max,
+export function VolumeRail({
+  level,
   onChange,
 }: {
-  value: number;
-  max: number;
+  level: number;
   onChange: (v: number) => void;
 }) {
-  const pct = Math.max(0, Math.min(1, value / max));
+  const pct = `${Math.max(0, Math.min(1, level)) * 100}%`;
+
+  const pick = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    onChange(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
+  };
+
   return (
     <button
-      onClick={() => onChange(value >= max ? 1 : value + 1)}
-      title="stake"
-      // The only control on the shell with no text and no icon to read. Announce the
-      // value, not just the name — "stake" alone tells a screen reader nothing about
-      // where the rail is set, and the rail IS the value.
-      aria-label={`Stake, step ${value} of ${max}`}
-      role="button"
-      className="key relative h-8 flex-1 overflow-hidden rounded-lg bg-[var(--color-cap)]"
+      onPointerDown={pick}
+      onPointerMove={(e) => {
+        if (e.buttons === 1) pick(e);
+      }}
+      title="volume"
+      aria-label="Volume"
+      className="relative h-8 flex-1 overflow-hidden rounded-[10px]"
+      style={{
+        background: "linear-gradient(180deg,#1c1f24,#14161a)",
+        boxShadow: "inset 0 2px 6px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.05)",
+      }}
     >
-      <div
-        className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#e8453c] to-[#ff7a2f]"
-        style={{ width: `${pct * 100}%` }}
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-0"
+        style={{
+          width: pct,
+          background: "linear-gradient(180deg,#f2564c,#d8382c)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,.35), 2px 0 6px rgba(0,0,0,.35)",
+        }}
       />
-      <div className="absolute inset-y-0 right-0 flex items-center gap-[3px] pr-2">
+      {/* The thumb, hidden at silence — at zero it would hang half outside the track and
+          read as a control stuck against its own end stop. */}
+      <span
+        aria-hidden
+        className="absolute inset-y-0 w-[15px]"
+        hidden={level <= 0}
+        style={{
+          left: `calc(${pct} - 7.5px)`,
+          background: "linear-gradient(180deg,#ffc247,#f0940c)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,.5), 0 0 6px rgba(0,0,0,.45)",
+        }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 flex items-center justify-center gap-[3px]"
+      >
         {Array.from({ length: 3 }, (_, i) => (
-          <span key={i} className="h-3 w-[2px] rounded bg-white/70" />
+          <span key={i} className="h-[13px] w-[2px] rounded bg-white/70" />
         ))}
-      </div>
+      </span>
     </button>
   );
 }
 
-/** The big red fire key. */
+/**
+ * The primary key. 96 square, in its own recessed frame.
+ *
+ * Bottom-right of the deck, always: it is the one control a thumb has to find without
+ * looking, and moving it costs more than any layout it would improve.
+ */
 export function FireKey({
   onClick,
   disabled,
@@ -78,107 +116,166 @@ export function FireKey({
       onClick={onClick}
       disabled={disabled}
       aria-label="Fire"
-      className="key relative grid aspect-square w-[104px] place-items-center rounded-2xl disabled:opacity-45"
-      style={{
-        background: disabled
-          ? "linear-gradient(180deg,#8c3b36,#6f2d29)"
-          : "linear-gradient(180deg,#f2564c,#c8362e)",
-      }}
+      className="key key-red relative grid h-24 w-24 place-items-center rounded-xl disabled:opacity-45"
     >
-      {/* Domino face: two pips over a bar, the molfi mark. */}
-      <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-        <rect x="6" y="4" width="32" height="36" rx="8" fill="rgba(0,0,0,0.22)" />
-        <rect x="12" y="12" width="8" height="8" rx="2.5" fill="rgba(255,255,255,0.9)" />
-        <rect x="24" y="12" width="8" height="8" rx="2.5" fill="rgba(255,255,255,0.9)" />
-        <rect x="12" y="26" width="20" height="5" rx="2.5" fill="rgba(255,255,255,0.9)" />
-      </svg>
+      <Mark size={54} />
       {armed ? (
-        <span className="absolute inset-0 rounded-2xl ring-2 ring-white/70" aria-hidden />
+        <span className="absolute inset-0 rounded-xl ring-2 ring-white/85" aria-hidden />
       ) : null}
     </button>
   );
 }
 
-/** Glossy blue utility key. */
-export function BlueKey({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+/**
+ * The mark: the band rotated, with the price sealed at its centre.
+ *
+ * Never a filter, never a gradient, never a second colour — it takes the colour of whatever
+ * it is drawn on, which is why one file serves the red key, the tab icon and the wordmark's
+ * ground alike.
+ */
+export function Mark({ size = 54, tone = "rgba(255,255,255,0.95)" }: { size?: number; tone?: string }) {
   return (
-    <button
-      onClick={onClick}
-      className="key grid h-[92px] flex-1 place-items-center rounded-xl text-[13px] font-semibold tracking-wide text-white"
-      style={{ background: "linear-gradient(180deg,#7cb3f0,#3f7fd0)" }}
-    >
-      {children}
-    </button>
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden>
+      <path
+        d="M32 8 L56 32 L32 56 L8 32 Z"
+        fill="none"
+        stroke={tone}
+        strokeWidth="9"
+        strokeLinejoin="round"
+      />
+      <circle cx="32" cy="32" r="6" fill={tone} />
+    </svg>
   );
 }
 
-/** Market select key: a coin in a black frame. */
-export function CoinKey({
-  symbol,
-  onClick,
-  tone = "#f7931a",
+/**
+ * Any hole cut in the deck: the frame a key or the knob sits in.
+ *
+ * Exported because more than one key can share one frame — two utility keys side by side
+ * read as a pair of related destinations, where two separate frames read as two unrelated
+ * ones and cost a row of chassis to say it.
+ */
+export function KeyFrame({
+  children,
+  className = "",
+  style,
 }: {
-  symbol: string;
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      className={`rounded-2xl p-[7px] ${className}`}
+      style={{
+        background: "var(--color-frame)",
+        boxShadow:
+          "inset 0 2px 6px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.07)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Glossy blue utility key.
+ *
+ * The count badge is hidden at zero rather than printing "0" — a badge exists to say there
+ * is something behind the key, and one reading zero says the opposite while still drawing
+ * the eye.
+ */
+export function BlueKey({
+  label,
+  count,
+  onClick,
+}: {
+  label: string;
+  count?: number;
   onClick?: () => void;
-  tone?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className="key grid h-[92px] flex-1 place-items-center rounded-xl bg-[#0d0d0d] p-2"
+      className="key key-blue relative flex h-11 w-full min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-xl px-2"
     >
       <span
-        className="grid h-14 w-14 place-items-center rounded-full text-[13px] font-bold text-white"
+        aria-hidden
+        className="absolute inset-0"
         style={{
-          background: `radial-gradient(circle at 32% 28%, ${tone}, rgba(0,0,0,0.55))`,
-          boxShadow: "inset 0 -2px 6px rgba(0,0,0,0.5)",
+          background:
+            "repeating-linear-gradient(90deg,rgba(255,255,255,.13) 0 1px,transparent 1px 4px)",
         }}
+      />
+      <span
+        className="mono relative truncate text-[12px] font-semibold tracking-[0.1em] text-white"
+        style={{ textShadow: "0 1px 2px rgba(0,0,0,.45)" }}
       >
-        {symbol}
+        {label}
       </span>
+      {count && count > 0 ? (
+        <span className="tnum relative grid h-5 min-w-[22px] place-items-center rounded-md bg-black/35 px-1.5 text-[10px] font-semibold text-white">
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }
 
 /**
- * Stack of coins on the right of the deck — the balance, physically. Capped at six so
- * a healthy balance cannot grow the stack past the height of the keys beside it.
+ * The market switcher, as a chip beside the price it changes.
+ *
+ * It was a 92px deck key for one tap a session. Next to the price it costs nothing and reads
+ * as what it is — a label on the number, which happens to be pressable.
  */
-export function CoinStack({ count }: { count: number }) {
-  const n = Math.max(1, Math.min(6, count));
+export function MarketChip({
+  symbol,
+  tone,
+  onClick,
+}: {
+  symbol: string;
+  tone: string;
+  onClick?: () => void;
+}) {
   return (
-    <div className="flex w-[58px] flex-col-reverse items-center justify-start gap-[3px] self-end pb-1">
-      {Array.from({ length: n }, (_, i) => (
-        <span
-          key={i}
-          className="coin-drop h-[11px] w-full rounded-[4px]"
-          style={{
-            background: "linear-gradient(180deg,#ffd84d 0%,#f5c518 45%,#d19a00 100%)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 0 rgba(0,0,0,0.25)",
-            animationDelay: `${i * 40}ms`,
-          }}
-        />
-      ))}
-    </div>
+    <button
+      onClick={onClick}
+      title="tap to switch market"
+      aria-label="Change market"
+      className="key flex items-center gap-1.5 rounded-full bg-[#141414] py-[3px] pl-[3px] pr-2"
+      style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,.07)" }}
+    >
+      <span
+        aria-hidden
+        className="h-[19px] w-[19px] rounded-full"
+        style={{
+          background: `radial-gradient(circle at 32% 26%, ${tone}, rgba(0,0,0,0.62))`,
+          boxShadow: "inset 0 -1px 3px rgba(0,0,0,0.55)",
+        }}
+      />
+      <span className="mono text-[9.5px] tracking-[0.15em] text-white">{symbol}</span>
+      <span className="text-[8px] text-dim" aria-hidden>
+        ▾
+      </span>
+    </button>
   );
 }
 
-/** Pill at the bottom of the deck, with its label underneath. Follows the colourway. */
+/** Pill at the bottom of the deck, with its printed legend underneath. */
 export function DeckKey({ label, onClick }: { label: string; onClick?: () => void }) {
   return (
     <div className="flex flex-col items-center gap-1">
       <button
         onClick={onClick}
         aria-label={label}
-        className="key h-7 w-[74px] rounded-full"
+        className="key h-[26px] w-[62px] rounded-full"
         style={{
-          background:
-            "linear-gradient(180deg,var(--color-cap-hi),var(--color-cap))",
+          background: "linear-gradient(180deg,var(--color-cap-hi),var(--color-cap))",
         }}
       />
-      {/* Ink is themed too: black legend on a charcoal body would be unreadable. */}
       <span
-        className="mono text-[9px] tracking-[0.16em]"
+        className="mono text-[8.5px] tracking-[0.18em]"
         style={{ color: "var(--color-ink)" }}
       >
         {label}

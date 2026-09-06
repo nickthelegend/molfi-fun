@@ -9,45 +9,64 @@
  */
 
 @theme {
-  /* page */
-  --color-ground: #141414;
-  --color-ground-2: #1c1c1c;
-  --color-card: #2b2b2b;
-  --color-card-2: #1a1a1a;
+  /*
+   * Graphite. See ui/DESIGN.md §1 — the ground is always darker than the chassis, there is
+   * one amber, and exactly two dim greys. Anything added here needs a reason in that file.
+   */
 
-  /* device shell */
-  /* Repainted by the Customize screen. The screen and the readout are deliberately
-     not themeable — they carry the price. */
-  --color-shell: #f7efc2;
-  --color-shell-hi: #fbf6d6;
-  --color-shell-lo: #efe4b0;
-  --color-shell-dark: #e6dca6;
-  --color-shell-edge: #cfc48c;
-  --color-key: #9b8cf0;
-  /* Raised controls on the rail and the deck: a shade off the body. */
-  --color-cap: #f0e7bd;
-  --color-cap-hi: #ffffff;
+  /* page ground */
+  --color-ground: #0b0b0c;
+  --color-card: #16171a;
+
+  /* chassis */
+  /* Repainted by the Customize screen. The glass and the readout are deliberately not
+     themeable — they carry the price. */
+  --color-shell: #2e3138;
+  --color-shell-hi: #3d4049;
+  --color-shell-lo: #242629;
+  --color-shell-dark: #1b1d21;
+  --color-shell-edge: #0f1013;
+
+  /* any hole cut in the body: dark at the top, lit lip at the bottom */
+  --color-bezel: #14161a;
+  --color-bezel-lip: #2b2e35;
+
+  /* raised keys, and the dark frames they sit in */
+  --color-cap: #343840;
+  --color-cap-hi: #4d515b;
+  --color-frame: #0d0e10;
   /* Legend printed on the body. */
-  --color-ink: rgba(0, 0, 0, 0.55);
+  --color-ink: rgba(255, 255, 255, 0.62);
 
-  /* screen */
+  /* glass */
   --color-screen: #000000;
   --color-screen-2: #0b0b0b;
-  --color-screen-line: #1e1e1e;
+  --color-screen-3: #0f0f0f;
+  --color-screen-line: #171717;
 
   /* signal */
   --color-amber: #ff9f0a;
-  --color-amber-2: #f5a623;
+  --color-amber-2: #ffc247;
   --color-green: #3ddc84;
   --color-green-2: #24a35a;
   --color-red: #e8453c;
-  --color-red-2: #b8322b;
+
+  /* accents */
   --color-blue: #4a90e2;
-  --color-gold: #f5c518;
-  --color-gold-2: #d19a00;
+  --color-blue-1: #a8cef8;
+  --color-blue-2: #3068b8;
+  --color-blue-ledge: #204c88;
+  --color-gold-1: #fff3b8;
+  --color-gold-2: #f5c518;
+  --color-gold-3: #8a5f06;
   --color-purple: #8b5cf6;
 
-  /* type on screen */
+  /* market coins — tones and decimals per packages/sdk/src/markets.ts */
+  --color-coin-btc: #f7931a;
+  --color-coin-eth: #8098ee;
+  --color-coin-strk: #8b5cf6;
+
+  /* type on glass — only two greys. #8a8a8a is readable, #5c5c5c is decoration. */
   --color-dim: #8a8a8a;
   --color-dim-2: #5c5c5c;
 
@@ -59,6 +78,14 @@
   color-scheme: dark;
 }
 
+/* Without this every width + padding pair inflates by the padding, and the 112px control
+   rail measures 128 — which is how the deck ended up with dead chassis beside it. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body {
   background: var(--color-ground);
@@ -68,10 +95,11 @@ body {
   overscroll-behavior: none;
 }
 
-/* Tiled device motif behind the console, dark on dark. */
+/* Tiled device motif behind the console, dark on dark. Retinted for the graphite body:
+   the ground has to stay darker than the chassis or the device loses its edge. */
 .tiled {
   background-color: var(--color-ground);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Crect x='18' y='10' width='60' height='76' rx='14' fill='%23191919'/%3E%3Crect x='28' y='30' width='16' height='16' rx='5' fill='%23131313'/%3E%3Crect x='52' y='30' width='16' height='16' rx='5' fill='%23131313'/%3E%3Crect x='28' y='56' width='40' height='8' rx='4' fill='%23131313'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Crect x='18' y='10' width='60' height='76' rx='14' fill='%23121214'/%3E%3Crect x='28' y='30' width='16' height='16' rx='5' fill='%230d0d0e'/%3E%3Crect x='52' y='30' width='16' height='16' rx='5' fill='%230d0d0e'/%3E%3Crect x='28' y='56' width='40' height='8' rx='4' fill='%230d0d0e'/%3E%3C/svg%3E");
   background-size: 108px 108px;
 }
 
@@ -90,27 +118,55 @@ body {
     color: var(--color-dim);
   }
 
-  /* The console body: warm plastic with a lit top edge and a shadowed bottom. */
+  /*
+   * The console body: moulded graphite, lit from above.
+   *
+   * The rim (`0 0 0 1px rgba(255,255,255,.07)`) is not decoration — a dark body on a dark
+   * ground has no edge without it, and the chassis reads as a region of the page rather
+   * than as an object sitting on it.
+   */
   .shell {
     background: linear-gradient(
-      180deg,
+      168deg,
       var(--color-shell-hi) 0%,
-      var(--color-shell) 32%,
-      var(--color-shell-lo) 100%
+      var(--color-shell) 36%,
+      var(--color-shell-lo) 82%,
+      var(--color-shell-dark) 100%
     );
     box-shadow:
-      inset 0 2px 0 rgba(255, 255, 255, 0.75),
-      inset 0 -3px 0 rgba(0, 0, 0, 0.14),
-      0 24px 60px rgba(0, 0, 0, 0.6),
-      0 2px 0 var(--color-shell-edge);
+      inset 0 2px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.5),
+      inset 3px 0 0 rgba(255, 255, 255, 0.05),
+      inset -3px 0 0 rgba(0, 0, 0, 0.28),
+      0 0 0 1px rgba(255, 255, 255, 0.07),
+      0 3px 0 var(--color-shell-edge),
+      0 30px 70px rgba(0, 0, 0, 0.8),
+      0 8px 20px rgba(0, 0, 0, 0.55);
   }
 
-  /* Any raised control on the shell. */
+  /*
+   * Any hole cut in the body — the bezel around the glass, the frame under the fire key.
+   *
+   * Lighting inverted from the chassis: dark at the top, a lit lip at the bottom, which is
+   * what a recess does under a light from above. The glass sits inside one of these and
+   * never directly on the body; that double frame is most of what makes it read as hardware.
+   */
+  .recess {
+    background: linear-gradient(180deg, var(--color-bezel), var(--color-bezel-lip));
+    box-shadow:
+      inset 0 3px 8px rgba(0, 0, 0, 0.75),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+      0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+
+  /* Any raised control on the body: lit top face, a hard ledge under it. A blurred shadow
+     reads as a card on a website; `0 4px 0` reads as plastic thickness. */
   .key {
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.6),
-      0 2px 0 rgba(0, 0, 0, 0.22),
-      0 3px 6px rgba(0, 0, 0, 0.18);
+      inset 0 2px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.24),
+      0 4px 0 var(--color-shell-edge),
+      0 7px 14px rgba(0, 0, 0, 0.4);
     transition:
       transform 140ms cubic-bezier(0.2, 0.9, 0.25, 1),
       box-shadow 140ms cubic-bezier(0.2, 0.9, 0.25, 1);
@@ -120,8 +176,53 @@ body {
     transition-duration: 45ms;
     transform: translateY(2px);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.45),
-      0 0 0 rgba(0, 0, 0, 0.22);
+      inset 0 2px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.24),
+      0 1px 0 var(--color-shell-edge),
+      0 3px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  /*
+   * The two coloured keys, as classes rather than inline styles.
+   *
+   * An inline `box-shadow` beats `.key:active`, so a key styled inline travelled down two
+   * pixels while keeping its full four-pixel ledge — the whole key sliding rather than
+   * compressing onto the body. The gradients live here so the pressed state can collapse
+   * the ledge the way the moulded ones do.
+   */
+  .key-red {
+    background: linear-gradient(180deg, #f8675c, #f2564c 38%, #c8362e);
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.24),
+      0 4px 0 #8f2621,
+      0 7px 14px rgba(0, 0, 0, 0.4);
+  }
+  .key-red:active {
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.24),
+      0 1px 0 #8f2621,
+      0 3px 8px rgba(0, 0, 0, 0.4);
+  }
+  .key-red:disabled {
+    background: linear-gradient(180deg, #8c3b36, #6f2d29);
+  }
+
+  .key-blue {
+    background: linear-gradient(180deg, #a8cef8, #6da5e8 44%, #3068b8);
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.24),
+      0 4px 0 var(--color-blue-ledge),
+      0 7px 14px rgba(0, 0, 0, 0.4);
+  }
+  .key-blue:active {
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -5px 0 rgba(0, 0, 0, 0.24),
+      0 1px 0 var(--color-blue-ledge),
+      0 3px 8px rgba(0, 0, 0, 0.4);
   }
 
   /* Keyboard focus has to be visible on both the cream shell and the black screen, so
@@ -134,13 +235,14 @@ body {
       0 0 0 5px var(--color-amber);
   }
 
-  /* The recessed black screen. */
+  /* The recessed black glass, cut into the bezel. The 1px inner rim is what gives black
+     glass a visible edge against a dark body. */
   .screen {
     background: var(--color-screen);
     box-shadow:
-      inset 0 2px 6px rgba(0, 0, 0, 0.9),
-      inset 0 0 0 1px rgba(0, 0, 0, 0.6),
-      0 1px 0 rgba(255, 255, 255, 0.5);
+      inset 0 2px 8px rgba(0, 0, 0, 0.95),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+      0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .glow-amber {

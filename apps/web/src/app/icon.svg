@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- The mark on the console's fire key: two pips over a bar. -->
   <rect width="64" height="64" rx="14" fill="#0b0b0b"/>
-  <rect x="14" y="16" width="12" height="12" rx="4" fill="#ff9f0a"/>
-  <rect x="38" y="16" width="12" height="12" rx="4" fill="#ff9f0a"/>
-  <rect x="14" y="38" width="36" height="9" rx="4.5" fill="#ff9f0a"/>
+  <path d="M32 15 L49 32 L32 49 L15 32 Z" fill="none" stroke="#ff9f0a" stroke-width="7.5" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="5" fill="#ff9f0a"/>
 </svg>

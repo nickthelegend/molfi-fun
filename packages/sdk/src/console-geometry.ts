@@ -24,7 +24,16 @@ export const CONSOLE_MATERIALS: MaterialDef[] = [
   { name: "shell", color: "#1c2228", metallic: 0.06, roughness: 0.58 },
   { name: "shellDark", color: "#12171b", metallic: 0.06, roughness: 0.66 },
   { name: "screen", color: "#04070a", metallic: 0.2, roughness: 0.12 },
-  { name: "amber", color: "#4ec9e8", metallic: 0, roughness: 0.3, emissive: [0.10, 0.42, 0.52] },
+  /**
+   * The signal, and there is only one of it.
+   *
+   * This material was cyan while the 2D console's signal was amber, which was fine while the
+   * hero and the play screen never shared a page and wrong the moment they did — two lit
+   * accents on one device read as two different products. The console's amber wins because
+   * changing a material is one line and changing every band, multiplier and focus ring in
+   * the app is not.
+   */
+  { name: "amber", color: "#ff9f0a", metallic: 0, roughness: 0.3, emissive: [0.52, 0.30, 0.03] },
   { name: "orange", color: "#2a3239", metallic: 0.08, roughness: 0.5 },
   { name: "lilac", color: "#242b32", metallic: 0.08, roughness: 0.5 },
   { name: "gold", color: "#5b6670", metallic: 0.8, roughness: 0.3 },
