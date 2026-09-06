@@ -178,16 +178,6 @@ export function RangeChart({
     g.stroke();
     g.setLineDash([]);
 
-    // ---- bands already riding
-    openBands.forEach((b) => {
-      g.strokeStyle = b.won === false ? C.red : C.dim;
-      g.globalAlpha = 0.5;
-      g.setLineDash([2, 3]);
-      g.strokeRect(nowX, y(Number(b.high)), W - nowX, y(Number(b.low)) - y(Number(b.high)));
-      g.setLineDash([]);
-      g.globalAlpha = 1;
-    });
-
     // ---- the band being bought: amber dashed box out to the cutoff
     g.fillStyle = "rgba(255,159,10,0.07)";
     g.fillRect(nowX, yHigh, W - nowX, yLow - yHigh);
@@ -216,6 +206,43 @@ export function RangeChart({
       g.fillStyle = "rgba(255,159,10,0.16)";
       g.fillRect(nowX, yHigh, (W - nowX) * Math.min(1, progress), yLow - yHigh);
     }
+
+    /**
+     * The bands actually riding, drawn last so nothing can bury them.
+     *
+     * This used to run *before* the amber box and paint a winning band in `C.dim` at half
+     * alpha. Two consequences, both bad: a position on the band currently displayed vanished
+     * completely under the amber fill drawn over it — which is the common case, because most
+     * people fire the band that is on screen — and the one time a band did show, being in the
+     * money looked like being switched off.
+     *
+     * Now they sit on top and they are live: **green while the price is inside, red while it
+     * is outside**, updated on every frame. That turns the chart from a picture of a band you
+     * might buy into a readout of the ones you own, which is the only version worth having on
+     * screen while a round is running.
+     */
+    openBands.forEach((b) => {
+      const inMoney = b.won !== false;
+      const top = y(Number(b.high));
+      const height = y(Number(b.low)) - top;
+
+      g.fillStyle = inMoney ? "rgba(61,220,132,0.09)" : "rgba(232,69,60,0.09)";
+      g.fillRect(nowX, top, W - nowX, height);
+
+      g.strokeStyle = inMoney ? C.green : C.red;
+      g.lineWidth = 1;
+      g.setLineDash([3, 2]);
+      g.strokeRect(nowX + 0.5, top + 0.5, W - nowX - 1, height - 1);
+      g.setLineDash([]);
+
+      // A solid cap at "now", so overlapping positions on the same band still read as more
+      // than one edge rather than as a single rectangle.
+      g.beginPath();
+      g.moveTo(nowX, top);
+      g.lineTo(nowX, top + height);
+      g.lineWidth = 2;
+      g.stroke();
+    });
 
     /**
      * The settlement, expanding from the point it printed at.

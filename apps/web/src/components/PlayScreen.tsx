@@ -694,11 +694,23 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
                         multiplierBps={quotedBps}
                         progress={reducedMotion ? 0 : progress}
                         settleFlash={settleFlash}
-                        openBands={state.openTickets.map((t) => ({
-                          low: t.low,
-                          high: t.high,
-                          won: state.spot >= t.low && state.spot <= t.high,
-                        }))}
+                        /**
+                         * Only this market's positions, and only the range ones.
+                         *
+                         * Unfiltered, a BTC band at 79,900 was drawn on the ETH chart against a
+                         * price of 2,501 — clamped to the top of the axis and painted red,
+                         * telling a trader that three positions were losing when they were on
+                         * a different market entirely. Direction tickets are excluded for the
+                         * same reason in reverse: they have no band, and rendering one as a
+                         * zero-height rectangle at the reference is a line that means nothing.
+                         */
+                        openBands={state.openTickets
+                          .filter((t) => t.marketKey === state.market.key && t.game !== "direction")
+                          .map((t) => ({
+                            low: t.low,
+                            high: t.high,
+                            won: state.spot >= t.low && state.spot <= t.high,
+                          }))}
                         onDragEdge={band.setEdge}
                       />
                     )}
