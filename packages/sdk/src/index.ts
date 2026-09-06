@@ -9,6 +9,7 @@
  */
 
 export * from "./pricing.ts";
+export * from "./direction.ts";
 export * from "./pragma.ts";
 // Calibration inputs. HOUSE_EDGE_BPS and SIGMA_SHADE stay behind the generated module's
 // names: two live constants with the same name would shadow each other, and the one that

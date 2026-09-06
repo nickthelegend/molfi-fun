@@ -185,6 +185,9 @@ pub mod UpDownMarket {
         pub const DUPLICATE: felt252 = 'TICKET_EXISTS';
         pub const OVER_RESERVED: felt252 = 'ROUND_CANNOT_COVER_PAYOUT';
         pub const ZERO_STAKE: felt252 = 'ZERO_STAKE';
+        /// A stake above 2^128. Named rather than left to `unwrap`, which panics with a
+        /// generic overflow felt that says nothing about which field was too big.
+        pub const STAKE_TOO_LARGE: felt252 = 'STAKE_ABOVE_U128';
         pub const ZERO_FUNDING: felt252 = 'ZERO_FUNDING';
         pub const FUNDING_NOT_RECEIVED: felt252 = 'FUNDING_NOT_RECEIVED';
         pub const STAKE_NOT_RECEIVED: felt252 = 'STAKE_NOT_RECEIVED';
@@ -419,7 +422,7 @@ pub mod UpDownMarket {
                     commitment,
                     Ticket {
                         round_id,
-                        stake: stake.try_into().unwrap(),
+                        stake: stake.try_into().expect(errors::STAKE_TOO_LARGE),
                         multiplier_bps: r.multiplier_bps,
                         claimed: false,
                         exists: true,
