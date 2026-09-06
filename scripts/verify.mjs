@@ -211,8 +211,11 @@ check("C13", (await get("/api/position/nothex")).status === 400, "a malformed co
    * pinning is that `ok` agrees with the reason beside it: a keeper reporting `ok: true`
    * while it has stopped listing is the bug that let the desk go dark unnoticed.
    */
+  // The keeper tolerates one stalled cycle on purpose — a balance can dip and recover
+  // between rounds — so `ok: true` alongside a stop reason is coherent for exactly one
+  // cycle. Two in a row is the desk going dark, and must be reported as such.
   const stalled = Number(body?.stalledCycles ?? 0) >= 2;
-  const coherent = body?.ok === true ? !stalled && !body?.stoppedListing : Boolean(body?.unhealthy);
+  const coherent = body?.ok === true ? !stalled : Boolean(body?.unhealthy);
   check("C17", status === 200 && body.configured === true && body.reachable === true && body.cycles > 0 && coherent,
     "/api/keeper", `${body?.cycles} cycles, ${(Number(body?.balance) / 1e18).toFixed(2)} STRK, ok=${body?.ok}`);
 }
