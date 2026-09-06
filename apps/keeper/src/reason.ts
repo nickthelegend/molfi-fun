@@ -31,7 +31,17 @@ export function reason(e: unknown): string {
   const namedEarly = raw.match(/\('([A-Z0-9_]+)'\)/);
   if (namedEarly) return namedEarly[1];
 
-  if (e instanceof Error && !/[{}[\]]/.test(raw) && !raw.startsWith("RPC:")) {
+  /**
+   * …but only when there is nothing further in to look at.
+   *
+   * `bareEstimate` throws a plain sentence — "the node would not estimate this" — with the
+   * node's object hung off `baseError`. Without the second clause that sentence looked
+   * already-reduced and was handed straight back, so `settle 49: waiting (STALE_PRICE)`
+   * became `settle 49: FAILED the node would not estimate this` and the keeper stopped being
+   * able to tell a wait from a fault.
+   */
+  const hasNested = typeof (e as { baseError?: unknown })?.baseError === "object";
+  if (e instanceof Error && !hasNested && !/[{}[\]]/.test(raw) && !raw.startsWith("RPC:")) {
     return collapse(raw);
   }
 
@@ -68,6 +78,19 @@ export function reason(e: unknown): string {
   // A Cairo revert names itself in a quoted felt. That is the whole answer.
   const named = text.match(/\('([A-Z0-9_]+)'\)/);
   if (named) return named[1];
+
+  /**
+   * …including when `innermost` has already unquoted it.
+   *
+   * `detailOf` pulls the felt out of the trace and appends it as " — STALE_PRICE", which
+   * leaves no `('…')` for the pattern above to find. The wrapper in front of it is
+   * "Transaction execution error", which adds nothing and is not what callers compare
+   * against: the keeper decides a settle is *waiting* rather than *failing* by testing
+   * `why === "STALE_PRICE"`, and got "Transaction execution error — STALE_PRICE" instead.
+   */
+  const trailing = text.match(/(?:^|—\s*)([A-Z][A-Z0-9_]{3,})\s*$/);
+  if (trailing) return trailing[1];
+
   if (structured) return collapse(structured);
 
   /**

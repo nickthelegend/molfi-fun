@@ -136,3 +136,24 @@ test("a Cairo revert is never transient", () => {
   assert.equal(transient("STALE_PRICE"), false);
   assert.equal(transient("MARKET_CANNOT_COVER_PAYOUT"), false);
 });
+
+test("a plain sentence with a node error hung off it is not mistaken for reduced text", () => {
+  // What `bareEstimate` throws when the node refuses to simulate: a readable message, with
+  // the reason nested underneath. The early "already reduced" exit used to swallow it whole
+  // and report the wrapper, so a market waiting on a stale price read as an unexplained
+  // failure.
+  const e = new Error("the node would not estimate this") as Error & { baseError?: unknown };
+  e.baseError = {
+    code: 41,
+    message: "Transaction execution error",
+    data: { execution_error: "Error message: Execution failed. Failure reason: ('STALE_PRICE')." },
+  };
+  assert.equal(reason(e), "STALE_PRICE");
+});
+
+test("a plain sentence with nothing nested is still returned unchanged", () => {
+  assert.equal(
+    reason(new Error("cannot afford this: the fee alone is 5 and the balance is 4")),
+    "cannot afford this: the fee alone is 5 and the balance is 4",
+  );
+});
