@@ -34,6 +34,7 @@ import {
   subscribe,
   type StoredPosition,
 } from "./positions";
+import { fetchJson } from "./fetchJson";
 import type { PricePoint } from "./usePaperDesk";
 
 /**
@@ -287,15 +288,13 @@ export function useLiveDesk(market: MarketDef, tier: number) {
        * every direction: fewer requests, cached, and no second copy of the struct offsets to
        * drift out of step.
        */
-      const res = await fetch("/api/markets", { cache: "no-store" });
-      if (!res.ok) throw new Error(`market list unavailable (${res.status})`);
-      const body = (await res.json()) as {
+      const body = await fetchJson<{
         deployed?: boolean;
         reason?: string;
         error?: string;
         markets?: Array<Record<string, string | number | boolean>>;
         chainNow?: number;
-      };
+      }>("/api/markets");
       if (body.error) throw new Error(body.error);
 
       const markets: LiveMarket[] = (body.markets ?? []).map((m) => ({
@@ -334,8 +333,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
             // Through the app's own route, like the market list. It decodes the struct in
             // one place — a u256 is two felts and a u128 is one, and a second copy of those
             // offsets is a second thing to get wrong.
-            const r = await fetch(`/api/position/${p.commitment}`, { cache: "no-store" });
-            const body = (await r.json()) as {
+            const body = await fetchJson<{
               exists?: boolean;
               position?: {
                 stake: string;
@@ -343,7 +341,7 @@ export function useLiveDesk(market: MarketDef, tier: number) {
                 claimed: boolean;
                 exists: boolean;
               };
-            };
+            }>(`/api/position/${p.commitment}`);
             if (body.exists && body.position) {
               onChain = {
                 stake: BigInt(body.position.stake),
@@ -423,11 +421,9 @@ export function useLiveDesk(market: MarketDef, tier: number) {
 
     void (async () => {
       try {
-        const r = await fetch(
+        const j = await fetchJson<{ price?: string | null; returns?: number[] }>(
           `/api/price?market=${encodeURIComponent(market.key)}&history=1`,
-          { cache: "no-store" },
         );
-        const j = (await r.json()) as { price?: string | null; returns?: number[] };
         if (stop || !j.price || !j.returns || j.returns.length < 8) return;
         // Only seed if the live poll has not already filled it — a slow history fetch must
         // not overwrite fresher points that arrived while it was in flight.
@@ -462,18 +458,13 @@ export function useLiveDesk(market: MarketDef, tier: number) {
     let stop = false;
     const read = async () => {
       try {
-        const r = await fetch(`/api/price?market=${encodeURIComponent(market.key)}`, {
-          cache: "no-store",
-        });
-        const j = (await r.json()) as {
+        const j = await fetchJson<{
           price?: string | null;
           error?: string;
           markError?: string | null;
-        };
+        }>(`/api/price?market=${encodeURIComponent(market.key)}`);
         if (stop) return;
-        if (!r.ok || !j.price) {
-          throw new Error(j.markError ?? j.error ?? `price service ${r.status}`);
-        }
+        if (!j.price) throw new Error(j.markError ?? j.error ?? "the price service returned nothing");
         const price = BigInt(j.price);
         const h = historyRef.current;
         if (h.length === 0 || h[h.length - 1].price !== price) {

@@ -11,6 +11,7 @@ import {
   type MarketDef,
   type PaperTicket,
 } from "@molfi/sdk";
+import { fetchJson } from "./fetchJson";
 
 export interface PricePoint {
   /** Desk clock, in seconds. */
@@ -46,19 +47,18 @@ const TICK_MS = 100;
 async function fetchRealTape(
   marketKey: string,
 ): Promise<{ price: bigint; returns: number[] }> {
-  const r = await fetch(`/api/price?market=${encodeURIComponent(marketKey)}&history=1`, {
-    cache: "no-store",
-  });
-  const j = (await r.json()) as {
+  const j = await fetchJson<{
     price?: string | null;
     returns?: number[];
     error?: string;
     markError?: string | null;
-  };
+  }>(`/api/price?market=${encodeURIComponent(marketKey)}&history=1`);
   // `markError` is the exchange's own reason and is worth more than "price unavailable" —
   // a 451 means the region is geo-blocked, which is a different fix from a 500.
-  if (!r.ok || !j.price) {
-    throw new Error(j.markError ?? j.error ?? `price unavailable (${r.status})`);
+  if (!j.price) {
+    // fetchJson has already turned a non-200 or a timeout into a named error, so anything
+    // reaching here answered with a body that simply had no price in it.
+    throw new Error(j.markError ?? j.error ?? "the price service returned no price");
   }
   if (!j.returns || j.returns.length < 8) throw new Error("no recent tape to replay");
   return { price: BigInt(j.price), returns: j.returns };
@@ -187,16 +187,13 @@ export function usePaperDesk(initialMarketKey = "BTC") {
     let stop = false;
     const read = async () => {
       try {
-        const r = await fetch(`/api/price?market=${encodeURIComponent(market.key)}`, {
-          cache: "no-store",
-        });
-        const j = (await r.json()) as {
+        const j = await fetchJson<{
           oracle?: OracleState | null;
           oracleError?: string | null;
           error?: string;
-        };
+        }>(`/api/price?market=${encodeURIComponent(market.key)}`);
         if (stop) return;
-        if (!r.ok) throw new Error(j.error ?? `price service ${r.status}`);
+        if (j.error) throw new Error(j.error);
         setOracle(j.oracle ?? null);
         setOracleError(j.oracleError ?? null);
       } catch (e) {
