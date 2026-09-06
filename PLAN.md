@@ -222,7 +222,18 @@ across three pairs that is roughly 4 STRK/hour — faster than any faucet.
 | 6.1 | Batch relays, settles and listings into one transaction each, with per-item fallback when the batch exceeds the account's fee bounds. | DONE |
 | 6.2 | Throttle relays by print age (`KEEPER_RELAY_MIN_AGE`, default 420s) rather than republishing on every Pragma tick. | DONE |
 | 6.3 | **Make `create_market` stop re-writing the pricing table per market.** | **DONE** — tables are content-addressed by the Poseidon hash of their knots; the first market to carry one stores it, later markets store a pointer. Measured with a matched benchmark pair: **607,150 l2_gas and 1,536 l1_data_gas saved per repeat listing** (~0.018 STRK). The class grows 9,752 → 10,037 felts so the declare goes **57 → 60 STRK**; break-even is ~167 repeat listings, about fourteen hours at three pairs and fifteen-minute rounds. **Ships only with the next declare (Phase 1/3).** |
-| 6.4 | Round length for the funding actually available. | **DONE — `KEEPER_TIER=2` (4h).** Faucet income is 0.208 STRK/hr; the relay alone costs 0.80. Continuous running is arithmetically impossible on that, so the goal is the most useful demo time per drip, not uptime: 5 STRK buys **0.4h at 15m rounds, 1.2h at 1h, 3.1h at 4h**. The floor of 3.5 STRK is one full listing round, so each drip funds exactly one complete round across three pairs and settles it rather than half-funding two. |
+| 6.4 | Round length for the funding actually available. | **DONE — `KEEPER_TIER=1` (1h).** Set to 2 first, on a burn-rate calculation that measured the wrong thing. The question is not how many hours a drip buys, it is **whether a round survives to its own cutoff**: a 4h round needs 3.19 STRK of relays to stay settleable that long, and 5 STRK cannot cover that plus a 3.00 listing plus a 0.45 settle — it is short by 1.64, so the print goes stale and the market is listed and can never resolve. That is the exact failure `PriceRelay` exists to prevent, and it would have been self-inflicted. Tier 1 costs 3.00 + 0.80 + 0.45 = 4.25 and leaves 0.75 of margin. |
+
+**The test a round has to pass, not the burn rate.** For a drip of `D`, bankroll `b`, and a
+round of `H` hours: `3(b + 0.5) + H·0.797 + 0.45 ≤ D`. The middle term is what makes long
+rounds unaffordable on a thin balance — a round must be *funded all the way to its own
+cutoff*, or it strands.
+
+| Tier | Round | List | Relays to cutoff | Settle | Total | Against a 5 STRK drip |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 15m | 3.00 | 0.20 | 0.45 | 3.65 | leaves 1.35 |
+| **1** | **1h** | **3.00** | **0.80** | **0.45** | **4.25** | **leaves 0.75 — set** |
+| 2 | 4h | 3.00 | 3.19 | 0.45 | 6.64 | short 1.64 — strands the round |
 | 6.5 | Add a keeper alert when `stoppedListing` persists. | **DONE** — `/health` now returns **503** on either of two counts: no cycle in three periods, or two consecutive cycles unable to list, with an `unhealthy` string saying which. Verified in production: `503`, `ok:false`, *"has not listed a round for 3 cycles: balance … below the floor …"*, where it previously answered `200`/`ok:true` while completely stalled. One `stall` ledger row per transition — confirmed 1 row across 3 stalled cycles, not one per cycle. |
 
 ### Phase 7 — Verification and hygiene · **IN PROGRESS**
