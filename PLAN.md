@@ -179,14 +179,14 @@ Nothing here is a code change. It is the evidence the whole project exists to pr
 
 | # | Task | State |
 | --- | --- | --- |
-| 3.1 | Fund a mainnet deployer with ≥ 60 STRK; set `DEPLOYER_ADDRESS`. | NOT STARTED |
+| 3.1 | Fund a mainnet deployer with ≥ 60 STRK; set `DEPLOYER_ADDRESS`. | **NOT EXECUTED — spends real money.** Mainnet STRK is bought, not dripped; there is no faucet for it. This is a stop condition the brief names explicitly. |
 | 3.2 | `pnpm preflight` (defaults to mainnet). | **DONE** — clear, with 2 warnings, both about the unset deployer. Mainnet Pragma settles all three pairs (10–12 publishers), so mainnet needs no relay and has none of Sepolia's staleness problem. |
-| 3.3 | `scripts/deploy.mjs --network mainnet`. Deploys `MolfiMarket` only — **`PriceRelay` must not be deployed to mainnet**; markets settle against Pragma directly. | NOT STARTED |
-| 3.4 | Set `MOLFI_MARKET.mainnet` in `networks.ts`. | NOT STARTED |
-| 3.5 | List and fund one mainnet market per pair at **tier 2 (4h)** — mainnet needs no relay and long rounds cut keeper burn to roughly one listing and one settle per pair per 4 hours. | NOT STARTED |
-| 3.6 | Execute **three transactions through the mainnet pool** `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. Suggested: shield, open a position, claim it. | NOT STARTED |
-| 3.7 | `pnpm submission` — defaults to mainnet, fills `strk20.json` from `deployments/mainnet.json`, verifies every address holds a contract before recording it, and refuses outright to fill from a devnet deployment. | NOT STARTED |
-| 3.8 | Verify `strk20.json` names mainnet, lists the mainnet contracts, and lists the three pool transactions. | NOT STARTED |
+| 3.3 | `scripts/deploy.mjs --network mainnet`. Deploys `MolfiMarket` only — **`PriceRelay` must not be deployed to mainnet**; markets settle against Pragma directly. | **NOT EXECUTED — a mainnet action spending the ~57 STRK declare.** Blocked on 3.1 regardless. |
+| 3.4 | Set `MOLFI_MARKET.mainnet` in `networks.ts`. | BLOCKED on 3.3 — one line in `networks.ts`, once there is an address to write. |
+| 3.5 | List and fund one mainnet market per pair at **tier 2 (4h)** — mainnet needs no relay and long rounds cut keeper burn to roughly one listing and one settle per pair per 4 hours. | **NOT EXECUTED — a mainnet action spending real STRK** on three bankrolls plus gas. Blocked on 3.3 regardless. |
+| 3.6 | Execute **three transactions through the mainnet pool** `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. Suggested: shield, open a position, claim it. | **NOT EXECUTED — three mainnet transactions, real money.** The prize requirement and the most consequential thing left, and the clearest case the brief tells me to pause on. |
+| 3.7 | `pnpm submission` — defaults to mainnet, fills `strk20.json` from `deployments/mainnet.json`, verifies every address holds a contract before recording it, and refuses outright to fill from a devnet deployment. | BLOCKED on 3.3 — `pnpm submission` refuses to write an address it cannot verify on chain, so it cannot run before the deploy exists. |
+| 3.8 | Verify `strk20.json` names mainnet, lists the mainnet contracts, and lists the three pool transactions. | BLOCKED on 3.7. |
 
 ### Phase 4 — Submission artifacts · **NOT STARTED**
 
