@@ -18,6 +18,8 @@ import {
 import { useLiveDesk, type LiveMarket } from "@/lib/useLiveDesk";
 import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
+import type { Wallet } from "@/components/PrivyGate";
+import type { PrivySigner } from "@/lib/privy-signer";
 import { useBand } from "@/lib/useBand";
 import { usePrefs } from "@/lib/usePrefs";
 import { MenuSheet } from "./menu/MenuSheet";
@@ -119,7 +121,16 @@ const COIN_TONE: Record<string, string> = {
  * not know. Positions come from the browser's own store of secrets, and the chain is asked
  * only to confirm what it holds under a commitment the browser derived.
  */
-export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
+export function LiveConsole({
+  onBackToDemo,
+  wallet: privyWallet,
+  signer,
+}: {
+  onBackToDemo: () => void;
+  /** The Privy account, when the visitor came through the gate rather than an extension. */
+  wallet?: Wallet;
+  signer?: PrivySigner;
+}) {
   const router = useRouter();
   const [marketKey, setMarketKey] = useState("BTC");
   const [tier, setTier] = useState(0);
@@ -258,6 +269,20 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
    */
   const readyToAct = useCallback(async (): Promise<boolean> => {
     if (!state.connection) {
+      /**
+       * Privy first, an extension second.
+       *
+       * A visitor who reached this screen signed in, so molfi already holds a Starknet
+       * account for them — asking them to install a browser extension as well would be asking
+       * for a second wallet to do what the first one can. An extension is still offered when
+       * there is no Privy session, which is how someone who prefers their own keys connects.
+       */
+      if (privyWallet && signer) {
+        await live
+          .connectWithPrivy(privyWallet.publicKey, signer)
+          .catch((e) => say(errorFlash(e)));
+        return false;
+      }
       const wallet = state.wallets[0];
       if (!wallet) {
         say("NO STARKNET WALLET FOUND");

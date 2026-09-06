@@ -4,6 +4,8 @@ import { PrivyProvider, useIdentityToken, usePrivy } from "@privy-io/react-auth"
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CoinMark, StarknetSpark } from "@/components/CoinMark";
+import { PrivySigner } from "@/lib/privy-signer";
+import { useMemo } from "react";
 
 /**
  * The door in front of the console.
@@ -44,7 +46,17 @@ export interface Wallet {
   publicKey: string;
 }
 
-export function PrivyGate({ children }: { children: (wallet: Wallet) => React.ReactNode }) {
+/**
+ * What the gate hands its children.
+ *
+ * The signer is built here rather than by the console, because it needs `getAccessToken` and
+ * the identity token — both of which live in Privy's React context, which only exists inside
+ * the provider. Handing down a wallet alone would mean the console reaching back for a context
+ * it is not guaranteed to be inside.
+ */
+export type GateChildren = (wallet: Wallet, signer: PrivySigner) => React.ReactNode;
+
+export function PrivyGate({ children }: { children: GateChildren }) {
   if (!APP_ID) {
     // An unconfigured deploy says so rather than rendering a button that cannot work.
     return (
@@ -87,12 +99,27 @@ export function PrivyGate({ children }: { children: (wallet: Wallet) => React.Re
   );
 }
 
-function Inner({ children }: { children: (wallet: Wallet) => React.ReactNode }) {
+function Inner({ children }: { children: GateChildren }) {
   const { ready, authenticated, login, getAccessToken } = usePrivy();
   const { identityToken } = useIdentityToken();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
+
+  /**
+   * One signer for the session, rebuilt only when the key it signs for changes.
+   *
+   * Rebuilding it every render would hand `useLiveDesk` a new object each time and defeat the
+   * memoisation on everything downstream of the connection.
+   */
+  const signer = useMemo(
+    () =>
+      new PrivySigner(wallet?.publicKey ?? "0x0", {
+        accessToken: () => getAccessToken(),
+        identityToken: () => identityToken ?? null,
+      }),
+    [wallet?.publicKey, getAccessToken, identityToken],
+  );
 
   /**
    * Ask the server for this account's Starknet wallet, making one on the first visit.
@@ -162,7 +189,7 @@ function Inner({ children }: { children: (wallet: Wallet) => React.ReactNode }) 
    * forge and no query string that reaches it.
    */
   if (!authenticated && process.env.NODE_ENV !== "production" && devWallet) {
-    return <>{children(devWallet)}</>;
+    return <>{children(devWallet, signer)}</>;
   }
 
   if (!authenticated) {
@@ -205,7 +232,7 @@ function Inner({ children }: { children: (wallet: Wallet) => React.ReactNode }) 
     );
   }
 
-  return <>{children(wallet)}</>;
+  return <>{children(wallet, signer)}</>;
 }
 
 /** The card the door lives in, so every state is the same shape and nothing jumps. */

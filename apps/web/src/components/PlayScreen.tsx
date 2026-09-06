@@ -1,6 +1,7 @@
 "use client";
 
 import type { Wallet } from "@/components/PrivyGate";
+import type { PrivySigner } from "@/lib/privy-signer";
 import { useWalletBalance } from "@/lib/useWalletBalance";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -123,7 +124,7 @@ const COIN_TONE: Record<string, string> = {
   WBTC: "#f09242",
 };
 
-export function PlayScreen({ wallet }: { wallet?: Wallet }) {
+export function PlayScreen({ wallet, signer }: { wallet?: Wallet; signer?: PrivySigner }) {
   /**
    * The connected wallet, if the gate handed one down.
    *
@@ -532,7 +533,10 @@ export function PlayScreen({ wallet }: { wallet?: Wallet }) {
 
   // The console opens on paper: a first round in under fifteen seconds, no wallet and
   // nothing to fund. Live is one key away and runs identical pricing.
-  if (live) return <LiveConsole onBackToDemo={() => setLive(false)} />;
+  if (live)
+    return (
+      <LiveConsole onBackToDemo={() => setLive(false)} wallet={wallet} signer={signer} />
+    );
 
   return (
     <div className="tiled min-h-dvh">

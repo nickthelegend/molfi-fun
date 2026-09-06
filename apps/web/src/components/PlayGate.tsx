@@ -11,5 +11,5 @@ import { PlayScreen } from "@/components/PlayScreen";
  * route stays static and the provider only mounts for the one screen that needs it.
  */
 export function PlayGate() {
-  return <PrivyGate>{(wallet) => <PlayScreen wallet={wallet} />}</PrivyGate>;
+  return <PrivyGate>{(wallet, signer) => <PlayScreen wallet={wallet} signer={signer} />}</PrivyGate>;
 }
