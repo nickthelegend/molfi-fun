@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@molfi/sdk": "workspace:*",
+    "@privy-io/node": "^0.34.0",
+    "@privy-io/react-auth": "^3.40.0",
     "@react-three/fiber": "^9.0.0",
     "@starknet-io/get-starknet-core": "^6.0.1",
     "@starknet-io/types-js": "^0.10.3",

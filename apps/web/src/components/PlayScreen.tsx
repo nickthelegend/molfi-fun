@@ -1,5 +1,7 @@
 "use client";
 
+import type { Wallet } from "@/components/PrivyGate";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -113,7 +115,15 @@ const COIN_TONE: Record<string, string> = {
   STRK: "#8b5cf6",
 };
 
-export function PlayScreen() {
+export function PlayScreen({ wallet }: { wallet?: Wallet }) {
+  /**
+   * The connected wallet, if the gate handed one down.
+   *
+   * Optional because the guided run and the attract loop render the same screen without one.
+   * Where it matters — the live desk's balance and its signer — the absence is the difference
+   * between "not connected" and "zero", and those must never look the same.
+   */
+  void wallet;
   const router = useRouter();
   const { prefs, set: setPref, loaded: prefsLoaded } = usePrefs();
   const osReduced = usePrefersReducedMotion();

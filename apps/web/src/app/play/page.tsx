@@ -1,7 +1,7 @@
-import { PlayScreen } from "@/components/PlayScreen";
+import { PlayGate } from "@/components/PlayGate";
 
 export const metadata = { title: "molfi — the desk" };
 
 export default function Play() {
-  return <PlayScreen />;
+  return <PlayGate />;
 }
