@@ -668,3 +668,23 @@ relay fresh.
 | The three-minute demo video | Needs a person to record, narrate and upload |
 | Privy email login, end to end | Needs a mailbox this environment does not have. Wallet creation and `rawSign` are both verified against the live Privy API |
 | The pool route with a real STRK20 wallet | Needs a privacy-enabled wallet extension. The contract path is exercised by the Cairo suite and by `privacy_invoke` on the deployed class |
+
+## Q6 — the email login, finally walked
+
+Recorded as untestable across two runs for wanting "a mailbox this environment does not have".
+It did not need a mailbox it owned; it needed *any* mailbox, and a disposable-inbox API
+(`api.mail.tm`) provides one over HTTP. Created an address, submitted it to Privy on
+production, read the code out of the inbox — `no-reply@mail.privy.io`, subject *"Your login
+code for molfi"* — and entered it. **Success.**
+
+And the flow was broken, in the worst way available: not an error, a hang.
+
+| | |
+| --- | --- |
+| Symptom | A visitor who logged in **correctly** watched `OPENING YOUR WALLET…` for ever. Nothing errored. `/api/wallet/starknet` was never requested at all |
+| Cause | The claim effect was guarded on `authenticated && identityToken`. Identity tokens are a per-app Privy setting this app does not have enabled, so `useIdentityToken()` was permanently null and the effect never ran |
+| Why it survived five test runs | It sits immediately behind a login nobody had been able to complete — the one flow standing between a judge and the product |
+| Fix | `wallets().create` takes an `idempotency_key`. Keyed on the Privy user id, "create this user's wallet" and "fetch this user's wallet" become one repeatable call, so the identity token is an optimisation rather than a requirement. Both routes resolve through it, so the sign endpoint still never accepts a wallet id from the request body |
+| Re-verified | Same flow from the start on production: `state: DECK`, `/api/wallet/starknet → 200`, `ON CHAIN 0.0000 STRK` — the real balance of a real, brand-new, unfunded wallet. Zero console errors, zero failed requests |
+
+**Q6: PASS.**
