@@ -26,3 +26,5 @@ apps/poker/.env
 positions/
 scratch/
 apps/web/tsconfig.tsbuildinfo
+demo/molfi-demo/node_modules/
+demo/molfi-demo/renders/

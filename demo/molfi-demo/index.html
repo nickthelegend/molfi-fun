@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0; width: 1080px; height: 1920px; overflow: hidden;
+        background: #0b0b0c;
+      }
+      body { font-family: "Inter", system-ui, sans-serif; }
+      .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+      /* The tiled ground the product itself uses, so the film sits on the same surface. */
+      .ground {
+        position: absolute; inset: 0; background: #0b0b0c;
+      }
+
+      .stage { position: absolute; inset: 0; }
+
+      /* A captured screen, floated on the ground with the device's own shadow. */
+      .shot {
+        position: absolute; left: 50%; top: 92px;
+        width: 700px; transform: translateX(-50%);
+        border-radius: 26px; overflow: hidden;
+        box-shadow: 0 40px 120px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.07);
+      }
+      .shot img { display: block; width: 100%; }
+
+      /* Caption block, bottom third — never over the device. */
+      .cap {
+        position: absolute; left: 72px; right: 72px; bottom: 130px;
+        padding-top: 46px;
+      }
+      /*
+        A soft floor under the caption.
+        The shots are tall and their lower edge lands near the type; without this the first
+        line reads against whatever the screenshot happened to be showing there.
+      */
+      .cap:before {
+        content: ""; position: absolute; left: -72px; right: -72px; top: -140px; bottom: -130px;
+        background: linear-gradient(to bottom, rgba(11,11,12,0) 0%, rgba(11,11,12,.92) 34%, #0b0b0c 60%);
+        z-index: -1;
+      }
+      .kicker {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 26px; letter-spacing: .18em; color: #ff9f0a;
+        margin-bottom: 20px;
+      }
+      .line {
+        font-size: 54px; line-height: 1.22; font-weight: 800;
+        letter-spacing: -.02em; color: #fff;
+      }
+      .sub {
+        margin-top: 22px; font-size: 32px; line-height: 1.45;
+        color: rgba(255,255,255,.58); font-weight: 500;
+      }
+
+      /* Full-bleed statement cards for the numbers that carry the argument. */
+      .card { position: absolute; inset: 0; display: flex;
+        flex-direction: column; justify-content: center; padding: 0 96px; }
+      .big {
+        font-size: 132px; line-height: 1; font-weight: 800;
+        letter-spacing: -.045em; color: #fff;
+      }
+      .green { color: #3ddc84; }
+      .amber { color: #ff9f0a; }
+      .rowlab {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 27px; letter-spacing: .12em; color: rgba(255,255,255,.34);
+      }
+      .rowval {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 40px; color: #fff;
+      }
+      .row { display: flex; justify-content: space-between; align-items: baseline;
+        padding: 22px 0; border-bottom: 1px solid rgba(255,255,255,.09); }
+
+      .wordmark {
+        font-size: 128px; font-weight: 800; letter-spacing: -.055em; color: #fff;
+      }
+      .chip {
+        display: inline-block; padding: 12px 26px; border-radius: 999px;
+        background: #ff9f0a; color: #000; font-weight: 800; font-size: 30px;
+        letter-spacing: -.01em;
+      }
+      /*
+        The strike is a real element, not a ::after.
+        GSAP cannot resolve a pseudo-element from a selector string — `#s4band:after`
+        silently matches nothing and the rule never animates, which `check` reports as a
+        missing target rather than a broken effect. An <i> can be tweened.
+      */
+      .strike { position: relative; color: rgba(255,255,255,.42); }
+      .strike > i {
+        position: absolute; left: -6px; right: -6px; top: 52%;
+        height: 5px; background: #e8453c; transform-origin: left center;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="96"
+      data-width="1080"
+      data-height="1920"
+    >
+      <div class="ground"></div>
+
+      <!-- ─────────────────────────────── 0–8  the claim -->
+      <div id="s1" class="clip stage" data-start="0" data-duration="8" data-track-index="1">
+        <div class="card">
+          <div id="s1w" class="wordmark">molfi</div>
+          <div id="s1a" class="line" style="margin-top:34px">
+            A prediction market where
+            your position is a commitment,
+            <span class="amber">never an address.</span>
+          </div>
+          <div id="s1b" class="sub">Starknet · STRK20 privacy pool</div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────── 8–22  why privacy is the mechanic -->
+      <div id="s2" class="clip stage" data-start="8" data-duration="14" data-track-index="1">
+        <div class="card">
+          <div class="kicker">WHY IT IS THE MECHANIC, NOT A FEATURE</div>
+          <div class="line" style="font-size:62px">
+            On a public chain your order is a
+            <span class="amber">signal</span> before it is a trade.
+          </div>
+          <div id="s2b" class="sub" style="font-size:34px">
+            Anyone watching can price against it, crowd it, or get there first.
+            Take the privacy away and molfi is a worse version of every public
+            prediction market.
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────── 22–38  the console -->
+      <div id="s3" class="clip stage" data-start="22" data-duration="16" data-track-index="1">
+        <div id="s3shot" class="shot"><img src="assets/06-console-crop.png" alt="" /></div>
+        <div class="cap">
+          <div class="kicker">THE DESK</div>
+          <div class="line" style="font-size:50px">Pick a band. Pick how long it has to hold.</div>
+          <div class="sub">Tighter pays more. Two games on one console — a range, or just up and down.</div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────── 38–54  what the chain is told -->
+      <div id="s4" class="clip stage" data-start="38" data-duration="16" data-track-index="1">
+        <div class="card">
+          <div class="kicker">WHAT THE CONTRACT IS ACTUALLY TOLD</div>
+          <div class="row" style="margin-top:30px">
+            <span class="rowlab">YOUR BAND</span>
+            <span class="rowval strike">79,362.67 – 79,840.28<i id="s4band"></i></span>
+          </div>
+          <div class="row">
+            <span class="rowlab">SENT TO THE CHAIN</span>
+            <span id="s4off" class="rowval green">low_off 300000 · high_off 300000</span>
+          </div>
+          <div id="s4note" class="sub" style="margin-top:40px">
+            How far the band reaches from its own midpoint, with the price divided
+            out. That prices the position exactly and says
+            <span style="color:#fff">nothing about what it predicts.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────── 54–68  the leak that was, and is not -->
+      <div id="s5" class="clip stage" data-start="54" data-duration="14" data-track-index="1">
+        <div id="s5shot" class="shot" style="top:92px; width:640px">
+          <img src="assets/02-privacy.png" alt="" />
+        </div>
+        <div class="cap">
+          <div class="kicker">EVERY PROJECT CLAIMS PRIVACY</div>
+          <div class="line" style="font-size:48px">This page says what does <span class="amber">not</span> stay hidden.</div>
+          <div class="sub">
+            It carried a red banner for fifty-two markets, because the deployed class
+            stored the band in the clear. It is drawn from the contract's own ABI — so
+            it retracted itself when that changed. Nobody edited the page.
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────── 68–84  the trade -->
+      <div id="s6" class="clip stage" data-start="68" data-duration="16" data-track-index="1">
+        <div class="card">
+          <div class="kicker">OPENED · SETTLED · PAID — ON SEPOLIA</div>
+          <div class="row" style="margin-top:26px">
+            <span class="rowlab">STAKED</span><span class="rowval">2.0000 STRK</span>
+          </div>
+          <div class="row">
+            <span class="rowlab">SETTLED AT</span><span class="rowval">79,642.46</span>
+          </div>
+          <div class="row">
+            <span class="rowlab">PUBLISHERS</span><span class="rowval">10</span>
+          </div>
+          <div class="row">
+            <span class="rowlab">PAID OUT</span><span id="s6pay" class="rowval green">2.1026 STRK</span>
+          </div>
+          <div id="s6note" class="sub" style="margin-top:36px">
+            <span style="color:#fff">2 × 1.0513 = 2.1026</span>, to the unit, against the
+            multiplier quoted before the position was opened. The band was revealed for
+            the first time in the claim.
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────────────────────────── 84–96  recompute it yourself -->
+      <div id="s7" class="clip stage" data-start="84" data-duration="12" data-track-index="1">
+        <div id="s7shot" class="shot" style="top:92px; width:640px">
+          <img src="assets/04-market.png" alt="" />
+        </div>
+        <div class="cap">
+          <div class="kicker">EVERY CHECK PASSED</div>
+          <div class="line" style="font-size:48px">Recompute it as a stranger.</div>
+          <div class="sub">
+            Eleven checks, each with what the chain says beside what recomputing gives.
+            No wallet, no account. <span style="color:#fff">molfi.fun</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      /* Scene 1 — the name lands, the claim follows it. */
+      tl.fromTo("#s1w", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 0.3)
+        .fromTo("#s1a", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 1.0)
+        .fromTo("#s1b", { opacity: 0 }, { opacity: 1, duration: 0.8 }, 1.8)
+        .to("#s1 .card", { opacity: 0, duration: 0.5 }, 7.4);
+
+      /* Scene 2 — the argument. */
+      tl.fromTo("#s2 .kicker", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 8.3)
+        .fromTo("#s2 .line", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 8.6)
+        .fromTo("#s2b", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 10.4)
+        .to("#s2 .card", { opacity: 0, duration: 0.5 }, 21.4);
+
+      /* Scene 3 — the device rises into frame and holds. */
+      tl.fromTo("#s3shot", { opacity: 0, y: 70, scale: 0.97 },
+                 { opacity: 1, y: 0, scale: 1, duration: 1.1, ease: "power3.out" }, 22.2)
+        .fromTo("#s3 .cap", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 23.0)
+        /* A slow push so a still frame still breathes. */
+        .to("#s3shot", { scale: 1.045, duration: 12.8, ease: "none" }, 23.4)
+        .to("#s3 .cap", { opacity: 0, duration: 0.5 }, 37.4)
+        .to("#s3shot", { opacity: 0, duration: 0.5 }, 37.4);
+
+      /* Scene 4 — the band is struck through, the ratios take its place. */
+      tl.fromTo("#s4 .kicker", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 38.3)
+        .fromTo("#s4 .row", { opacity: 0, x: -24 },
+                 { opacity: 1, x: 0, duration: 0.7, stagger: 0.5, ease: "power3.out" }, 38.7)
+        .fromTo("#s4band", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 40.4)
+        .fromTo("#s4note", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 41.6)
+        .to("#s4 .card", { opacity: 0, duration: 0.5 }, 53.4);
+
+      /* Scene 5 — the honesty page. */
+      tl.fromTo("#s5shot", { opacity: 0, y: 60 }, { opacity: 1, y: 0, duration: 1.0, ease: "power3.out" }, 54.2)
+        .fromTo("#s5 .cap", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 55.0)
+        .to("#s5shot", { scale: 1.04, duration: 10.8, ease: "none" }, 55.4)
+        .to("#s5 .cap", { opacity: 0, duration: 0.5 }, 67.4)
+        .to("#s5shot", { opacity: 0, duration: 0.5 }, 67.4);
+
+      /* Scene 6 — the ledger of the real trade, one row at a time. */
+      tl.fromTo("#s6 .kicker", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 68.3)
+        .fromTo("#s6 .row", { opacity: 0, x: -22 },
+                 { opacity: 1, x: 0, duration: 0.6, stagger: 0.75, ease: "power3.out" }, 68.7)
+        .fromTo("#s6pay", { scale: 0.9 }, { scale: 1, duration: 0.7, ease: "back.out(2)" }, 71.9)
+        .fromTo("#s6note", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 73.2)
+        .to("#s6 .card", { opacity: 0, duration: 0.5 }, 83.4);
+
+      /* Scene 7 — the verifier, and the close. */
+      tl.fromTo("#s7shot", { opacity: 0, y: 60 }, { opacity: 1, y: 0, duration: 1.0, ease: "power3.out" }, 84.2)
+        .fromTo("#s7 .cap", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 85.0)
+        .to("#s7shot", { scale: 1.035, duration: 8.8, ease: "none" }, 85.4);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

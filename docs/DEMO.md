@@ -4,6 +4,12 @@
 list, timed, with the exact clicks. Everything in it is live and was verified working on
 production; nothing here needs funding, a wallet, or a market to be open.
 
+**Updated 2026-09-06, after the declare landed.** The beats that described the band leak as a
+live failure now describe it as history, because it is — and the strongest single moment in the
+demo is no longer the honest admission of a broken promise but the transaction that closed it:
+a position opened at a band the chain never saw, settled against a ten-publisher median, and
+paid `2.1026 STRK` on a `1.0513x` quote. Exact, and checkable.
+
 Record at **414 × 900 or narrower** — the console is designed mobile-first and a wide window
 puts it in a letterbox.
 
@@ -29,12 +35,16 @@ and the countdown on the next cutoff.
 Scroll the three groups: **Hidden**, **Public and it has to be**, **What an observer could
 still infer**.
 
-**Stop on the red banner.** Do not skip it — it is the strongest thing on the page.
+**There used to be a red banner here. Say why there isn't.**
 
-> "And right now it says the deployed contract does not keep the main promise. That class
-> stores the band in the clear. The fix is in the repository and costs sixty STRK to declare,
-> which has not been paid. This box is drawn from the deployed contract's own ABI — it
-> disappears by itself when that changes."
+> "Until the sixth of September this page carried a red box saying the deployed contract did
+> not keep the main promise — that class stored the band in the clear. The fix cost sixty STRK
+> to declare and that had not been paid. It has now. The box was drawn from the deployed
+> contract's own ABI rather than a config flag, so it retracted itself the moment a class
+> without the band went live. Nobody edited the page."
+
+**Then read the live totals.** They say `2.0000 STRK staked` — the first real position this
+market has ever held, and the number that was `0.0000` for fifty-two settled markets.
 
 ## 0:50 – 1:10 · The integration, not a description of it
 
