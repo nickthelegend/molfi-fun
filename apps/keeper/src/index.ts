@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { Call } from "starknet";
-import { MARKETS } from "@molfi/sdk";
+import { HOUSE_EDGE_BPS, MARKETS, ROUND_SECONDS } from "@molfi/sdk";
 import * as db from "./db.ts";
 import { requestDrip } from "./faucet.ts";
 import {
@@ -14,6 +14,13 @@ import {
   readMainnetMedian,
   readRelayed,
   relayCall,
+  TOKEN,
+  UPDOWN,
+  allRounds,
+  approveUpDownCall,
+  createRoundCall,
+  fundRoundCall,
+  settleRoundCall,
   reason,
   send,
   settleCall,
@@ -256,6 +263,86 @@ async function settleDue(markets: Awaited<ReturnType<typeof allMarkets>>): Promi
  * market with no bankroll can sell nothing at all and an unfunded listing is worse than no
  * listing.
  */
+/**
+ * The direction game's half of the cycle: settle what is due, list what is missing, fund it.
+ *
+ * Kept as one function rather than threaded through `settleDue` / `openNewRounds`, because
+ * those are typed to `OnChainMarket` and a direction round is a different shape — a reference
+ * price and one multiplier where a range market has a seventeen-knot table. Sharing them would
+ * mean a union type every caller has to discriminate, for no gain: the two games list on the
+ * same cadence and settle against the same relay, and that is all they have in common.
+ *
+ * Skipped entirely when `MOLFI_UPDOWN` is unset, which is the honest state on a network where
+ * the direction game is not deployed.
+ */
+async function tendDirectionRounds(): Promise<void> {
+  if (!UPDOWN) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const rounds = await allRounds();
+
+  // ---- settle anything past its cutoff
+  const due = rounds.filter((r) => !r.isSettled && r.cutoffAt <= now);
+  for (const r of due) {
+    try {
+      const tx = await send(settleRoundCall(r.id), `settled round ${r.id}`);
+      state.settled += 1;
+      await db.record({
+        kind: "settle", network: NETWORK, pair: r.pair, marketId: r.id, txHash: tx,
+        ok: true, detail: `direction round ${r.roundSeconds}s`,
+      });
+    } catch (e) {
+      const why = reason(e);
+      // The same two waits the range market has: the relay has not caught up, or the cutoff
+      // has not actually passed on the chain's clock. Neither is a failure worth recording.
+      if (why === "STALE_PRICE" || why === "BEFORE_CUTOFF") {
+        log(`settle round ${r.id}: waiting (${why})`);
+        continue;
+      }
+      log(`settle round ${r.id}: FAILED ${why}`);
+    }
+  }
+
+  // ---- list one if none is open
+  const open = rounds.filter((r) => !r.isSettled && r.cutoffAt > now);
+  if (open.length > 0) return;
+
+  const balance = await strkBalance(account.address);
+  if (balance < LOW_BALANCE) {
+    log(`not listing a direction round: balance ${balance} is below the floor`);
+    return;
+  }
+
+  const seconds = ROUND_SECONDS[TIER] ?? 900;
+  const pair = MARKETS[0]?.label ?? "BTC/USD";
+  try {
+    /**
+     * List, approve and fund in one transaction.
+     *
+     * A round with no bankroll cannot sell a ticket — `open_ticket` reserves the full payout
+     * and refuses when the round cannot cover it — so a listed-but-unfunded round is a market
+     * that looks open and rejects everyone. Doing it in one transaction means it can never be
+     * observed in that state.
+     */
+    const tx = await send(
+      [
+        createRoundCall(pair, now + seconds + 60, seconds, TOKEN, Number(HOUSE_EDGE_BPS)),
+        approveUpDownCall(BANKROLL),
+        fundRoundCall(rounds.length + 1, BANKROLL),
+      ],
+      `listed and funded direction round for ${pair}`,
+    );
+    state.listed += 1;
+    state.stoppedListing = null;
+    await db.record({
+      kind: "list", network: NETWORK, pair, marketId: rounds.length + 1, txHash: tx,
+      ok: true, detail: `direction round, ${seconds}s, ${BANKROLL} bankroll`,
+    });
+  } catch (e) {
+    log(`list direction round: FAILED ${reason(e)}`);
+  }
+}
+
 async function openNewRounds(): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   let balance = await strkBalance(account.address);
@@ -487,6 +574,7 @@ async function cycle(): Promise<void> {
     markets = await allMarkets();
     await fundUnfunded(markets);
     await openNewRounds();
+    await tendDirectionRounds();
     await indexMarkets(await allMarkets());
     state.lastError = null;
   } catch (e) {

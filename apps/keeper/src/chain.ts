@@ -31,6 +31,14 @@ export const MAINNET_RPC =
   process.env.MAINNET_RPC_URL ?? "https://api.cartridge.gg/x/starknet/mainnet";
 
 export const MARKET = required("MOLFI_MARKET");
+/**
+ * The direction game, optional.
+ *
+ * `required` rather than optional would tie the keeper's boot to a contract that may not be
+ * deployed on a given network — it is null on mainnet and on devnet. Empty means "this
+ * network has no direction game", and the cycle skips that half rather than failing.
+ */
+export const UPDOWN = process.env.MOLFI_UPDOWN ?? "";
 export const RELAY = required("MOLFI_RELAY");
 export const TOKEN = required("MOLFI_TOKEN");
 
@@ -459,3 +467,60 @@ export async function strkBalance(who: string): Promise<bigint> {
 }
 
 export { ROUND_SECONDS, hash };
+
+/** List a direction round. The reference price is read by the contract, never supplied. */
+export const createRoundCall = (
+  pair: string,
+  cutoffAt: number,
+  roundSeconds: number,
+  token: string,
+  houseEdgeBps: number,
+): Call => ({
+  contractAddress: UPDOWN,
+  entrypoint: "create_round",
+  calldata: [
+    shortString(pair),
+    hex(cutoffAt),
+    hex(roundSeconds),
+    token,
+    hex(houseEdgeBps),
+    "0x0",
+  ],
+});
+
+export const fundRoundCall = (roundId: number, amount: bigint): Call => ({
+  contractAddress: UPDOWN,
+  entrypoint: "fund_round",
+  calldata: [hex(roundId), hex(amount), "0x0"],
+});
+
+export const settleRoundCall = (roundId: number): Call => ({
+  contractAddress: UPDOWN,
+  entrypoint: "settle",
+  calldata: CallData.compile([roundId]),
+});
+
+/** Approve the direction market to pull a bankroll, the same shape the range market needs. */
+export const approveUpDownCall = (amount: bigint): Call => ({
+  contractAddress: TOKEN,
+  entrypoint: "approve",
+  calldata: [UPDOWN, hex(amount), "0x0"],
+});
+
+/** Every direction round the contract holds, newest last. */
+export async function allRounds(): Promise<import("@molfi/sdk").OnChainRound[]> {
+  if (!UPDOWN) return [];
+  const { decodeRound } = await import("@molfi/sdk");
+  const [countRaw] = await provider.callContract({
+    contractAddress: UPDOWN, entrypoint: "round_count", calldata: [],
+  });
+  const count = Number(BigInt(countRaw));
+  const out: import("@molfi/sdk").OnChainRound[] = [];
+  for (let id = 1; id <= count; id += 1) {
+    const r = await provider.callContract({
+      contractAddress: UPDOWN, entrypoint: "get_round", calldata: [hex(id)],
+    });
+    out.push(decodeRound(id, r as string[]));
+  }
+  return out;
+}
