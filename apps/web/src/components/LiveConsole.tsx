@@ -504,10 +504,24 @@ export function LiveConsole({ onBackToDemo }: { onBackToDemo: () => void }) {
               ) : null}
 
                   <p className="mono mt-2 text-[9px] leading-[1.45] tracking-[0.08em] text-dim">
-                {/* What is actually hidden depends on the route, and saying "your band and
-                    size stay hidden" on a direct trade would be a lie printed on the screen
-                    the trade is made from. */}
-                {route === "direct" ? "YOUR BAND STAYS HIDDEN." : "YOUR BAND AND SIZE STAY HIDDEN."}
+                {/*
+                  * What is actually hidden depends on the route, and there is no route until
+                  * a wallet is connected.
+                  *
+                  * Saying "your band and size stay hidden" on a direct trade would be a lie
+                  * printed on the screen the trade is made from. Saying it with no wallet at
+                  * all was a smaller version of the same thing: a promise about a route
+                  * nobody had chosen yet, and one a non-STRK20 wallet would not get. With no
+                  * connection this states what the deployment offers instead of what "your"
+                  * trade will do.
+                  */}
+                {!route
+                  ? state.directRoute === false
+                    ? "POOL ONLY HERE · A STRK20 WALLET HIDES YOU, THE SIZE AND THE BAND."
+                    : "CONNECT A WALLET TO SEE WHICH ROUTE YOU GET."
+                  : route === "direct"
+                    ? "YOUR BAND STAYS HIDDEN."
+                    : "YOUR BAND AND SIZE STAY HIDDEN."}
                 <br />
                 {roundLabel(tier).toUpperCase()} ROUND ·{" "}
                 {state.connection ? shortAddress(state.connection.address, 6, 4) : "NOT CONNECTED"}

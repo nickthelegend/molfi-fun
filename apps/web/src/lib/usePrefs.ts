@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Player preferences, persisted per browser.
@@ -68,9 +68,15 @@ export function usePrefs() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setPrefs(read());
+    const first = read();
+    latest.current = first;
+    setPrefs(first);
     setLoaded(true);
-    const sync = () => setPrefs(read());
+    const sync = () => {
+      const next = read();
+      latest.current = next;
+      setPrefs(next);
+    };
     window.addEventListener(EVENT, sync);
     window.addEventListener("storage", sync);
     return () => {
@@ -79,17 +85,38 @@ export function usePrefs() {
     };
   }, []);
 
+  /**
+   * The current value, readable without putting it in `set`'s dependency list.
+   *
+   * Kept in step from both directions: from state, for changes that arrived over the
+   * broadcast, and inside `set`, so two changes in one tick do not both read the value from
+   * before the first.
+   */
+  const latest = useRef(prefs);
+  useEffect(() => {
+    latest.current = prefs;
+  }, [prefs]);
+
+  /**
+   * Persist and broadcast *outside* the state updater.
+   *
+   * These used to run inside `setPrefs(p => …)`. React calls that updater during the render
+   * phase, so dispatching the broadcast from it made every other `usePrefs` in the tree call
+   * `setPrefs` while this component was still rendering — React's
+   * "Cannot update a component while rendering a different component", logged three times
+   * over from Settings, Customize and the live console. Writing to localStorage from render
+   * was the same bug wearing a different hat.
+   */
   const set = useCallback(<K extends keyof Prefs>(key: K, value: Prefs[K]) => {
-    setPrefs((p) => {
-      const next = { ...p, [key]: value };
-      try {
-        window.localStorage.setItem(KEY, JSON.stringify(next));
-      } catch {
-        /* storage refused; the change still applies for this session */
-      }
-      window.dispatchEvent(new Event(EVENT));
-      return next;
-    });
+    const next = { ...latest.current, [key]: value };
+    latest.current = next;
+    setPrefs(next);
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      /* storage refused; the change still applies for this session */
+    }
+    window.dispatchEvent(new Event(EVENT));
   }, []);
 
   const reset = useCallback(() => {
@@ -98,6 +125,7 @@ export function usePrefs() {
     } catch {
       /* nothing to clear */
     }
+    latest.current = DEFAULT_PREFS;
     setPrefs(DEFAULT_PREFS);
     window.dispatchEvent(new Event(EVENT));
   }, []);
