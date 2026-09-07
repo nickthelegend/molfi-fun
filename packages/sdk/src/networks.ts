@@ -131,7 +131,7 @@ export const MOLFI_MARKET: Record<NetworkName, string | null> = {
    * settlement count that does not.
    */
   sepolia: "0x053b17219aa45008548e3633b9fcd78ec9540b00d71fd34ec6217599d3298f1f",
-  mainnet: null,
+  mainnet: "0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9",
 };
 
 /**

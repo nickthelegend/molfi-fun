@@ -1,0 +1,118 @@
+{
+  "network": "mainnet",
+  "deployedAt": "2026-09-07T17:23:04.557Z",
+  "classHash": "0x0099e28661d9a1023b7d95d45e40dd5608fe32079a99f9bd6e18b37964dc8417",
+  "market": "0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9",
+  "oracle": "0x2a85bd616f912537c50a49a4076db02c00b29b2cdc8a197ce92ed1837fa875b",
+  "token": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  "pool": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+  "owner": "0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f",
+  "bankrollPerMarket": "5000000000000000000",
+  "settleable": true,
+  "oracleNote": [
+    "SOL/USD: the oracle does not carry this pair (Contract error)",
+    "XRP/USD: the oracle does not carry this pair (Contract error)",
+    "DOGE/USD: the oracle does not carry this pair (Contract error)",
+    "LINK/USD: the oracle does not carry this pair (Contract error)",
+    "AVAX/USD: the oracle does not carry this pair (Contract error)"
+  ],
+  "skippedPairs": [
+    "SOL/USD",
+    "XRP/USD",
+    "DOGE/USD",
+    "LINK/USD",
+    "AVAX/USD"
+  ],
+  "markets": [
+    {
+      "pair": "BTC/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788816063
+    },
+    {
+      "pair": "ETH/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788816063
+    },
+    {
+      "pair": "STRK/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788816063
+    },
+    {
+      "pair": "WBTC/USD",
+      "seconds": 14400,
+      "cutoffAt": 1788816063
+    }
+  ],
+  "transactions": [
+    "0x01b5c98db224b3e1547363401480feb8449989011b02d868bb76a7c787393104",
+    "0x05216ca2e525199f2b8a9ab4ac252093e7ba4ea696d0c91f2686a9834039bddc",
+    "0x05d013bcd0833a2b6bef47de3aac8ac504df7fe43ae6baa8b4dd231fd92ba548",
+    "0x0427053cb94b8e3a167f00bd6c3568f1f2e183f14ef5617ffa820b8e2f8d32d0",
+    "0x032e99b955f617fe80aadd8a8d5e27f47cab51eee44d0f73303fa6e6a79c51eb",
+    "0x04008e34322365bd19c07714dba5451cc1ddaf6c6711be2aaef4d35b806b2cff",
+    "0x068791d225e83f581bd18c66acd4516fcf91cfd14042e166d5a8f4a1903abc65",
+    "0x07445742d327a10a9395df7f82284c8af2cc04031c2e5ca1e63889293d13a24a",
+    "0x01d7d11f35aae5078e375cccc53a8cf86aebfb711eec7867b95e57bd266ec4f5",
+    "0x036733490c36806889348b6ab0d3879b439699b4c88729b0e63393b06c012e62",
+    "0x0698df34713efeac5b6da0424d7a9a139e6cc0b13517940a7a2111beb7271c1c",
+    "0x07a1bfd57939b05f5245d3a945e32b04f913eb6a1280f42adb50c680804809b0",
+    "0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d"
+  ],
+  "transactionLog": [
+    {
+      "hash": "0x01b5c98db224b3e1547363401480feb8449989011b02d868bb76a7c787393104",
+      "what": "deploy MolfiMarket"
+    },
+    {
+      "hash": "0x05216ca2e525199f2b8a9ab4ac252093e7ba4ea696d0c91f2686a9834039bddc",
+      "what": "listed BTC/USD 14400s"
+    },
+    {
+      "hash": "0x05d013bcd0833a2b6bef47de3aac8ac504df7fe43ae6baa8b4dd231fd92ba548",
+      "what": "listed ETH/USD 14400s"
+    },
+    {
+      "hash": "0x0427053cb94b8e3a167f00bd6c3568f1f2e183f14ef5617ffa820b8e2f8d32d0",
+      "what": "listed STRK/USD 14400s"
+    },
+    {
+      "hash": "0x032e99b955f617fe80aadd8a8d5e27f47cab51eee44d0f73303fa6e6a79c51eb",
+      "what": "listed WBTC/USD 14400s"
+    },
+    {
+      "hash": "0x04008e34322365bd19c07714dba5451cc1ddaf6c6711be2aaef4d35b806b2cff",
+      "what": "sent bankroll for market 1"
+    },
+    {
+      "hash": "0x068791d225e83f581bd18c66acd4516fcf91cfd14042e166d5a8f4a1903abc65",
+      "what": "funded market 1"
+    },
+    {
+      "hash": "0x07445742d327a10a9395df7f82284c8af2cc04031c2e5ca1e63889293d13a24a",
+      "what": "sent bankroll for market 2"
+    },
+    {
+      "hash": "0x01d7d11f35aae5078e375cccc53a8cf86aebfb711eec7867b95e57bd266ec4f5",
+      "what": "funded market 2"
+    },
+    {
+      "hash": "0x036733490c36806889348b6ab0d3879b439699b4c88729b0e63393b06c012e62",
+      "what": "sent bankroll for market 3"
+    },
+    {
+      "hash": "0x0698df34713efeac5b6da0424d7a9a139e6cc0b13517940a7a2111beb7271c1c",
+      "what": "funded market 3"
+    },
+    {
+      "hash": "0x07a1bfd57939b05f5245d3a945e32b04f913eb6a1280f42adb50c680804809b0",
+      "what": "sent bankroll for market 4"
+    },
+    {
+      "hash": "0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d",
+      "what": "funded market 4"
+    }
+  ],
+  "complete": true
+}
