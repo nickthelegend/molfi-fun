@@ -91,7 +91,7 @@ without the operator funding an account first.
 
 | # | Task | Status |
 | --- | --- | --- |
-| 3.1 | Fund a mainnet deployer with ≥ 120 STRK. | **BLOCKED — needs real funds.** All molfi accounts hold 0 STRK on mainnet |
+| 3.1 | Fund a mainnet deployer with ≥ 150 STRK. | **BLOCKED — needs real money, and there is no other door.** Re-checked 2026-09-07 against `SN_MAIN` directly: all four molfi accounts hold **0.000000 STRK and 0.000000 ETH**, and none of them is even deployed. There is no mainnet faucet and no credential that would change this — mainnet STRK has to be bought. What *was* checked while here: the STRK20 pool is live at `0x040337b1…` (class `0x67dddd89d80f…`), and both declares priced against mainnet's current L2 gas (28.16 gfri) come to **103.15 STRK** — 40.24 for `UpDownMarket`, 62.90 for `MolfiMarket` — plus deploys, listings and bankroll. So the number to fund is ~150 |
 | 3.2 | `pnpm preflight` (defaults to mainnet) and read its warnings. | DONE — clear; mainnet Pragma settles all four original pairs, so mainnet needs no relay |
 | 3.3 | Declare and deploy `MolfiMarket` and `UpDownMarket` on mainnet. **Do not deploy `PriceRelay`** — mainnet reads Pragma directly. | **BLOCKED on 3.1** |
 | 3.4 | Set `market` and `upDownMarket` for mainnet in `packages/sdk/src/networks.ts`. | **BLOCKED on 3.3** |
@@ -144,7 +144,7 @@ Every gap, tied to the task it blocks. Ordered by what it costs the submission.
 
 | # | Gap | Evidence | Blocks |
 | --- | --- | --- | --- |
-| **G1** | **OPEN.** Nothing exists on mainnet; the sprint scores mainnet pool transactions. | Re-checked: keeper, faucet and dev account all hold **0.000000 STRK** on mainnet | 3.1–3.7, W1 |
+| **G1** | **OPEN, and the only gap in this plan that money is the whole of.** Nothing exists on mainnet; the sprint scores mainnet pool transactions. | Re-checked 2026-09-07 on `SN_MAIN`: keeper, dev and stranger accounts all **0.000000 STRK / 0.000000 ETH, none deployed**. The pool itself is live there, and the two declares price at 103.15 STRK at current mainnet gas | 3.1–3.7, W1 |
 | **G2** | **CLOSED IN CODE, DEPLOY BLOCKED.** The direction game now has a pool route. The gap as written was wrong: `updown.cairo` zeroed the owner for a pool caller but had **no `privacy_invoke`**, so the pool could never reach it. Contract, SDK and app all done; the class is not deployed. | 125 Cairo tests incl. 6 new pool-route ones; live class still answers "entrypoint does not exist", and the app probes for that | 1.7 |
 | **G3** | **CLOSED.** `demo_video` now points at `https://molfi.fun/molfi-demo.mp4`. | Verified HTTP 200 / 18.4 MB / `video/mp4` | — |
 | **G4** | **CLOSED — and the stated cause was wrong.** Production was not behind because a push failed; the Vercel project has **no git integration at all**. Deploys are manual CLI and the last was five hours old. | `vercel ls` showed the gap; `vercel --prod` fixed it; production now serves `9 MARKETS` | — |
@@ -256,5 +256,15 @@ and the keeper starts sweeping settled markets. No further code is needed for ei
 
 ### And the one thing no amount of testnet STRK fixes
 
-**Mainnet.** All accounts hold 0.000000 STRK there, and the sprint scores mainnet pool
-transactions. It spends real money, so it is the operator's call.
+**Mainnet.** All accounts hold 0.000000 STRK *and* 0.000000 ETH there, and none is deployed.
+The sprint scores mainnet pool transactions, so this is the gap that costs the submission most —
+and it is the one gap no amount of engineering closes. Mainnet STRK is bought, not requested:
+there is no faucet, no quota, no credential sitting unused in the repo. Priced at current mainnet
+gas the two declares are **103.15 STRK**; with deploys, four listings and their bankroll, fund
+**~150 STRK** to `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f` and Phase 3
+runs from `scripts/deploy.mjs --network mainnet --account ghost_deployer --yes-spend-real-money`.
+
+It spends real money, so it stays the operator's call and an agent should not make it. Everything
+that could be readied for it has been: the deploy path refuses mainnet without an explicit flag,
+the preflight is clear, mainnet Pragma settles all four original pairs without a relay, and the
+pool is confirmed live at `0x040337b1…`.
