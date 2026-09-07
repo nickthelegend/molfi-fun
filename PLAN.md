@@ -195,12 +195,20 @@ pads ~2.2× and I had already fixed that padding elsewhere in this project, so I
 `sncast`, which refuses independently at the same figure. Then I collected the Foundation
 faucet's public drip and consolidated every account molfi holds: **20.6 STRK.**
 
-**The remaining block is a tier the provider gates on being human, and it should stay that
-way.** `faucet.starknet.io` offers 100 STRK from its web form and 3,000 with a GitHub sign-in,
-and the same page says in as many words: *"Funding a script or AI agent? → API"*. The API tier
-is 5 STRK per address per 24 hours, which is the one I used and the one I got. Driving the
-100-STRK form through a browser would be taking the human tier as an agent against the site's
-own stated split, on a shared testnet resource — so it is not something to automate around.
+**The remaining block is an agent quota the provider set deliberately, and it is theirs to
+set.** This was worth checking rather than assuming, so it was checked: `faucet.starknet.io`
+runs **no captcha, no Turnstile and no bot-detection of any kind** — the 100-STRK web form
+would submit from a browser without technical resistance. The reason not to is in the site's
+own FAQ, under *"Can agents use it without a UI?"*:
+
+> **Yes.** A public, no-auth **Agent API** uses address-bound proof-of-work, quotas, and
+> cooldowns.
+
+So the provider has built a separate channel for agents, with a quota attached, and points
+agents at it. That channel gives **5 STRK per address per 24h**, which is what molfi asked for
+and received. Driving the UI form instead would be taking twenty times the agent allowance on a
+shared testnet by using the interface the quota does not cover. That is a rate limit, not an
+obstacle — and the honest way past it is a person, not a workaround.
 
 **To unblock, paste this into the form at `faucet.starknet.io`:**
 
