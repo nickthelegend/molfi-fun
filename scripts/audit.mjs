@@ -622,8 +622,20 @@ if (section("E")) {
          * undefined, "nothing was opened" is true, and the item goes green having observed
          * nothing at all. A test that cannot fail is not a test.
          */
-        want("E12", o.noOpen && /^\d+$/.test(String(o.ridingAfter)) && o.openedSomething === false,
-          `deck states NO OPEN MARKET ${o.noOpen} · riding read as "${o.ridingAfter}" · fire disabled ${o.fireDisabled} · opened by 3 presses: ${o.openedSomething}`);
+        /**
+         * Two invariants that hold whichever state the desk is in.
+         *
+         * The first version asserted the *empty* state — deck reads NO OPEN MARKET — and so
+         * went green for as long as the keeper was too broke to list anything, then failed the
+         * moment markets came back. That is a test of an outage, not of the product. What is
+         * true in both states: the deck agrees with the chain about whether this pair has an
+         * open market, and three presses of Fire with a wallet that cannot sign open nothing.
+         *
+         * `state.connection` resolves asynchronously, so `.disabled` at one instant measures a
+         * race rather than the product; it is reported and not asserted on.
+         */
+        want("E12", o.noOpen === !o.chainHasOpen && /^\d+$/.test(String(o.ridingAfter)) && o.openedSomething === false,
+          `${o.pair}: chain open ${o.chainHasOpen} vs deck NO OPEN MARKET ${o.noOpen} — agree ${o.noOpen === !o.chainHasOpen} · riding "${o.ridingAfter}" · opened by 3 presses ${o.openedSomething}`);
         want("E13", o.rawAfterFire === false && realErrors(desk.errors, false).length === 0, `no raw exception after 3 fire clicks · console ${realErrors(desk.errors, false).length} errors`);
         want("E14", o.aria === true, `every control labelled: ${o.aria}`);
       }
