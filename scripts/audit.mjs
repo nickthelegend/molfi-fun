@@ -577,7 +577,16 @@ if (section("E")) {
         const mk=[...document.querySelectorAll('button')].find(x=>/▾/.test(x.innerText)); const m0=mk.innerText.trim();
         mk.click(); await new Promise(r=>setTimeout(r,1200));
         o.market={from:m0,to:[...document.querySelectorAll('button')].find(x=>/▾/.test(x.innerText)).innerText.trim()};
+        // What the deck says, against what the chain actually holds for this pair and tier.
         o.noOpen=/NO OPEN MARKET/.test(txt());
+        const pair=(txt().match(/([A-Z]+) ▾/)||[])[1]||'BTC';
+        // mk is already the market button in this probe; a second const mk here was a
+        // redeclaration, which is a parse error, which returned undefined for the whole desk.
+        // (No backticks in this comment: it lives inside a template literal.)
+        const chainMarkets=await fetch('/api/markets').then(r=>r.json()).catch(()=>({markets:[]}));
+        const nowS=Math.floor(Date.now()/1000);
+        o.chainHasOpen=(chainMarkets.markets||[]).some(m=>!m.isSettled&&m.cutoffAt>nowS&&m.pair.startsWith(pair));
+        o.pair=pair;
         const fire=A('Fire'); o.fireDisabled=fire?.disabled;
         const ridingBefore=(txt().match(/(\\d+) RIDING/)||[])[1];
         fire?.click(); fire?.click(); fire?.click(); await new Promise(r=>setTimeout(r,3000));
