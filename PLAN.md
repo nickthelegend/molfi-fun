@@ -143,18 +143,19 @@ Every gap, tied to the task it blocks. Ordered by what it costs the submission.
 
 | # | Gap | Evidence | Blocks |
 | --- | --- | --- | --- |
-| **G1** | **Nothing exists on mainnet.** The sprint scores mainnet pool transactions; molfi has none. | All accounts hold 0 STRK on mainnet and none is deployed there | 3.1–3.7, and W1 |
-| **G2** | **The direction game has no pool route**, so stake and identity are public on it. Only the side is hidden. `updown.cairo` supports the route; the SDK action list was never written. | `positions.ts:258` pins `route: "direct"` and says why | 1.1–1.4, and W2 |
-| **G3** | **`demo_video` is empty** in the manifest although an MP4 is rendered. | `strk20.json`; `demo/molfi-demo/renders/` | 2.1–2.2, and W4 |
-| **G4** | **Production is behind the repo.** `molfi.fun/play` serves "THREE MARKETS", fixed in `69f9557`. | Fetched from production | 2.4 |
-| **G5** | **A market's bankroll can never be recovered.** `fund_market` is one-way, so every listed market locks its backing for ever. This is why the keeper drained twice; the floor guard treats the symptom. | No defund entrypoint in `market.cairo` | 4.3–4.4 |
-| **G6** | **The verifier does not cover five of the nine markets.** E1 asserts four pairs. | `scripts/verify.mjs` E1 | 5.1–5.2 |
-| **G7** | **Health reports liveness, not work.** The keeper said `ok:true` for an hour while every transaction failed. | Observed | 4.5 |
-| **G8** | **The demo video may show a product that no longer exists** — it predates nine markets, the landing rebuild and the UP/DOWN redesign. | Rendered 2026-09-06 21:24, before those commits | 2.3 |
-| **G9** | **200 STRK is permanently stranded** in an account whose salt was never recorded. | No class/salt combination reproduces `0x34ba56f9…` | 4.6 |
-| **G10** | **The direction game is BTC-only.** | `tendDirectionRounds` lists `MARKETS[0]` | 6.3 |
-| **G11** | **Two Next apps, one unreferenced.** `apps/hub` ships nothing the sprint reads. | `apps/hub` | 6.2 |
-| **G12** | **`ui/` is an empty directory.** | `ls ui` | 6.1 |
+| **G1** | **OPEN.** Nothing exists on mainnet; the sprint scores mainnet pool transactions. | Re-checked: keeper, faucet and dev account all hold **0.000000 STRK** on mainnet | 3.1–3.7, W1 |
+| **G2** | **CLOSED IN CODE, DEPLOY BLOCKED.** The direction game now has a pool route. The gap as written was wrong: `updown.cairo` zeroed the owner for a pool caller but had **no `privacy_invoke`**, so the pool could never reach it. Contract, SDK and app all done; the class is not deployed. | 125 Cairo tests incl. 6 new pool-route ones; live class still answers "entrypoint does not exist", and the app probes for that | 1.7 |
+| **G3** | **CLOSED.** `demo_video` now points at `https://molfi.fun/molfi-demo.mp4`. | Verified HTTP 200 / 18.4 MB / `video/mp4` | — |
+| **G4** | **CLOSED — and the stated cause was wrong.** Production was not behind because a push failed; the Vercel project has **no git integration at all**. Deploys are manual CLI and the last was five hours old. | `vercel ls` showed the gap; `vercel --prod` fixed it; production now serves `9 MARKETS` | — |
+| **G5** | **OPEN, and now the binding constraint.** `fund_market` is one-way, so all 120 listed markets have locked their backing for ever. That is why the keeper sits under its floor with no way back but a 5 STRK/day faucet. | No defund entrypoint; keeper at ~10 STRK against a 15 floor | 4.3–4.4 |
+| **G6** | **NOT A GAP — this plan was wrong.** E1 iterates whatever `/api/health` reports, so it covered nine pairs as soon as nine existed. | `BTC 10 · ETH 11 · STRK 12 · WBTC 8 · SOL 5 · XRP 5 · DOGE 5 · LINK 5 · AVAX 5` | — |
+| **G7** | **OPEN, narrower than written.** Health does fold in the balance floor and is correctly reporting `ok:false` today. What is still missing is an alert for a keeper whose transactions all fail while its balance is fine. | Observed both states | 4.5 |
+| **G8** | **CONFIRMED, and shipped anyway with the reason stated.** The video's argument cards are all still true; its device footage shows the pre-redesign deck. | 15-frame contact sheet | 2.3 |
+| **G9** | **OPEN, unrecoverable.** 200 STRK stranded; no class/salt combination reproduces `0x34ba56f9…`. | Brute-forced the plausible combinations | 4.6 |
+| **G10** | **CLOSED as a communication gap.** Still BTC-only, deliberately, and the deck now says `UP / DOWN RUNS ON BTC` instead of `NO OPEN ROUND`. | — | — |
+| **G11** | **NOT A GAP.** `apps/hub` is referenced — `pnpm dev:hub` and the `apps/*` workspace glob. It was undocumented, not unreferenced; the README now names it. | `package.json` | — |
+| **G12** | **NOT A GAP, and nearly a destructive mistake.** `ui` is not a directory and not empty: it is a **50 KB zip** of the original design pack. Deleted on this plan's word, checked, restored, renamed `ui.zip`. | `unzip -l` lists `DESIGN.md`, `Molfi Console.dc.html`, `tokens.css`, logos | — |
+| **G13** | **NEW, CLOSED.** The landing hero rendered **with no text at all** whenever `requestAnimationFrame` was throttled — measured at 2 fps on production with `visibilityState: "visible"`. GSAP holds the headline at `opacity: 0` until its entrance runs, so background tabs, battery savers and preview crawlers got a console and no sentence. | Reproduced on production, fixed, re-verified at 1 fps: headline/sub/CTA all 1.00 | — |
 
 ### Explicitly NOT gaps
 
@@ -170,10 +171,18 @@ Checked and clean, so nobody re-opens them:
 
 ---
 
-## 5 · What to do first
+## 5 · What is left, after the execution pass
 
-1. **Phase 2** — free, fast, and it is a third of the manifest the judges read.
-2. **Phase 1** — the privacy claim is the pitch; a judge reading `updown.cairo` will see the
-   pool route exists and is unused.
-3. **Phase 3** — needs the operator to fund mainnet. Nothing else unblocks it.
-4. **Phase 4.3** — the only remaining contract-level defect.
+Phases 1, 2, 4, 5 and 6 have been worked through. What remains is three items, and **every one
+of them is blocked on the same thing: STRK that does not exist.**
+
+1. **Fund mainnet** → unblocks Phase 3 and with it the prize bar (W1). Nothing else unblocks it.
+   Needs real money, so it is the operator's call, not an agent's.
+2. **Find ~62 STRK of Sepolia testnet** → unblocks 1.7, which deploys the class that turns the
+   direction game's pool route on. The code, the tests and the app-side probe are all done and
+   waiting; the declare is the only step left. The Foundation faucet gives 5 STRK per address
+   per day, so this is roughly a fortnight of asking politely or one web-form grant of 100.
+3. **4.3, the defund entrypoint** → also needs a declare, and it is the fix for the reason the
+   keeper keeps running out in the first place. Worth doing in the same deploy as 1.7.
+
+Everything not on this list is done and verified against production.
