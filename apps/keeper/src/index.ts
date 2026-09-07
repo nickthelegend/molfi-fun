@@ -126,6 +126,26 @@ const BANKROLL_FLOOR = LOW_BALANCE + RESERVE;
  */
 const RELAY_MIN_AGE = Number(process.env.KEEPER_RELAY_MIN_AGE ?? 420);
 
+/**
+ * How long before a market or round closes its replacement is listed.
+ *
+ * Not a nicety. Waiting for the old one to expire means the desk is *shut* between the moment
+ * it closes and the moment the next cycle notices — up to `CYCLE_MS`, several times an hour,
+ * with nothing anywhere reporting a fault because nothing has faulted. Measured on production
+ * at a 15-minute tier: markets read `open 0` at 21:37:03 and `open 9` at 21:37:50, so roughly
+ * two minutes in every fifteen the desk had nothing to trade. A visitor who arrives inside that
+ * window is told NO OPEN MARKET and reasonably concludes the product is broken.
+ *
+ * The direction game already listed on a lead for exactly this reason; the range markets did
+ * not, and they are the ones the landing page counts. Three cycles plus a floor, so a keeper on
+ * a slower loop gets a proportionally longer lead rather than reintroducing the gap quietly.
+ *
+ * The overlap is safe on both sides: the console picks the market whose remaining time is
+ * closest to the selected tier, so with an old and a new market open it hands the trader the
+ * new one, and `useRounds` offers the round with the furthest cutoff.
+ */
+const LIST_LEAD = Math.max((3 * CYCLE_MS) / 1000, 180);
+
 const state = {
   startedAt: new Date().toISOString(),
   cycles: 0,
@@ -532,7 +552,6 @@ async function tendDirectionRounds(): Promise<void> {
    * The overlap is deliberate and the console already expects it: `useRounds` offers the open
    * round with the *furthest* cutoff, so a trader is never handed the one about to expire.
    */
-  const LIST_LEAD = Math.max((3 * CYCLE_MS) / 1000, 180);
   const open = rounds.filter((r) => !r.isSettled && r.cutoffAt > now);
   const furthest = open.reduce((a, r) => (r.cutoffAt > a ? r.cutoffAt : a), 0);
   if (open.length > 0 && furthest - now > LIST_LEAD) return;
@@ -695,8 +714,10 @@ async function openNewRounds(): Promise<void> {
    */
   const fresh = await allMarkets();
   const chainNow = Math.floor(Date.now() / 1000);
+  // A market still open but inside `LIST_LEAD` of its cutoff no longer counts as covered, so
+  // its replacement is listed while it is still tradeable rather than after it has gone.
   const wanted = MARKETS.filter(
-    (m) => !fresh.some((x) => x.pair === m.label && !x.isSettled && x.cutoffAt > chainNow),
+    (m) => !fresh.some((x) => x.pair === m.label && !x.isSettled && x.cutoffAt > chainNow + LIST_LEAD),
   );
   if (wanted.length === 0) return;
 
