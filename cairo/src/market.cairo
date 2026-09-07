@@ -113,6 +113,9 @@ pub trait IMolfiMarket<T> {
     fn get_table(self: @T, market_id: u64) -> Span<u256>;
     fn accounted_for(self: @T, token: ContractAddress) -> u256;
     fn fund_market(ref self: T, market_id: u64, amount: u256);
+    /// Return a settled market's unencumbered funds to the owner. See the implementation for
+    /// what "unencumbered" means and why it is the only safe amount.
+    fn defund_market(ref self: T, market_id: u64, to: ContractAddress) -> u256;
     fn settle(ref self: T, market_id: u64);
     fn get_market(self: @T, market_id: u64) -> Market;
     fn market_count(self: @T) -> u64;
@@ -200,6 +203,7 @@ pub mod MolfiMarket {
         pub const INSOLVENT: felt252 = 'PAYOUT_EXCEEDS_STAKE';
         pub const BAD_BAND: felt252 = 'BAND_NOT_ORDERED';
         pub const NOT_OWNER: felt252 = 'CALLER_NOT_OWNER';
+        pub const NOTHING_TO_DEFUND: felt252 = 'NOTHING_TO_DEFUND';
         pub const ZERO_SIGMA: felt252 = 'ZERO_SIGMA';
         pub const ROUND_TOO_SHORT: felt252 = 'ROUND_SHORTER_THAN_ORACLE';
         pub const ZERO_FUNDING: felt252 = 'ZERO_FUNDING';
@@ -270,6 +274,7 @@ pub mod MolfiMarket {
         OracleChanged: OracleChanged,
         MarketCreated: MarketCreated,
         MarketFunded: MarketFunded,
+        MarketDefunded: MarketDefunded,
         PositionOpened: PositionOpened,
         MarketSettled: MarketSettled,
         PositionClaimed: PositionClaimed,
@@ -299,6 +304,17 @@ pub mod MolfiMarket {
         market_id: u64,
         amount: u256,
         bankroll: u256,
+    }
+
+    /// Emitted when a settled market's unencumbered funds go back to the owner. Public on
+    /// purpose: the house taking money out of a market is exactly the thing anyone auditing
+    /// this should be able to see, and to check against what the market still owes.
+    #[derive(Drop, starknet::Event)]
+    struct MarketDefunded {
+        #[key]
+        market_id: u64,
+        amount: u256,
+        to: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -642,6 +658,65 @@ pub mod MolfiMarket {
             m.bankroll = m.bankroll + amount;
             self.markets.write(market_id, m);
             self.emit(MarketFunded { market_id, amount, bankroll: m.bankroll });
+        }
+
+        /// Return what a settled market can no longer owe anyone.
+        ///
+        /// `fund_market` was one-way, and that is not a missing convenience — it is the reason
+        /// this desk keeps running out of money. Every market ever listed kept its bankroll for
+        /// ever, so listing was a permanent spend: at 129 markets the keeper had locked so much
+        /// that it could only put 0.112 STRK behind each new one, which covers a maximum stake
+        /// of about six hundredths of a token. The desk stayed open at a size nobody could
+        /// trade, and no amount of care in the funding arithmetic could fix that, because the
+        /// capital was not spent — it was stranded.
+        ///
+        /// **What is safe to take back.** A settled market holds `staked + bankroll - paid`.
+        /// Of that, `reserved` is the sum of payouts promised to positions that have not
+        /// claimed yet — the money that must still be there when they do. Everything else is
+        /// unencumbered: losing stakes, and bankroll no winner has a claim on.
+        ///
+        ///     free = staked + bankroll - paid - reserved
+        ///
+        /// **Why only after settlement.** Before it, `reserved` can still grow: a new position
+        /// may open at any moment and reserve its payout out of exactly the funds this would
+        /// have removed. After settlement no position can be opened, so `reserved` only ever
+        /// falls, and a number that is safe now stays safe.
+        ///
+        /// The reservation is deliberately *not* released here. An unclaimed winner keeps
+        /// their claim for ever, and their payout keeps sitting in this contract, which is the
+        /// promise the market made when it sold them the position.
+        fn defund_market(ref self: ContractState, market_id: u64, to: ContractAddress) -> u256 {
+            assert(get_caller_address() == self.owner.read(), errors::NOT_OWNER);
+
+            let m = self.markets.read(market_id);
+            assert(m.cutoff_at != 0, errors::NO_MARKET);
+            assert(m.is_settled, errors::NOT_SETTLED);
+
+            let owed = m.paid + m.reserved;
+            let total = m.staked + m.bankroll;
+            // Saturating rather than a subtraction that could underflow: if the books ever
+            // said a market owed more than it holds, the answer is "nothing is free", not a
+            // panic that makes the funds unreachable for every other market too.
+            let free = if total > owed { total - owed } else { 0 };
+            assert(free > 0, errors::NOTHING_TO_DEFUND);
+
+            /// The bankroll comes down by what left, so conservation still reads true.
+            ///
+            /// `paid + reserved <= staked + bankroll` is the invariant every other path
+            /// asserts. Taking tokens out without lowering the bankroll would leave the
+            /// contract claiming backing it no longer has — the check would keep passing on a
+            /// market that could no longer honour it.
+            let mut updated = m;
+            updated.bankroll = if m.bankroll > free { m.bankroll - free } else { 0 };
+            self.markets.write(market_id, updated);
+
+            // Off the ledger before the transfer, for the same reason `claim` does it: money
+            // that is about to leave must stop counting as backing immediately.
+            self.release(m.token, free);
+            IERC20Dispatcher { contract_address: m.token }.transfer(to, free);
+
+            self.emit(MarketDefunded { market_id, amount: free, to });
+            free
         }
 
         /// Settle a market against the oracle. Permissionless on purpose.

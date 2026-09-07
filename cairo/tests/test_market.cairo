@@ -1245,3 +1245,145 @@ fn one_unit_past_the_edge_still_loses() {
     start_cheat_caller_address(m.contract_address, pool());
     anon.privacy_invoke(OP_CLAIM, id, 99_829, 100_171, token, 0, 'outside', 'note');
 }
+
+// ──────────────────────────────────────────── returning a settled market's spare funds
+
+/// Settle a market at a price, so the tests below can talk about winners and losers.
+fn settle_at(m: IMolfiMarketDispatcher, o: IStubOracleDispatcher, id: u64, price: u128) {
+    after_cutoff();
+    o.set(price, AFTER, 11);
+    m.settle(id);
+}
+
+#[test]
+fn a_settled_market_returns_only_what_it_can_no_longer_owe() {
+    // One losing position. Its stake is the house's now, and no reservation survives it once
+    // the loser claims — so the whole pot is free.
+    let (m, _, o, token) = setup();
+    let id = a_market(m, token);
+    let trader = addr('LOSER');
+    funded_trader(m, token, trader, 1_000);
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, trader);
+    m.open_position(id, commitment('lost', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    settle_at(m, o, id, 120_000); // far outside the band: this position lost
+
+    /// A loser's reservation is never released, and that is why the sweep is conservative.
+    ///
+    /// `claim_position` **reverts** with BAND_MISSED on a losing position, so unlike the
+    /// direction game — where a losing claim succeeds precisely so the reservation comes back
+    /// — nothing on the range market ever clears it. The contract also cannot work out who
+    /// lost: it stores reach ratios, not bands, so it cannot enumerate the positions the
+    /// settled price fell outside of.
+    ///
+    /// So `reserved` after settlement still counts money nobody can claim, and this sweep
+    /// leaves it behind. That is the safe direction to be wrong in — it strands funds rather
+    /// than paying out money a winner is owed — and it is a real limit on how much a sweep can
+    /// recover, worth knowing before anyone expects this to return everything.
+    let before = m.get_market(id);
+    assert(before.reserved > 0, 'the loser still holds one');
+
+    start_cheat_caller_address(m.contract_address, owner());
+    let freed = m.defund_market(id, owner());
+    stop_cheat_caller_address(m.contract_address);
+
+    assert(freed == 1_001_000 - before.reserved, 'all but the reservation');
+    assert(
+        IStubTokenDispatcher { contract_address: token }.balance_of(owner()) == freed,
+        'paid out',
+    );
+}
+
+#[test]
+fn an_unclaimed_winner_keeps_their_payout_when_the_house_sweeps() {
+    // The one that matters. A winner who has not claimed yet is still owed, and their payout
+    // is exactly what `reserved` holds. Sweeping must leave it behind — otherwise the house
+    // can settle a market, take the money, and let the winner find out at claim time.
+    let (m, _, o, token) = setup();
+    let id = a_market(m, token);
+    let winner = addr('WINNER');
+    funded_trader(m, token, winner, 1_000);
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, winner);
+    m.open_position(id, commitment('won', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+
+    settle_at(m, o, id, 100_000); // inside the band
+    let owed = m.get_market(id).reserved;
+    assert(owed > 1_000, 'owed more than the stake');
+
+    start_cheat_caller_address(m.contract_address, owner());
+    let freed = m.defund_market(id, owner());
+    stop_cheat_caller_address(m.contract_address);
+
+    // Everything except what the winner is owed.
+    assert(freed == 1_001_000 - owed, 'left the reservation');
+
+    // And the winner is still paid, in full, after the sweep. This is the assertion the whole
+    // entrypoint has to survive.
+    start_cheat_caller_address(m.contract_address, winner);
+    m.claim_position(id, 'won', 99_829, 100_171);
+    stop_cheat_caller_address(m.contract_address);
+    assert(
+        IStubTokenDispatcher { contract_address: token }.balance_of(winner) == owed,
+        'winner still paid in full',
+    );
+}
+
+#[test]
+#[should_panic(expected: 'NOT_SETTLED_YET')]
+fn an_open_market_cannot_be_swept() {
+    // Before settlement `reserved` can still grow — a position may open at any moment and
+    // reserve its payout out of exactly the funds this would have removed.
+    let (m, _, _, token) = setup();
+    let id = a_market(m, token);
+    start_cheat_caller_address(m.contract_address, owner());
+    m.defund_market(id, owner());
+}
+
+#[test]
+#[should_panic(expected: 'CALLER_NOT_OWNER')]
+fn only_the_owner_may_sweep() {
+    let (m, _, o, token) = setup();
+    let id = a_market(m, token);
+    settle_at(m, o, id, 100_000);
+    start_cheat_caller_address(m.contract_address, addr('THIEF'));
+    m.defund_market(id, addr('THIEF'));
+}
+
+#[test]
+#[should_panic(expected: 'NOTHING_TO_DEFUND')]
+fn sweeping_twice_takes_nothing_the_second_time() {
+    let (m, _, o, token) = setup();
+    let id = a_market(m, token);
+    settle_at(m, o, id, 100_000);
+    start_cheat_caller_address(m.contract_address, owner());
+    m.defund_market(id, owner());
+    m.defund_market(id, owner());
+}
+
+#[test]
+fn conservation_still_holds_after_a_sweep() {
+    // The invariant every other path asserts is `paid + reserved <= staked + bankroll`.
+    // Taking tokens out without lowering the bankroll would leave the contract claiming
+    // backing it no longer has, and the check would keep passing on a market that could not
+    // honour it.
+    let (m, _, o, token) = setup();
+    let id = a_market(m, token);
+    let winner = addr('W2');
+    funded_trader(m, token, winner, 1_000);
+    let (low_off, high_off) = offsets(99_829, 100_171);
+    start_cheat_caller_address(m.contract_address, winner);
+    m.open_position(id, commitment('w2', id, 99_829, 100_171), low_off, high_off, 1_000);
+    stop_cheat_caller_address(m.contract_address);
+    settle_at(m, o, id, 100_000);
+
+    start_cheat_caller_address(m.contract_address, owner());
+    m.defund_market(id, owner());
+    stop_cheat_caller_address(m.contract_address);
+
+    let a = m.get_market(id);
+    assert(a.paid + a.reserved <= a.staked + a.bankroll, 'conservation holds');
+}

@@ -555,6 +555,24 @@ export const relayCall = (
   ],
 });
 
+/**
+ * Take a settled market's unencumbered funds back.
+ *
+ * The counterpart to `fundMarketCall`, and the reason the desk stops running out. Funding was
+ * one-way until the contract grew `defund_market`, so every market ever listed kept its
+ * bankroll for ever and listing was a permanent spend.
+ *
+ * The contract decides the amount, not this: it returns `staked + bankroll - paid - reserved`,
+ * which is everything it can no longer owe anyone. Passing an amount from here would mean the
+ * keeper's view of a market's obligations had to agree with the contract's, and the one that
+ * matters is the contract's.
+ */
+export const defundMarketCall = (id: number, to: string): Call => ({
+  contractAddress: MARKET,
+  entrypoint: "defund_market",
+  calldata: CallData.compile([id, to]),
+});
+
 export const settleCall = (id: number): Call => ({
   contractAddress: MARKET,
   entrypoint: "settle",

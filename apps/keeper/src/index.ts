@@ -26,6 +26,8 @@ import {
   reason,
   send,
   settleCall,
+  defundMarketCall,
+  provider,
   strkBalance,
   transferCall,
 } from "./chain.ts";
@@ -255,6 +257,97 @@ async function relayPrices(): Promise<void> {
  * has to be fresh *at the moment settle runs*, so a market can be past its cutoff and still
  * legitimately have to wait for the next relay.
  */
+/**
+ * Take back what settled markets can no longer owe anyone.
+ *
+ * This is the pass that stops the desk running out. `fund_market` used to be one-way, so every
+ * market ever listed locked its backing for ever — 129 of them, which is why the keeper could
+ * only put 0.112 STRK behind each new market and the desk stayed open at a size nobody could
+ * trade. The capital was never spent; it was stranded.
+ *
+ * The contract decides how much is free, not this. It returns `staked + bankroll - paid -
+ * reserved`, and refuses with NOTHING_TO_DEFUND when that is zero — which is the normal answer
+ * for a market already swept, so that refusal is expected rather than a fault.
+ *
+ * Deliberately capped per cycle. A backlog of a hundred markets would otherwise be a hundred
+ * transactions in one pass, and the fee bounds for that batch are the exact thing a
+ * nearly-empty keeper cannot afford — the sweep would need money to recover money. A few each
+ * cycle drains the backlog over a couple of hours and never blocks the work that has to happen
+ * now.
+ */
+const SWEEP_PER_CYCLE = 4;
+
+/**
+ * Whether the deployed market class has `defund_market` at all.
+ *
+ * A class is deployed, not compiled: `defund_market` exists in this repo and the class live on
+ * chain predates it. Sending the sweep at a contract without the entrypoint does not fail
+ * quietly — it costs a fee per market per cycle to be told the entrypoint is missing, which is
+ * money spent to not recover money, on the one process whose whole problem is running out.
+ *
+ * Probed once, lazily, with a call that cannot succeed even where it exists: market id 0 never
+ * exists, so a class that has the entrypoint answers NO_MARKET and one that does not answers
+ * that the entrypoint is missing. Both are refusals; the difference between them is the
+ * question. `null` means not yet asked.
+ */
+let canDefund: boolean | null = null;
+
+async function probeDefund(): Promise<boolean> {
+  if (canDefund !== null) return canDefund;
+  try {
+    await provider.callContract({
+      contractAddress: MARKET,
+      entrypoint: "defund_market",
+      calldata: ["0x0", account.address],
+    });
+    canDefund = true;
+  } catch (e) {
+    const text = String((e as Error)?.message ?? e);
+    canDefund = !/entrypoint does not exist|ENTRYPOINT_NOT_FOUND|not found in contract/i.test(text);
+  }
+  if (!canDefund) {
+    log("the deployed market class has no defund_market — not sweeping settled markets");
+  }
+  return canDefund;
+}
+
+async function sweepSettled(
+  markets: Awaited<ReturnType<typeof allMarkets>>,
+): Promise<void> {
+  // Only settled markets that still hold something they cannot owe. Computing the same figure
+  // the contract will is what keeps this from sending transactions that are certain to revert.
+  if (!(await probeDefund())) return;
+
+  const sweepable = markets
+    .filter((m) => m.isSettled && m.staked + m.bankroll > m.paid + m.reserved)
+    .slice(0, SWEEP_PER_CYCLE);
+  if (sweepable.length === 0) return;
+
+  for (const m of sweepable) {
+    const free = m.staked + m.bankroll - m.paid - m.reserved;
+    try {
+      const tx = await send(
+        defundMarketCall(m.id, account.address),
+        `swept market ${m.id} (${m.pair}) for ${free}`,
+      );
+      await db.record({
+        kind: "fund", network: NETWORK, pair: m.pair, marketId: m.id, txHash: tx,
+        ok: true, detail: `defunded ${free}`,
+        meta: { defunded: free.toString() },
+      });
+    } catch (e) {
+      const why = reason(e);
+      // Already swept is the expected steady state, not a failure worth alarming about.
+      if (/NOTHING_TO_DEFUND/.test(why)) continue;
+      log(`sweep ${m.id}: FAILED ${why}`);
+      await db.record({
+        kind: "fund", network: NETWORK, pair: m.pair, marketId: m.id, txHash: null,
+        ok: false, detail: why,
+      });
+    }
+  }
+}
+
 async function settleDue(markets: Awaited<ReturnType<typeof allMarkets>>): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const due = markets.filter((m) => !m.isSettled && m.cutoffAt <= now);
@@ -739,6 +832,16 @@ async function cycle(): Promise<void> {
     // Re-read after relaying: settling depends on a price that may have just landed.
     let markets = await allMarkets();
     await settleDue(markets);
+    markets = await allMarkets();
+    /**
+     * Sweep before listing, not after.
+     *
+     * What comes back from settled markets is what pays for the next ones. Listing first means
+     * sizing this cycle's bankrolls against a balance that is about to grow, which is how the
+     * desk ends up offering positions of six hundredths of a token while its own money sits in
+     * markets that closed an hour ago.
+     */
+    await sweepSettled(markets);
     markets = await allMarkets();
     await fundUnfunded(markets);
     await openNewRounds();
