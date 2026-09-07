@@ -108,8 +108,8 @@ understood and half-fixed.
 | --- | --- | --- |
 | 4.1 | Size each market's bankroll to what is spendable above the floor rather than a constant. | **DONE — verified in production** — `bankrollFor()` in `apps/keeper/src/index.ts` |
 | 4.2 | Enforce the floor **as money leaves**, not as a share computed once. | **DONE — verified in production.** Railway logs over 12 cycles show the keeper holding at 12.3–12.7 STRK and declining to list ("balance … is below the floor 15000000000000000000") while still relaying all nine pairs and settling round 18. Previously it drained to 0.01 and stopped doing anything. The floor now behaves as a floor |
-| 4.3 | Add a `defund_market` / sweep entrypoint to `market.cairo` so a settled market's unused bankroll returns to the keeper. `fund_market` is one-way and **every market ever listed locks its backing permanently** — the root cause of both drains. | **NOT STARTED — and it is now the binding constraint, not just the highest-value change.** 120 markets × their bankroll is locked and unrecoverable; that is why the keeper sits under its floor with no way back up except the faucet's 5 STRK a day. Needs a new class, so it also depends on the same STRK that blocks 1.7 |
-| 4.4 | Have the keeper sweep settled markets once 4.3 exists. | **BLOCKED on 4.3** |
+| 4.3 | Add a `defund_market` entrypoint to `market.cairo`. | **WRITTEN AND TESTED; DEPLOY BLOCKED (same declare as 1.7).** Returns `staked + bankroll - paid - reserved` — everything a settled market can no longer owe. Owner-only, settled-only, because before settlement `reserved` can still grow out of exactly the funds this would remove. The reservation is left behind on purpose: an unclaimed winner keeps their claim for ever, and there is a test that sweeps a market with an unclaimed winner and then pays them in full. **Cairo 125 → 131.** Writing it surfaced a limit worth stating: a losing claim on the range market *reverts* (unlike the direction game, where it succeeds so the reservation comes back), and the contract stores reach ratios rather than bands so it cannot identify losers — so a loser's reservation is never released and this sweep leaves that money behind too. Safe direction to be wrong in, and a real cap on what it recovers |
+| 4.4 | Have the keeper sweep settled markets once 4.3 exists. | **DONE AND SHIPPED, dormant until 4.3 deploys.** Sweeps up to four settled markets a cycle, **before** listing rather than after, because what comes back is what pays for the next ones. Capped because a hundred-market backlog is a hundred transactions whose fee bounds are exactly what a nearly-empty keeper cannot afford — the sweep would need money to recover money. Gated on a probe of the deployed class, verified against the live one: it answers "Requested entrypoint does not exist", the probe returns false, and the sweep stays off rather than burning a fee per market per cycle to be told so |
 | 4.5 | Alert when the keeper reports `ok:true` while doing no work. It reported healthy for an hour while every transaction failed, because health checks liveness rather than output. | **NOT STARTED — but partly disproved as written.** Health is currently reporting `ok:false` *correctly*, because the balance floor feeds into it. The gap is narrower than the plan claimed: it is specifically that a keeper whose transactions all fail while its balance is fine still reads healthy. Any alert must key on work done per cycle, not on liveness or balance |
 | 4.6 | Recover or write off the 200 STRK stranded in `devnet0` (`0x34ba56f9…`). Its salt was never recorded and no class/salt combination tried reproduces the address; treat as written off unless the operator has the salt. | **BLOCKED — unrecoverable without the salt** |
 
@@ -173,16 +173,31 @@ Checked and clean, so nobody re-opens them:
 
 ## 5 · What is left, after the execution pass
 
-Phases 1, 2, 4, 5 and 6 have been worked through. What remains is three items, and **every one
-of them is blocked on the same thing: STRK that does not exist.**
+Every phase has been worked through. Every task that can be done without money is done, tested
+and deployed. What is left is **two declares and one funded mainnet account** — nothing else.
 
-1. **Fund mainnet** → unblocks Phase 3 and with it the prize bar (W1). Nothing else unblocks it.
-   Needs real money, so it is the operator's call, not an agent's.
-2. **Find ~62 STRK of Sepolia testnet** → unblocks 1.7, which deploys the class that turns the
-   direction game's pool route on. The code, the tests and the app-side probe are all done and
-   waiting; the declare is the only step left. The Foundation faucet gives 5 STRK per address
-   per day, so this is roughly a fortnight of asking politely or one web-form grant of 100.
-3. **4.3, the defund entrypoint** → also needs a declare, and it is the fix for the reason the
-   keeper keeps running out in the first place. Worth doing in the same deploy as 1.7.
+### The two contract changes, written and waiting
 
-Everything not on this list is done and verified against production.
+Both are complete in `cairo/src`, covered by tests, and shipped to production **dormant behind
+a probe of the deployed class** — so each turns itself on the moment its class exists, and
+neither can misfire against the class that is live today. Verified: both probes currently
+return false against the real contracts.
+
+| | What it unblocks | Cost |
+| --- | --- | --- |
+| `privacy_invoke` on `UpDownMarket` (1.7) | The direction game's pool route — the difference between hiding your side and hiding your side, your size and your identity | one declare, ~61.4 STRK |
+| `defund_market` on `MolfiMarket` (4.3) | Settled markets giving their capital back — the reason the desk keeps running out | one declare, similar |
+
+### What that costs, measured rather than estimated
+
+**~62 STRK per declare.** starknet.js said 61.68; I distrusted it because it pads ~2.2× and I
+had already fixed that padding elsewhere in this project, so I checked with `sncast`, which
+refuses independently at the same figure. Then I collected the Foundation faucet's public drip
+(5 STRK, landed) and consolidated every account molfi holds: **20.6 STRK.** The public tier is
+5 per address per 24h. The faucet's **web form gives 100 in one go**, which is one human
+interaction and unblocks both.
+
+### And the one thing no amount of testnet STRK fixes
+
+**Mainnet.** All accounts hold 0.000000 STRK there, and the sprint scores mainnet pool
+transactions. It spends real money, so it is the operator's call.
