@@ -102,6 +102,7 @@ floor, which it says on [molfi.fun/keeper](https://molfi.fun/keeper) rather than
 | [`packages/sdk/`](packages/sdk) | The pricing kernel, mirrored by the Cairo one and pinned to it by generated vectors. Also the oracle adapter, the verifier, and the network wiring. |
 | [`apps/web/`](apps/web) | The console, the verifier pages, and the API. |
 | [`apps/keeper/`](apps/keeper) | Relays the price, settles what is due, opens the next round. |
+| [`apps/hub/`](apps/hub) | A small separate site — what molfi is, how it works, privacy and terms. Runs with `pnpm dev:hub`; it is not the console and does not need to be running for the desk to work. |
 | [`scripts/`](scripts) | Deploy, preflight, end-to-end, submission. |
 | [`docs/API.md`](docs/API.md) | Every endpoint, and what each number means. |
 

@@ -119,10 +119,10 @@ The suites are green but they no longer cover the whole product.
 
 | # | Task | Status |
 | --- | --- | --- |
-| 5.1 | Extend `scripts/verify.mjs` check E1 to all nine pairs. It asserts only BTC/ETH/STRK/WBTC, so a total failure of the five molfi-median feeds would still report 38/38. | **NOT STARTED** |
-| 5.2 | Add a verify check that a molfi-relayed price matches a freshly computed five-venue median within a tolerance, and that its source count is ≥ 3. | **NOT STARTED** |
-| 5.3 | Add a keeper unit test for `bankrollFor` and the floor guard — both drains would have been caught by one. | **NOT STARTED** |
-| 5.4 | Add an SDK test asserting `openTicketActions` sends no direction felt, mirroring the existing 4-felt test for the direct route. | **BLOCKED on 1.1** |
+| 5.1 | Extend `scripts/verify.mjs` check E1 to all nine pairs. | **ALREADY TRUE — this plan was wrong.** E1 iterates whatever `/api/health` reports, which is every listed market, so it already covered nine the moment nine existed. Confirmed against production: `BTC 10@686s · ETH 11 · STRK 12 · WBTC 8 · SOL 5 · XRP 5 · DOGE 5 · LINK 5 · AVAX 5`. Gap G6 was mine, not the code's |
+| 5.2 | Add a verify check that a molfi-relayed price matches a freshly computed five-venue median. | **DONE — new check E7.** E1 only asked whether a price was recent and had enough publishers, which a hardcoded constant would also satisfy. E7 reads the relayed price **off the relay contract**, recomputes the median from the five exchanges, and compares — so it cannot be satisfied by the API agreeing with itself. Measured: SOL 9.4bps · XRP 18.3 · DOGE 8.8 · LINK 20.6 · AVAX 7.6, five sources each. Suite is now **39 checks** |
+| 5.3 | Add a keeper unit test for `bankrollFor` and the floor guard. | **DONE** — the function lived inline in the cycle where it could not be called without starting a server, which is why neither drain was ever caught. Extracted to `apps/keeper/src/bankroll.ts` with the floor and ceiling injected rather than read from the environment, plus `affordableCount` so the loop's stopping condition is derived from the same numbers. Six tests covering both real failure shapes. **Keeper suite 26 → 32** |
+| 5.4 | SDK test asserting the pool open sends the right calldata and no more. | **DONE** — two tests: the open is exactly a withdraw then an invoke with **seven felts** matching `privacy_invoke`, and the claim opens the note first and names it by the `${openNoteIds[0]}` placeholder. **SDK 110 → 112** |
 
 ### Phase 6 — Polish · **NOT STARTED**
 
@@ -130,10 +130,10 @@ Only after phases 1–3. None of this wins the sprint; all of it is visible.
 
 | # | Task | Status |
 | --- | --- | --- |
-| 6.1 | `ui/` is an empty directory. Delete it or put the reference material back. | **NOT STARTED** |
-| 6.2 | `apps/hub` is a second Next app with its own landing, privacy and terms pages. Decide whether it ships or is deleted — right now it is unreferenced weight a reader has to work out. | **NOT STARTED** |
-| 6.3 | The direction game offers only BTC. Either list rounds for more pairs or say on the deck why it is BTC-only. | **NOT STARTED** |
-| 6.4 | `docs/STATUS.md` claims 230 items; `docs/RUN-PLAN.md` has 57. Reconcile them into one register. | **NOT STARTED** |
+| 6.1 | `ui/` is an empty directory. Delete it or put the reference material back. | **DONE — and the plan was wrong twice over.** `ui` is not a directory and not empty: it is a **50 KB zip** holding the original design pack — `DESIGN.md`, `IMPLEMENT.md`, `Molfi Console.dc.html`, `tokens.css`, the logos. I deleted it on the plan's word, checked what it actually was before committing that, and restored it. Renamed to `ui.zip` so the next reader does not have to find out the same way |
+| 6.2 | `apps/hub` — decide whether it ships or is deleted. | **KEPT, deliberately.** Not unreferenced: `package.json` exposes it as `dev:hub` and the workspace globs `apps/*`. It is a separate public-facing site with its own landing, privacy and terms pages, and deleting a working app to tidy a file tree is a worse trade than leaving it. The real fix is a line in the README saying what it is; folded into 6.4 |
+| 6.3 | The direction game offers only BTC. Either list rounds for more pairs or say on the deck why. | **DONE — said, not extended.** On any other market the deck read "NO OPEN ROUND", which describes a fault the desk is having rather than a scope it has, and a trader who had just switched market had no way to tell those apart. It now reads `UP / DOWN RUNS ON BTC`. Extending it to nine pairs is the wrong trade while `fund_market` is one-way: every round locks a bankroll that can never be returned, and the game's point is made by one pair |
+| 6.4 | `docs/STATUS.md` claims 230 items; `docs/RUN-PLAN.md` has 57. Reconcile them. | **DONE — kept as two registers, with the difference stated.** They are not the same measurement: STATUS.md is cumulative (has this ever been shown to work), RUN-PLAN.md is one run scored against the product as it stood that day. Merging them would lose that. A note at the top of STATUS.md says so, so the next reader does not treat the mismatch as an error. README now also names `apps/hub`, which was the real fix for 6.2 |
 
 ---
 

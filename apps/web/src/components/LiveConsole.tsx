@@ -239,6 +239,22 @@ export function LiveConsole({
   const ladder = useMemo(() => stakeLadder(capacity), [capacity]);
 
   /**
+   * Why there is no round here, said in the terms that are actually true.
+   *
+   * "NO OPEN ROUND" is the right sentence for the market the direction game runs on and the
+   * wrong one everywhere else, where it reads as a fault the desk is having rather than a
+   * scope it has. The keeper lists direction rounds for one pair — every round locks a
+   * bankroll that `fund_market` can never return, so nine pairs of rounds is nine times the
+   * capital for a game whose point is already made by one — and a trader who switched market
+   * deserves to be told that rather than left looking at what appears to be breakage.
+   */
+  const directionPair = MARKETS[0]?.symbol ?? "BTC";
+  const directionRunsHere = market.symbol === directionPair;
+  const noRoundReason = directionRunsHere
+    ? "NO OPEN ROUND"
+    : `UP / DOWN RUNS ON ${directionPair}`;
+
+  /**
    * A direction ticket's round, by id.
    *
    * `useLiveDesk` deliberately leaves `market` null on a direction position — the ticket
@@ -408,7 +424,7 @@ export function LiveConsole({
     if (!(await readyToAct())) return;
     const round = rounds.open;
     if (!round) {
-      say(rounds.ready ? "NO OPEN ROUND" : "READING ROUNDS…");
+      say(rounds.ready ? noRoundReason : "READING ROUNDS…");
       return;
     }
     if (BigInt(round.bankroll) === 0n) {
@@ -645,7 +661,7 @@ export function LiveConsole({
                     {rounds.open
                       ? `EITHER WAY ${fmtMultiplier(BigInt(rounds.open.multiplierBps))} · PICK A SIDE ON THE DECK`
                       : rounds.ready
-                        ? "NO OPEN ROUND"
+                        ? noRoundReason
                         : "READING…"}
                   </span>
                 </div>
@@ -657,7 +673,7 @@ export function LiveConsole({
                   {game === "direction"
                     ? rounds.open
                       ? `CLOSES IN ${fmtCountdown(rounds.open.cutoffAt - now)}`
-                      : "NO OPEN ROUND"
+                      : noRoundReason
                     : target
                       ? `CLOSES IN ${fmtCountdown(target.cutoffAt - now)}`
                       : "NO OPEN MARKET"}
@@ -762,7 +778,7 @@ export function LiveConsole({
                 {game === "direction"
                   ? rounds.open
                     ? `${Math.round(rounds.open.roundSeconds / 60)}M ROUND`
-                    : "NO OPEN ROUND"
+                    : noRoundReason
                   : `${roundLabel(tier).toUpperCase()} ROUND`}{" "}
                 ·{" "}
                 {state.connection ? shortAddress(state.connection.address, 6, 4) : "NOT CONNECTED"}

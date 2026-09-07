@@ -6,6 +6,13 @@ stays in `TESTPLAN.md`; this is the one place the whole checklist is stated at o
 **226 PASS · 4 UNTESTED · 0 FAIL** across 230 items. Zero mocks, zero stubs,
 zero console or network errors anywhere in the tested surface.
 
+> **Two registers, and they measure different things.** This file is the cumulative record —
+> every item ever tested, kept so a claim made in one run is not quietly dropped in the next.
+> [`RUN-PLAN.md`](RUN-PLAN.md) is a single run's checklist, written before that run started and
+> scored against the product as it stood that day (57 items, 57 PASS). Neither is a subset of
+> the other and neither supersedes the other: this one answers "has this ever been shown to
+> work", that one answers "did it work today". `TESTPLAN.md` keeps the narrative.
+
 Evidence: **[live]** re-executed against production or the running console in the final pass ·
 **[suite]** covered by an automated suite green in the final pass (38/38 verify · 119 Cairo ·
 105 SDK · 23 keeper · api:check) · **[run N]** executed in the browser in that run, unchanged since.
