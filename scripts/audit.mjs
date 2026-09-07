@@ -489,6 +489,15 @@ if (section("E")) {
         const A=l=>[...document.querySelectorAll('button')].find(x=>x.getAttribute('aria-label')===l);
         const doc=()=>Math.round(document.documentElement.scrollHeight);
         const txt=()=>document.body.innerText.replace(/\\s+/g,' ');
+        /**
+         * Poll for a condition instead of sleeping a guess.
+         *
+         * The band row is re-rendered when the game or the tier changes, and a fixed wait after
+         * that sequence read the deck mid-render: all three band figures came back undefined
+         * while the control worked perfectly in isolation. Same class of bug as the fixed sleep
+         * after the CTA click — a slow render is not a failure, a missing control is.
+         */
+        const waitFor=async(fn,ms=8000)=>{const end=Date.now()+ms;while(Date.now()<end){if(fn())return true;await new Promise(r=>setTimeout(r,200));}return false;};
         const o={};
         o.gated=/CONNECT TO PLAY|CANNOT OPEN/.test(txt());
         if(o.gated) return o;
@@ -501,9 +510,15 @@ if (section("E")) {
         B('RANGE').click(); await new Promise(r=>setTimeout(r,1400)); o.h2=doc();
         const tiers={}; for(const t of ['1h','4h','15m']){ B(t)?.click(); await new Promise(r=>setTimeout(r,1100)); tiers[t]=(txt().match(/(15M|1H|4H) ROUND/)||[])[0]; }
         o.tiers=tiers;
-        const b4=(txt().match(/±([\\d.]+)%/)||[])[1]; B('+')?.click(); B('+')?.click(); await new Promise(r=>setTimeout(r,900));
-        const wide=(txt().match(/±([\\d.]+)%/)||[])[1]; B('−')?.click(); await new Promise(r=>setTimeout(r,900));
-        const narrow=(txt().match(/±([\\d.]+)%/)||[])[1]; o.band={b4,wide,narrow};
+        // The band control only exists in RANGE mode, so make sure that is where we are.
+        if(!B('+')) B('RANGE')?.click();
+        o.bandControlAppeared=await waitFor(()=>B('+')&&/±[\\d.]+%/.test(txt()));
+        const band=()=>(txt().match(/±([\\d.]+)%/)||[])[1];
+        const b4=band();
+        B('+').click(); B('+').click(); await waitFor(()=>band()!==b4);
+        const wide=band();
+        B('−').click(); await waitFor(()=>band()!==wide);
+        const narrow=band(); o.band={b4,wide,narrow};
         const mk=[...document.querySelectorAll('button')].find(x=>/▾/.test(x.innerText)); const m0=mk.innerText.trim();
         mk.click(); await new Promise(r=>setTimeout(r,1200));
         o.market={from:m0,to:[...document.querySelectorAll('button')].find(x=>/▾/.test(x.innerText)).innerText.trim()};
@@ -524,7 +539,8 @@ if (section("E")) {
         want("E8", o.h0 === o.h1 && o.h1 === o.h2 && o.updownKeys && o.red.length === 0,
           `height ${o.h0}/${o.h1}/${o.h2} · UP+DOWN keys ${o.updownKeys} · red trade keys: ${o.red.join(",") || "none"}`);
         want("E9", o.tiers["1h"] === "1H ROUND" && o.tiers["4h"] === "4H ROUND" && o.tiers["15m"] === "15M ROUND", JSON.stringify(o.tiers));
-        want("E10", Number(o.band.wide) > Number(o.band.b4) && Number(o.band.narrow) < Number(o.band.wide), `${o.band.b4} → ${o.band.wide} → ${o.band.narrow}`);
+        want("E10", o.bandControlAppeared && Number(o.band.wide) > Number(o.band.b4) && Number(o.band.narrow) < Number(o.band.wide),
+          `control present ${o.bandControlAppeared} · ${o.band.b4} → ${o.band.wide} → ${o.band.narrow}`);
         want("E11", o.market.from !== o.market.to, `${o.market.from.replace(/\n/g, "")} → ${o.market.to.replace(/\n/g, "")}`);
         /**
          * The contract is what the visitor experiences, not a boolean at one instant.
@@ -535,8 +551,15 @@ if (section("E")) {
          * pressing Fire opens nothing. `doFire` is explicit that a key which does nothing and
          * says nothing is the failure to avoid; the standing on-screen reason is that saying.
          */
-        want("E12", o.noOpen && o.openedSomething === false,
-          `deck states NO OPEN MARKET ${o.noOpen} · fire disabled ${o.fireDisabled} · positions opened by 3 presses: ${o.openedSomething}`);
+        /**
+         * And require that the count was actually read.
+         *
+         * Without this the check passes when the RIDING figure never parses: both sides are
+         * undefined, "nothing was opened" is true, and the item goes green having observed
+         * nothing at all. A test that cannot fail is not a test.
+         */
+        want("E12", o.noOpen && /^\d+$/.test(String(o.ridingAfter)) && o.openedSomething === false,
+          `deck states NO OPEN MARKET ${o.noOpen} · riding read as "${o.ridingAfter}" · fire disabled ${o.fireDisabled} · opened by 3 presses: ${o.openedSomething}`);
         want("E13", o.rawAfterFire === false && realErrors(desk.errors, false).length === 0, `no raw exception after 3 fire clicks · console ${realErrors(desk.errors, false).length} errors`);
         want("E14", o.aria === true, `every control labelled: ${o.aria}`);
       }
