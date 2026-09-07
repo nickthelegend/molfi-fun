@@ -17,7 +17,7 @@ import {
   call,
   lastGoodEndpoint,
 } from "@/lib/rpc";
-import { DRIP_AMOUNT, FAUCET_ADDRESS, faucetConfigured, strkBalance } from "@/lib/faucet";
+import { readDoor } from "@/lib/door";
 
 /**
  * Is this deployment actually working right now?
@@ -256,42 +256,11 @@ export async function GET() {
   /**
    * Can a stranger actually get in?
    *
-   * Everything above answers "is the desk working", and all of it can be green while the
-   * product is unusable by anyone who does not already have an account. That is not a
-   * hypothetical: production ran with no `FAUCET_ADDRESS` set, so `/api/wallet/fund` answered
-   * 503 to every new visitor, and this endpoint reported `ok: true` throughout. The first
-   * person to find out was whoever signed in.
-   *
-   * A Privy wallet is a keypair; the account it controls does not exist until someone deploys
-   * it, and `DEPLOY_ACCOUNT` is paid for by the account being deployed, out of a balance it
-   * does not have. So the house has to go first, and if the house cannot, nobody can play. The
-   * balance is checked and not just the configuration, because a faucet that is configured and
-   * empty fails at exactly the same place with a stranger's login already spent.
+   * Shared with `/api/door`, which the gate calls: two callers, one rule, no drift. Everything
+   * above can be green while the product is unusable by anyone who does not already have an
+   * account, and nothing here asked that until a visitor found out by signing in.
    */
-  let door: Part = {
-    status: "down",
-    detail: "no faucet configured — a new visitor can sign in but cannot be given an account",
-  };
-  if (faucetConfigured && FAUCET_ADDRESS) {
-    try {
-      const balance = await strkBalance(FAUCET_ADDRESS);
-      const enough = balance >= DRIP_AMOUNT;
-      door = {
-        // Degraded rather than down: existing players still trade, and the drip may be
-        // topped up between now and the next visitor. Only "no faucet at all" is down.
-        status: enough ? "ok" : "degraded",
-        address: FAUCET_ADDRESS,
-        balance: balance.toString(),
-        drip: DRIP_AMOUNT.toString(),
-        newAccountsFundable: Number(balance / DRIP_AMOUNT),
-        detail: enough
-          ? `funds ${Number(balance / DRIP_AMOUNT)} more new account(s)`
-          : "faucet is configured but too empty to fund one new account",
-      };
-    } catch (e) {
-      door = { status: "degraded", address: FAUCET_ADDRESS, detail: `balance unreadable: ${(e as Error).message.slice(0, 100)}` };
-    }
-  }
+  const door: Part = await readDoor();
 
   const parts = { chain, oracle, market, pool, keeper, door };
   const answering = lastGoodEndpoint();

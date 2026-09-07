@@ -170,9 +170,17 @@ function Inner({ children }: { children: GateChildren }) {
    */
   const doorIsShut = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch("/api/health", { cache: "no-store", signal });
-      const h = (await res.json()) as { door?: { status?: string } };
-      const shut = h?.door?.status === "down" || h?.door?.status === "degraded";
+      /**
+       * `/api/door`, not `/api/health`.
+       *
+       * Health answers a much larger question and answers **503** when the deployment is
+       * degraded — so asking it here printed a red 503 in the console of the page a visitor
+       * lands on, and made the door wait on nine oracle reads before deciding. This is one
+       * balance read and always 200; a shut door is an answer, not a failure to answer.
+       */
+      const res = await fetch("/api/door", { cache: "no-store", signal });
+      const d = (await res.json()) as { status?: string };
+      const shut = d?.status === "down" || d?.status === "degraded";
       setDoorShut(shut);
       return shut;
     } catch {
