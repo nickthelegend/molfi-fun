@@ -145,6 +145,49 @@ function Inner({ children }: { children: GateChildren }) {
   const preparing = useRef(false);
 
   /**
+   * Whether the house can still fund a new account, asked before offering to make one.
+   *
+   * Only while signed out, and only once: it decides what the front door says, and nothing
+   * behind the door depends on it. An existing player is unaffected either way, so there is
+   * no reason to spend the request on them.
+   *
+   * Failure is deliberately silent and open. A health endpoint that times out says nothing
+   * about the faucet, and putting "we cannot open accounts" in front of a working door on the
+   * strength of a dropped request would be a worse bug than the one this fixes.
+   */
+  const [doorShut, setDoorShut] = useState(false);
+
+  /**
+   * One question, asked in two places, and the second one is the one that counts.
+   *
+   * On render it decides what the door *says*. On click it decides what the door *does* —
+   * because the check takes a moment and the button is drawn immediately, so a render-time
+   * answer alone leaves a window in which the button is visible, live, and wrong. Whoever
+   * clicks inside that window is exactly the person this is for.
+   *
+   * Failure is silent and open at both sites. A dropped request says nothing about the
+   * faucet, and putting a broken sign on a working door is the more expensive mistake.
+   */
+  const doorIsShut = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/health", { cache: "no-store", signal });
+      const h = (await res.json()) as { door?: { status?: string } };
+      const shut = h?.door?.status === "down" || h?.door?.status === "degraded";
+      setDoorShut(shut);
+      return shut;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready || authenticated) return;
+    const stop = new AbortController();
+    void doorIsShut(stop.signal);
+    return () => stop.abort();
+  }, [ready, authenticated, doorIsShut]);
+
+  /**
    * One signer for the session, rebuilt only when the key it signs for changes.
    *
    * Rebuilding it every render would hand `useLiveDesk` a new object each time and defeat the
@@ -274,20 +317,68 @@ function Inner({ children }: { children: GateChildren }) {
     return <>{children(devWallet, signer)}</>;
   }
 
+  /**
+   * Do not offer a door that cannot open.
+   *
+   * A Privy wallet is a keypair; the account it controls does not exist until someone deploys
+   * it, and `DEPLOY_ACCOUNT` is paid for by the account being deployed out of a balance it does
+   * not have. The house goes first, and when the house cannot, signing in gets a stranger as
+   * far as "SETTING UP YOUR ACCOUNT…" and then a failure — having spent their email, a round
+   * trip and their patience to find out.
+   *
+   * Production ran exactly that way: no `FAUCET_ADDRESS` was set, `/api/wallet/fund` answered
+   * 503 to everyone, and `/api/health` reported `ok: true` throughout. Asking first costs one
+   * request against an endpoint the page already depends on, and turns the worst version of
+   * this into the second best: told before you spend anything, rather than after.
+   *
+   * `null` is "not asked yet" and shows the normal button. An unreachable health endpoint is
+   * deliberately treated as open — a check that fails closed would put a broken sign on a
+   * working door, which is the more expensive mistake.
+   */
   if (!authenticated) {
     return (
       <Shell>
-        <button
-          onClick={() => login()}
-          className="key w-full rounded-full bg-amber-2 py-3.5 text-[14px] font-extrabold tracking-tight text-black"
-        >
-          CONNECT TO PLAY
-        </button>
-        <p className="mt-4 text-[12px] leading-relaxed text-white/45">
-          An email address is enough — Privy makes you a Starknet wallet and holds the key, so
-          there is no extension to install and no seed phrase to write down. Your band and your
-          size stay sealed until the round settles either way.
-        </p>
+        {doorShut ? (
+          <>
+            <p className="mono text-[11px] tracking-[0.15em] text-amber">THE DESK CANNOT OPEN NEW ACCOUNTS</p>
+            <p className="mt-3 text-[12px] leading-relaxed text-white/45">
+              molfi funds your first account so it can put itself on chain, and its float is
+              empty right now — so signing in would get you a wallet that cannot move. Nothing
+              else is affected: the markets below are live, they are settling, and everything
+              already open stays claimable.
+            </p>
+            <p className="mt-3 text-[12px] leading-relaxed text-white/45">
+              Look around while you wait — the{" "}
+              <Link href="/privacy" className="text-amber underline">
+                privacy page
+              </Link>{" "}
+              is built from the contract&apos;s own ABI, and any market can be{" "}
+              <Link href="/verify" className="text-amber underline">
+                recomputed from scratch
+              </Link>{" "}
+              without an account at all.
+            </p>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={async () => {
+                // Re-asked here rather than trusted from render: see `doorIsShut`. If it is
+                // shut, this re-renders into the message above instead of opening Privy.
+                if (await doorIsShut()) return;
+                login();
+              }}
+              className="key w-full rounded-full bg-amber-2 py-3.5 text-[14px] font-extrabold tracking-tight text-black"
+            >
+              CONNECT TO PLAY
+            </button>
+            <p className="mt-4 text-[12px] leading-relaxed text-white/45">
+              An email address is enough — Privy makes you a Starknet wallet and holds the key,
+              so there is no extension to install and no seed phrase to write down. Your band
+              and your size stay sealed until the round settles either way.
+            </p>
+          </>
+        )}
       </Shell>
     );
   }

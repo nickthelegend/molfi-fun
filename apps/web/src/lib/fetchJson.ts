@@ -35,7 +35,32 @@ export async function fetchJson<T>(
     );
   }
 
-  if (!res.ok) throw new Error(`${route(url)} returned ${res.status}`);
+  /**
+   * Prefer the answer the server actually gave over the fact that it said no.
+   *
+   * Every route in this app refuses with `{ error: "..." }` written for a person —
+   * `a commitment is a felt: 0x and up to 64 hex digits`, `sign in first — this needs a live
+   * Privy session`. This threw all of that away and produced `api/position/xyz returned 400`,
+   * which is the URL and the status code: the two things the reader can neither act on nor
+   * understand. The good message was already on the wire; nothing was reading it.
+   *
+   * The body is read defensively because not every failure comes from this app — a gateway
+   * timeout or an edge error is HTML, and `res.json()` on it throws inside the error path,
+   * turning a legible 502 into an unhandled parse failure. When there is nothing readable,
+   * the old status line is still the honest answer and is used unchanged.
+   */
+  if (!res.ok) {
+    const said = await res
+      .clone()
+      .json()
+      .then((b: unknown) =>
+        b && typeof b === "object" && typeof (b as { error?: unknown }).error === "string"
+          ? (b as { error: string }).error
+          : null,
+      )
+      .catch(() => null);
+    throw new Error(said ?? `${route(url)} returned ${res.status}`);
+  }
   return (await res.json()) as T;
 }
 
