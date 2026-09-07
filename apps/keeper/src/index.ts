@@ -76,32 +76,6 @@ const TIER = Number(process.env.KEEPER_TIER ?? 0);
 /** The most the desk will put behind any one market. A ceiling, not a fixed amount. */
 const BANKROLL_MAX = BigInt(process.env.KEEPER_BANKROLL ?? "200000000000000000");
 
-/**
- * What one market actually gets, given how many are being listed and what is in hand.
- *
- * `fund_market` is one-way — the contract has no entrypoint that returns a market's bankroll,
- * so every market ever listed locks its backing permanently. That is fine at four markets and
- * arithmetic at nine: a fixed 20 STRK each turned one listing cycle into 180 STRK gone, the
- * keeper fell under its own floor within a few cycles, and it stopped listing **anything** —
- * so adding five markets took the four that worked offline too.
- *
- * The floor was right to stop it. A keeper that lists markets it cannot back sells positions
- * it cannot pay. What was wrong was the constant: the desk should list what it can afford to
- * stand behind, and shrink the size it offers rather than shutting.
- *
- * So the per-market amount is the ceiling or an equal share of what is spendable above the
- * floor, whichever is smaller. `maxStakeFor` already derives the rail from the bankroll, so a
- * smaller market simply offers smaller sizes and says so on the deck — which is honest, and is
- * what a real desk does when its book is thin.
- */
-function bankrollFor(balance: bigint, markets: number): bigint {
-  if (markets <= 0) return 0n;
-  const spendable = balance > LOW_BALANCE ? balance - LOW_BALANCE : 0n;
-  const share = spendable / BigInt(markets);
-  return share < BANKROLL_MAX ? share : BANKROLL_MAX;
-}
-
-/** Below this the keeper stops listing new markets rather than stranding an unfunded one. */
 const LOW_BALANCE = BigInt(process.env.KEEPER_LOW_BALANCE ?? "3000000000000000000");
 
 /**
@@ -455,7 +429,7 @@ async function fundUnfundedRounds(): Promise<void> {
   if (empty.length === 0) return;
 
   // Sized like a market's: what is spendable above the floor, split across what needs funding.
-  const roundBankroll = bankrollFor(await strkBalance(account.address), empty.length);
+  const roundBankroll = sizeBankroll(await strkBalance(account.address), empty.length, LOW_BALANCE, BANKROLL_MAX);
   if (roundBankroll === 0n) {
     log(`not funding ${empty.length} direction round(s): nothing spendable above the floor`);
     return;
@@ -583,7 +557,7 @@ async function openNewRounds(): Promise<void> {
    * because nothing returns a market's bankroll. An equal share of what is spendable keeps
    * every pair listed at a size the desk can honour.
    */
-  const perMarket = bankrollFor(balance, planned.length);
+  const perMarket = sizeBankroll(balance, planned.length, LOW_BALANCE, BANKROLL_MAX);
 
   /**
    * List only as many as the balance can back, and say what was left out.
@@ -595,7 +569,7 @@ async function openNewRounds(): Promise<void> {
    * it cannot and then having no gas to settle any of them.
    */
   if (perMarket > 0n) {
-    const affordable = Number((balance - LOW_BALANCE) / perMarket);
+    const affordable = affordableCount(balance, perMarket, LOW_BALANCE);
     if (affordable < planned.length) {
       log(`listing ${affordable} of ${planned.length} markets: the rest would breach the floor`);
       planned.length = Math.max(0, affordable);
@@ -688,7 +662,7 @@ async function fundUnfunded(
   const needy = markets.filter((m) => !m.isSettled && m.cutoffAt > now && m.bankroll === 0n);
   if (needy.length === 0) return;
   const balanceNow = await strkBalance(account.address);
-  const recoverAmount = bankrollFor(balanceNow, needy.length);
+  const recoverAmount = sizeBankroll(balanceNow, needy.length, LOW_BALANCE, BANKROLL_MAX);
   if (recoverAmount === 0n) {
     log(`not recovering ${needy.length} unfunded market(s): nothing spendable above the floor`);
     return;

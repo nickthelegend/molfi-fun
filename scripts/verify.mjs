@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { RpcProvider } from "starknet";
 import { decodeMarket } from "../packages/sdk/src/decode.ts";
 import { NETWORKS } from "../packages/sdk/src/networks.ts";
+import { MARKETS } from "../packages/sdk/src/markets.ts";
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) =>
@@ -395,6 +396,77 @@ process.stdout.write("\nE. External integrations\n");
           : `${p.pair ?? "?"}: ${p.sources}@${p.ageSeconds}s`,
       )
       .join(" · "));
+  /**
+   * E7 — the pairs molfi is the oracle for are actually priced from the market.
+   *
+   * Four pairs are couriered from Pragma's own median and E1 covers them. Five have no
+   * Starknet oracle at all: `get_data_median` errors on the pair id, so molfi computes a
+   * median across five independent exchanges and relays it with the count that answered.
+   * That is the strongest claim this project makes about data it produces itself, and until
+   * now nothing checked it — E1 only asked whether *a* price was recent and had enough
+   * sources, which a constant would also satisfy.
+   *
+   * So this recomputes the median from the exchanges right now and compares. A few tens of
+   * basis points is the relay interval showing; a large gap means the relayed number is not
+   * coming from the market it claims to.
+   */
+  const VENUES = {
+    binance: (s) => [`https://api.binance.com/api/v3/ticker/price?symbol=${s}USDT`, (j) => Number(j.price)],
+    coinbase: (s) => [`https://api.exchange.coinbase.com/products/${s}-USD/ticker`, (j) => Number(j.price)],
+    kraken: (s) => [`https://api.kraken.com/0/public/Ticker?pair=${s}USD`, (j) => Number(Object.values(j.result)[0].c[0])],
+    okx: (s) => [`https://www.okx.com/api/v5/market/ticker?instId=${s}-USDT`, (j) => Number(j.data[0].last)],
+    bybit: (s) => [`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${s}USDT`, (j) => Number(j.result.list[0].lastPrice)],
+  };
+  const MOLFI_PAIRS = MARKETS.filter((m) => m.settle === "molfi");
+  const drifts = [];
+  for (const m of MOLFI_PAIRS) {
+    /**
+     * Read the relayed price off the relay contract, not off `/api/health`.
+     *
+     * Health reports freshness and publisher count but not the number itself, and the number
+     * is the whole point of this check — the claim is that molfi's own median is a real
+     * median of a real market, and only the value can say that. Reading it from the chain also
+     * means this check cannot be satisfied by the API agreeing with itself.
+     */
+    const onChain = pairs.find((p) => p.pair === m.label);
+    let relayed;
+    try {
+      const raw = await provider.callContract({
+        contractAddress: NETWORKS[network].oracle,
+        entrypoint: "get_relayed",
+        calldata: [`0x${m.pairId.toString(16)}`],
+      });
+      relayed = { price: BigInt(raw[0]), sources: Number(BigInt(raw[3])) };
+    } catch {
+      drifts.push(`${m.key}: relay unreadable`);
+      continue;
+    }
+    if (relayed.price === 0n) { drifts.push(`${m.key}: never relayed`); continue; }
+    const got = [];
+    for (const mk of Object.values(VENUES)) {
+      const [url, pick] = mk(m.key);
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(9000) });
+        if (!r.ok) continue;
+        const v = pick(await r.json());
+        if (Number.isFinite(v) && v > 0) got.push(v);
+      } catch { /* a venue that does not answer is not a source */ }
+    }
+    if (got.length < 3) { drifts.push(`${m.key}: only ${got.length} venues answered now`); continue; }
+    got.sort((a, b) => a - b);
+    const live = got[Math.floor((got.length - 1) / 2)];
+    const chain = Number(relayed.price) / 1e8;
+    const bps = (Math.abs(chain - live) / live) * 10_000;
+    drifts.push(`${m.key}: ${bps.toFixed(1)}bps/${relayed.sources}src`);
+    if (bps > 200 || relayed.sources < 3) drifts.push(`${m.key}: OUT OF TOLERANCE`);
+  }
+  check(
+    "E7",
+    MOLFI_PAIRS.length > 0 && !drifts.some((d) => /OUT OF TOLERANCE|never relayed|only \d venues/.test(d)),
+    "molfi's own median matches the exchanges it claims to poll",
+    drifts.join(" · "),
+  );
+
   check("E3", ["ok", "degraded"].includes(body.chain?.status), "the Starknet RPC answers", body?.chain?.status);
 }
 {
