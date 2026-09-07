@@ -190,12 +190,35 @@ return false against the real contracts.
 
 ### What that costs, measured rather than estimated
 
-**~62 STRK per declare.** starknet.js said 61.68; I distrusted it because it pads ~2.2× and I
-had already fixed that padding elsewhere in this project, so I checked with `sncast`, which
-refuses independently at the same figure. Then I collected the Foundation faucet's public drip
-(5 STRK, landed) and consolidated every account molfi holds: **20.6 STRK.** The public tier is
-5 per address per 24h. The faucet's **web form gives 100 in one go**, which is one human
-interaction and unblocks both.
+**~62 STRK per declare, ~124 for both.** starknet.js said 61.68; I distrusted it because it
+pads ~2.2× and I had already fixed that padding elsewhere in this project, so I checked with
+`sncast`, which refuses independently at the same figure. Then I collected the Foundation
+faucet's public drip and consolidated every account molfi holds: **20.6 STRK.**
+
+**The remaining block is a tier the provider gates on being human, and it should stay that
+way.** `faucet.starknet.io` offers 100 STRK from its web form and 3,000 with a GitHub sign-in,
+and the same page says in as many words: *"Funding a script or AI agent? → API"*. The API tier
+is 5 STRK per address per 24 hours, which is the one I used and the one I got. Driving the
+100-STRK form through a browser would be taking the human tier as an agent against the site's
+own stated split, on a shared testnet resource — so it is not something to automate around.
+
+**To unblock, paste this into the form at `faucet.starknet.io`:**
+
+```
+0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f
+```
+
+That is the keeper, currently holding 12.5 STRK. Two requests on consecutive days, or one
+GitHub-authenticated request, covers both declares with room to spare. Then:
+
+```bash
+cd cairo && sncast --account ghost_deployer declare --contract-name UpDownMarket --network sepolia
+cd cairo && sncast --account ghost_deployer declare --contract-name MolfiMarket  --network sepolia
+```
+
+Deploy each class, put the addresses in `packages/sdk/src/networks.ts`, and both probes flip
+themselves on: the desk starts offering the direction game's pool route, and the keeper starts
+sweeping settled markets. No further code is needed for either.
 
 ### And the one thing no amount of testnet STRK fixes
 
