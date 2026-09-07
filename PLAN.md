@@ -158,6 +158,7 @@ Every gap, tied to the task it blocks. Ordered by what it costs the submission.
 | **G12** | **NOT A GAP, and nearly a destructive mistake.** `ui` is not a directory and not empty: it is a **50 KB zip** of the original design pack. Deleted on this plan's word, checked, restored, renamed `ui.zip`. | `unzip -l` lists `DESIGN.md`, `Molfi Console.dc.html`, `tokens.css`, logos | — |
 | **G13** | **NEW, CLOSED.** The landing hero rendered **with no text at all** whenever `requestAnimationFrame` was throttled — measured at 2 fps on production with `visibilityState: "visible"`. GSAP holds the headline at `opacity: 0` until its entrance runs, so background tabs, battery savers and preview crawlers got a console and no sentence. | Reproduced on production, fixed, re-verified at 1 fps: headline/sub/CTA all 1.00 | — |
 | **G14** | **NEW, OPEN, and the biggest thing this plan had missed.** molfi has never executed a transaction *through the pool* on any network — the sprint's central claim. `pool-probe.mjs` validates the action shape against the real pool and stops at `SUBCHANNEL_NOT_FOUND`, because spending a note needs a registered account with one in it. Getting there needs a **screened deposit**, and screening is a signature from FPI that a script cannot produce: it comes from a privacy-enabled wallet or from the STRK20 team directly. This is architectural, not an oversight — molfi is on the Wallet API route and never holds a viewing key. **It blocks Sepolia as much as mainnet, so funding alone does not close it.** To close it someone drives one open from Ready or Xverse against the deployed contract. | Probed both pools 2026-09-07: identical acceptance to the same depth on `SN_MAIN` and `SN_SEPOLIA`; no `PROVING_SERVICE_URL`, `INDEXER_URL` or viewing key exists in the repo, and the privacy SDK is not a dependency | 3.6, W1 |
+| **G15** | **NEW, FOUND BY BROWSER AUDIT, FIXED.** Production had no `FAUCET_ADDRESS`, so `/api/wallet/fund` answered **503 to every new visitor** — sign in, wait at "SETTING UP YOUR ACCOUNT…", fail — while `/api/health` reported `ok: true` throughout, because nothing in it asked whether a stranger could get in. `health.door` now reports the faucet's configuration *and* its balance, the gate refuses to offer a button to a dead end, and the three `FAUCET_*` variables are set on Vercel. Still degraded until the float is topped up — but it now says so instead of discovering it after your email. | `/api/wallet/fund` 503 → 401; `door` reports `newAccountsFundable: 0`; verified in real Chrome | onboarding |
 
 ### Explicitly NOT gaps
 
@@ -199,8 +200,12 @@ reprints it against live gas and spends nothing.
 
 ### The reason funding it never worked — found 2026-09-07, and fixed
 
-**210 STRK was sent to the keeper on 2026-09-06 and was gone in ninety minutes.** Not lost, not
-stolen: spent, correctly, by molfi's own keeper, on exactly what it is told to spend money on.
+**210 STRK reached the keeper on 2026-09-06 and was gone in ninety minutes** — and the browser
+audit found where it came from, which I had recorded wrongly. It was **not** an operator top-up.
+`0x1340e5c2…` is molfi's own **faucet float**, the account that puts a brand-new Privy wallet on
+chain; consolidating it into the keeper to reach a declare emptied the thing that lets strangers
+play. So the same act destroyed the money *and* shut the front door. Not lost, not stolen: spent,
+correctly, by molfi's own keeper, on exactly what it is told to spend money on.
 
 The transfers are on chain — 110 STRK at block 14666092, 62.79 at 14666313, 31.13 at 14666321,
 6.46 at 14669067. So are their destinations: 294.68 STRK into the market contract and 42.68 into
