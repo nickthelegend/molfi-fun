@@ -514,7 +514,23 @@ if (section("F")) {
    */
   const sh = (cmd) => {
     try {
-      return execSync(cmd, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 900_000 }).trim();
+      /**
+       * PATH is set explicitly because `execSync` runs `/bin/sh -c`, which does not source the
+       * user's profile. `snforge` and `pnpm` live in profile-managed directories, so without
+       * this the toolchain checks ran as "command not found" and reported an empty result —
+       * two items failing for a reason that had nothing to do with the code under test.
+       */
+      const PATH = [
+        `${process.env.HOME}/.local/bin`,
+        `${process.env.HOME}/.cargo/bin`,
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        process.env.PATH ?? "",
+      ].join(":");
+      return execSync(cmd, {
+        encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 900_000,
+        env: { ...process.env, PATH },
+      }).trim();
     } catch (e) {
       return String(e.stdout ?? "").trim() || `COMMAND FAILED: ${String(e.message).slice(0, 120)}`;
     }
@@ -530,11 +546,31 @@ if (section("F")) {
   const leaked = ["PRIVY_APP_SECRET", "FAUCET_PRIVATE_KEY", "KEEPER_PRIVATE_KEY", "DEV_WALLET_PRIVATE_KEY"].filter((k) => html.includes(k));
   want("F4", leaked.length === 0, leaked.length ? `LEAKED: ${leaked.join(",")}` : "no secret names in the shipped page");
 
-  const cairo = sh(`cd cairo && snforge test 2>&1 | tail -1`);
-  const sdk = sh(`pnpm -s test 2>&1 | grep -E "^. (tests|pass)" | head -4 | tr '\\n' ' '`);
-  want("F5", /131 passed/.test(cairo) && /112/.test(sdk) && /35/.test(sdk), `${cairo} · ${sdk}`);
-  const verify = sh(`node --experimental-strip-types scripts/verify.mjs 2>&1 | tail -1`);
-  want("F6", /39\/39 PASS/.test(verify), verify);
+  /**
+   * Run the toolchains directly rather than through a shell pipeline.
+   *
+   * `execSync("cd cairo && snforge test 2>&1 | tail -1")` returned an empty string with exit 0
+   * — the pipeline swallowed it — while `spawnSync("snforge", ["test"], {cwd: "cairo"})` gives
+   * 17 KB of output and the real result. Two items were failing on shell plumbing rather than
+   * on anything about the code, which is the least useful kind of red.
+   */
+  const { spawnSync: run } = await import("node:child_process");
+  const out = (cmd, cmdArgs, cwd) => {
+    const r = run(cmd, cmdArgs, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    return `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  };
+
+  const cairo = out("snforge", ["test"], "cairo");
+  const cairoLine = (cairo.match(/Tests: \d+ passed[^\n]*/) ?? ["no result"])[0];
+  const units = out("pnpm", ["-s", "test"], ".");
+  const counts = [...units.matchAll(/tests (\d+)/g)].map((m) => Number(m[1]));
+  const failures = [...units.matchAll(/fail (\d+)/g)].map((m) => Number(m[1]));
+  want("F5", /131 passed, 0 failed/.test(cairoLine) && counts.includes(112) && counts.includes(35) && failures.every((n) => n === 0),
+    `cairo ${cairoLine} · js suites ${counts.join("+")} · failures ${failures.join(",") || "none"}`);
+
+  const verify = out("node", ["--experimental-strip-types", "scripts/verify.mjs"], ".");
+  const verdict = (verify.match(/\d+\/\d+ PASS[^\n]*/) ?? ["no result"])[0];
+  want("F6", /39\/39 PASS/.test(verdict), verdict);
 }
 
 // ---------------------------------------------------------------- verdict
