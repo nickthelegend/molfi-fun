@@ -66,3 +66,55 @@ test("an exactly-at-the-floor balance spends nothing", () => {
   // its last usable STRK. It must not.
   assert.equal(bankrollFor(FLOOR, 3, FLOOR, CEILING), 0n);
 });
+
+/**
+ * The reserve, which is the same arithmetic with a bigger floor.
+ *
+ * `KEEPER_RESERVE` exists because bankroll is one-way — `fund_market` takes STRK and the class
+ * deployed today gives none of it back — so the desk converts whatever it holds into permanent
+ * backing at whatever rate its balance allows. On 2026-09-06 that rate was the whole of a 210
+ * STRK top-up inside ninety minutes, which is correct by the desk's rules and useless to anyone
+ * trying to pay for a declare that has to clear in one transaction.
+ *
+ * `index.ts` implements the reserve by adding it to the floor at every site where money leaves,
+ * so these tests are written the same way: the floor under test is the gas floor plus the
+ * reserve, exactly as the keeper composes it.
+ */
+const RESERVE = STRK(130);
+const RESERVED_FLOOR = FLOOR + RESERVE;
+
+test("a reserve survives a windfall — the incident, as arithmetic", () => {
+  // What actually arrived: 10.8 STRK on hand, 210 in four transfers. Nine markets, a six STRK
+  // ceiling. Without a reserve every listing round eats it; with one, 130 is still there when
+  // the declare needs it in a single transaction.
+  const balance = STRK(220.8);
+  const loose = bankrollFor(balance, 9, FLOOR, STRK(6));
+  assert.equal(loose, STRK(6), "unreserved, the ceiling binds and nine markets take 54 a round");
+
+  const held = bankrollFor(balance, 9, RESERVED_FLOOR, STRK(6));
+  const spent = held * BigInt(affordableCount(balance, held, RESERVED_FLOOR));
+  assert.ok(
+    balance - spent >= RESERVED_FLOOR,
+    `spending ${spent} would leave less than the floor and the reserve`,
+  );
+  assert.ok(balance - spent >= RESERVE, "the reserve itself is still there");
+});
+
+test("a reserve bigger than the balance stops bankroll without stopping the desk", () => {
+  // Zero here is the signal the caller turns into "list nothing and say why". It must not go
+  // negative and must not wrap: the balance is below floor+reserve by 100 STRK.
+  assert.equal(bankrollFor(STRK(45), 9, RESERVED_FLOOR, CEILING), 0n);
+  assert.equal(affordableCount(STRK(45), STRK(1), RESERVED_FLOOR), 0);
+});
+
+test("clearing the reserve puts the desk back exactly where it was", () => {
+  // The reserve is meant to be set for a job and cleared after it. A zero reserve has to be
+  // indistinguishable from no reserve at all, or clearing it becomes its own change.
+  for (const bal of [220.8, 143, 50, 16, 15] as const) {
+    assert.equal(
+      bankrollFor(STRK(bal), 9, FLOOR + 0n, CEILING),
+      bankrollFor(STRK(bal), 9, FLOOR, CEILING),
+      `balance ${bal}: a zero reserve changed the answer`,
+    );
+  }
+});

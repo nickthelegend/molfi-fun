@@ -185,48 +185,72 @@ return false against the real contracts.
 
 | | What it unblocks | Cost |
 | --- | --- | --- |
-| `privacy_invoke` on `UpDownMarket` (1.7) | The direction game's pool route — the difference between hiding your side and hiding your side, your size and your identity | one declare, ~61.4 STRK |
-| `defund_market` on `MolfiMarket` (4.3) | Settled markets giving their capital back — the reason the desk keeps running out | one declare, similar |
+| `privacy_invoke` on `UpDownMarket` (1.7) | The direction game's pool route — the difference between hiding your side and hiding your side, your size and your identity | one declare, 40.1 STRK |
+| `defund_market` on `MolfiMarket` (4.3) | Settled markets giving their capital back — the reason the desk keeps running out | one declare, 62.7 STRK |
 
 ### What that costs, measured rather than estimated
 
-**~62 STRK per declare, ~124 for both.** starknet.js said 61.68; I distrusted it because it
-pads ~2.2× and I had already fixed that padding elsewhere in this project, so I checked with
-`sncast`, which refuses independently at the same figure. Then I collected the Foundation
-faucet's public drip and consolidated every account molfi holds: **20.6 STRK.**
+**103 STRK for both, 113 with a margin.** Priced against the chain's current L2 gas from the
+Sierra program length, which is what a declare actually pays for — 6,872 felts for the
+direction game and 10,741 for the range market. `node scripts/finish-sepolia.mjs --check`
+reprints it against live gas and spends nothing.
 
-**The remaining block is an agent quota the provider set deliberately, and it is theirs to
-set.** This was worth checking rather than assuming, so it was checked: `faucet.starknet.io`
-runs **no captcha, no Turnstile and no bot-detection of any kind** — the 100-STRK web form
-would submit from a browser without technical resistance. The reason not to is in the site's
-own FAQ, under *"Can agents use it without a UI?"*:
+### The reason funding it never worked — found 2026-09-07, and fixed
 
-> **Yes.** A public, no-auth **Agent API** uses address-bound proof-of-work, quotas, and
-> cooldowns.
+**210 STRK was sent to the keeper on 2026-09-06 and was gone in ninety minutes.** Not lost, not
+stolen: spent, correctly, by molfi's own keeper, on exactly what it is told to spend money on.
 
-So the provider has built a separate channel for agents, with a quota attached, and points
-agents at it. That channel gives **5 STRK per address per 24h**, which is what molfi asked for
-and received. Driving the UI form instead would be taking twenty times the agent allowance on a
-shared testnet by using the interface the quota does not cover. That is a rate limit, not an
-obstacle — and the honest way past it is a person, not a workaround.
+The transfers are on chain — 110 STRK at block 14666092, 62.79 at 14666313, 31.13 at 14666321,
+6.46 at 14669067. So are their destinations: 294.68 STRK into the market contract and 42.68 into
+the up/down contract over the same window, in twenty-nine `fund_market` and `fund_round` calls,
+leaving 10.8 behind.
 
-**To unblock, paste this into the form at `faucet.starknet.io`:**
+The keeper broke no rule. Its rules were the fault, in two halves that only bite together:
+
+- **Bankroll is one-way.** `fund_market` takes STRK; the class deployed today has no way to give
+  any of it back. That is the hole `defund_market` closes — and cannot close retroactively.
+- **Bankroll is sized as a *share* of what is spendable.** So a balance of 220 STRK is not
+  "enough for a declare with plenty spare", it is "nine markets at the 6 STRK ceiling, four
+  times an hour, for ever". A windfall is converted at exactly the rate the windfall allows.
+
+Between them there was no way to tell the desk that money had arrived **for** something. A
+declare has to clear in one transaction, and a desk that spends its balance down to its floor
+every fifteen minutes will never be holding enough at any one instant. Asking for more funding
+without fixing this would have destroyed that too.
+
+**`KEEPER_RESERVE` is the fix** (`apps/keeper/src/index.ts`, three new tests in
+`apps/keeper/test/bankroll.test.ts`). Reserved STRK still pays gas — relaying and settling must
+never stop or open markets cannot resolve — and is invisible to every bankroll decision. Set
+while a declare is pending, cleared after. It is live on Railway at 120 STRK, and the keeper
+reports what it is holding at `/health` rather than going quietly dark: a desk holding a reserve
+is not the same state as a desk that has run dry, and the two need different reactions.
+
+### To unblock, in two steps
+
+**1. Send at least 115 STRK to the keeper.** The form at `faucet.starknet.io` gives 100 and a
+GitHub sign-in 3,000; the agent API molfi is entitled to gives 5 a day, which it collects on its
+own. The address:
 
 ```
 0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f
 ```
 
-That is the keeper, currently holding 12.5 STRK. Two requests on consecutive days, or one
-GitHub-authenticated request, covers both declares with room to spare. Then:
+It will now sit there. That is the whole point of the paragraph above.
+
+**2. Run one command.**
 
 ```bash
-cd cairo && sncast --account ghost_deployer declare --contract-name UpDownMarket --network sepolia
-cd cairo && sncast --account ghost_deployer declare --contract-name MolfiMarket  --network sepolia
+node --experimental-strip-types scripts/finish-sepolia.mjs
 ```
 
-Deploy each class, put the addresses in `packages/sdk/src/networks.ts`, and both probes flip
-themselves on: the desk starts offering the direction game's pool route, and the keeper starts
-sweeping settled markets. No further code is needed for either.
+It reads the deployed classes before it spends anything, declares and deploys only what is
+missing, writes the addresses into `deployments/sepolia.json` and `packages/sdk/src/networks.ts`,
+re-runs the 39-check verifier, and prints the three things it cannot do itself — the Railway
+variables, the commit, and clearing the reserve. Re-running it after a half-finished run costs
+nothing and picks up where it stopped.
+
+Both probes then flip themselves on: the desk starts offering the direction game's pool route,
+and the keeper starts sweeping settled markets. No further code is needed for either.
 
 ### And the one thing no amount of testnet STRK fixes
 

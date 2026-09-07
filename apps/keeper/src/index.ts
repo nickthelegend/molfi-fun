@@ -82,6 +82,41 @@ const BANKROLL_MAX = BigInt(process.env.KEEPER_BANKROLL ?? "200000000000000000")
 const LOW_BALANCE = BigInt(process.env.KEEPER_LOW_BALANCE ?? "3000000000000000000");
 
 /**
+ * STRK the desk holds back from bankroll, however rich it looks.
+ *
+ * Bankroll is one-way on the class deployed today: `fund_market` takes STRK and nothing gives
+ * it back, so every STRK the desk lists with is spent for ever. That is affordable when the
+ * desk is poor and ruinous the moment it is not — nine markets, a fifteen-minute round and a
+ * six STRK ceiling is up to 216 STRK an hour, permanently, and the sizing is a *share* of what
+ * is spendable, so a windfall is converted at exactly the rate the windfall allows.
+ *
+ * It happened. 210 STRK arrived on 2026-09-06 in four transfers and was inside the market and
+ * up/down contracts within ninety minutes — 294 STRK to one and 42 to the other over that
+ * window — leaving 10.8 behind. The keeper did nothing wrong by its own rules. Its own rules
+ * were the fault: there was no way to tell it that money had arrived *for* something.
+ *
+ * This is that way. Reserved STRK still pays gas — relaying and settling must never stop, or
+ * open markets cannot resolve — and is simply invisible to every bankroll decision. The
+ * consequence is deliberate: with a reserve it cannot meet, the desk stops listing new markets
+ * and says so. That is the point. A declare has to be paid for in one transaction, and a desk
+ * that spends its balance four times an hour will never hold enough at one instant.
+ *
+ * Set it while a declare is pending; clear it once the class is on chain. Once `defund_market`
+ * is deployed and `sweepSettled` runs, bankroll recycles and the pressure this relieves is
+ * mostly gone.
+ */
+const RESERVE = BigInt(process.env.KEEPER_RESERVE ?? "0");
+
+/**
+ * The floor every bankroll decision is measured against.
+ *
+ * `LOW_BALANCE` alone is the gas floor — what the desk keeps back to keep settling. Bankroll
+ * has to clear that *and* the reserve, so it is the sum that guards the money leaving, at
+ * every site where money leaves.
+ */
+const BANKROLL_FLOOR = LOW_BALANCE + RESERVE;
+
+/**
  * How stale the on-chain print may get before it is republished, in seconds.
  *
  * The contract refuses to settle against anything older than 900s and the desk stops quoting
@@ -102,6 +137,15 @@ const state = {
   balance: null as string | null,
   stoppedListing: null as string | null,
   /**
+   * What the desk is holding back on purpose, when it is holding anything.
+   *
+   * A reserve stops listing without being a fault, so it must not trip the stall alarm — but
+   * "not listing and healthy" is exactly the shape of the outage this endpoint exists to
+   * catch, and an operator reading a green health check deserves to be told which of the two
+   * they are looking at. Null when nothing is reserved, so the quiet case stays quiet.
+   */
+  holding: null as string | null,
+  /**
    * Cycles in a row that ended with the desk unable to list, and when the run began.
    *
    * A keeper that answers, reports no error and has quietly stopped listing is the failure
@@ -116,6 +160,23 @@ const state = {
 };
 
 const log = (s: string) => console.log(`[${new Date().toISOString()}] ${s}`);
+
+/** STRK to three decimals, for a log line a person reads rather than counts zeros in. */
+const strk = (v: bigint) => `${(Number(v / 10n ** 12n) / 1e6).toFixed(3)} STRK`;
+
+/**
+ * Why nothing is spendable — the gas floor, or a reserve someone set on purpose.
+ *
+ * "nothing spendable above the floor" was the whole message, and with a reserve in place it
+ * would be true and misleading at the same time: it reads as a desk that has run dry, when the
+ * desk is holding money back deliberately and is one command away from resuming. The two
+ * states need different reactions from whoever is reading the log, so they say different things.
+ */
+function shortfall(): string {
+  return RESERVE > 0n
+    ? `holding ${strk(RESERVE)} in reserve (KEEPER_RESERVE) — nothing spendable above it and the ${strk(LOW_BALANCE)} floor`
+    : "nothing spendable above the floor";
+}
 
 /**
  * Step 1 — republish mainnet's median.
@@ -476,9 +537,18 @@ async function tendDirectionRounds(): Promise<void> {
   const furthest = open.reduce((a, r) => (r.cutoffAt > a ? r.cutoffAt : a), 0);
   if (open.length > 0 && furthest - now > LIST_LEAD) return;
 
+  /**
+   * Measured against the bankroll floor, not the gas floor.
+   *
+   * A direction round is listed here and funded a pass later, so the two decisions have to be
+   * taken against the same number. Against the gas floor alone, a reserve produces a round
+   * that is listed and can never be funded — and an unfunded round is not an open one, it is
+   * a round that refuses every ticket while looking open, which is the worst state this desk
+   * has. Better to list nothing and say why.
+   */
   const balance = await strkBalance(account.address);
-  if (balance < LOW_BALANCE) {
-    log(`not listing a direction round: balance ${balance} is below the floor`);
+  if (balance < BANKROLL_FLOOR) {
+    log(`not listing a direction round: ${shortfall()}`);
     return;
   }
 
@@ -523,9 +593,9 @@ async function fundUnfundedRounds(): Promise<void> {
   if (empty.length === 0) return;
 
   // Sized like a market's: what is spendable above the floor, split across what needs funding.
-  const roundBankroll = sizeBankroll(await strkBalance(account.address), empty.length, LOW_BALANCE, BANKROLL_MAX);
+  const roundBankroll = sizeBankroll(await strkBalance(account.address), empty.length, BANKROLL_FLOOR, BANKROLL_MAX);
   if (roundBankroll === 0n) {
-    log(`not funding ${empty.length} direction round(s): nothing spendable above the floor`);
+    log(`not funding ${empty.length} direction round(s): ${shortfall()}`);
     return;
   }
 
@@ -549,6 +619,10 @@ async function openNewRounds(): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   let balance = await strkBalance(account.address);
   state.balance = balance.toString();
+  state.holding =
+    RESERVE > 0n
+      ? `${strk(RESERVE)} reserved; bankroll needs ${strk(BANKROLL_FLOOR)}, balance is ${strk(balance)}`
+      : null;
 
   /**
    * Ask the faucet before giving up on the round.
@@ -651,7 +725,7 @@ async function openNewRounds(): Promise<void> {
    * because nothing returns a market's bankroll. An equal share of what is spendable keeps
    * every pair listed at a size the desk can honour.
    */
-  const perMarket = sizeBankroll(balance, planned.length, LOW_BALANCE, BANKROLL_MAX);
+  const perMarket = sizeBankroll(balance, planned.length, BANKROLL_FLOOR, BANKROLL_MAX);
 
   /**
    * List only as many as the balance can back, and say what was left out.
@@ -663,14 +737,14 @@ async function openNewRounds(): Promise<void> {
    * it cannot and then having no gas to settle any of them.
    */
   if (perMarket > 0n) {
-    const affordable = affordableCount(balance, perMarket, LOW_BALANCE);
+    const affordable = affordableCount(balance, perMarket, BANKROLL_FLOOR);
     if (affordable < planned.length) {
       log(`listing ${affordable} of ${planned.length} markets: the rest would breach the floor`);
       planned.length = Math.max(0, affordable);
     }
   }
   if (planned.length === 0) {
-    log("not listing: nothing spendable above the floor");
+    log(`not listing: ${shortfall()}`);
     return;
   }
 
@@ -756,9 +830,9 @@ async function fundUnfunded(
   const needy = markets.filter((m) => !m.isSettled && m.cutoffAt > now && m.bankroll === 0n);
   if (needy.length === 0) return;
   const balanceNow = await strkBalance(account.address);
-  const recoverAmount = sizeBankroll(balanceNow, needy.length, LOW_BALANCE, BANKROLL_MAX);
+  const recoverAmount = sizeBankroll(balanceNow, needy.length, BANKROLL_FLOOR, BANKROLL_MAX);
   if (recoverAmount === 0n) {
-    log(`not recovering ${needy.length} unfunded market(s): nothing spendable above the floor`);
+    log(`not recovering ${needy.length} unfunded market(s): ${shortfall()}`);
     return;
   }
   /**
@@ -778,7 +852,7 @@ async function fundUnfunded(
   let spent = 0n;
   let skipped = 0;
   for (const m of needy) {
-    if (balanceNow - spent - recoverAmount < LOW_BALANCE) { skipped += 1; continue; }
+    if (balanceNow - spent - recoverAmount < BANKROLL_FLOOR) { skipped += 1; continue; }
     log(`market ${m.id} (${m.pair}) is open with no bankroll — funding it`);
     try {
       const tx = await send(
