@@ -4,6 +4,7 @@ import { HOUSE_EDGE_BPS, MARKETS, ROUND_SECONDS } from "@molfi/sdk";
 import * as db from "./db.ts";
 import { requestDrip } from "./faucet.ts";
 import { aggregate } from "./exchanges.ts";
+import { affordableCount, bankrollFor as sizeBankroll } from "./bankroll.ts";
 import {
   MARKET,
   NETWORK,
