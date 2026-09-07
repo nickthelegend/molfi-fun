@@ -9,7 +9,17 @@ import { NETWORK } from "@/lib/rpc";
  * still carries a 404. It used to answer 200 with this same text — which reads correctly to
  * a person and lies to everything else: a crawler indexes a market that does not exist, and
  * an uptime check cannot tell a mistyped id from a working page.
+ *
+ * The title lives here rather than in the page's `generateMetadata` because this boundary is
+ * what actually renders: metadata computed on the page is not what a shared link previews once
+ * `notFound()` has been thrown. Without it `/m/999999` previewed under the site's default
+ * title while showing this 404 — a link that reads as a real market and is not one.
  */
+export const metadata = {
+  title: "molfi — no such market",
+  description: "That market id was never listed on this contract.",
+};
+
 export default function MarketNotFound() {
   return (
     <main className="tiled grid min-h-dvh place-items-center px-5">

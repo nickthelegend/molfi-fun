@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { CheckItYourself } from "@/components/CheckItYourself";
 import { hash } from "starknet";
@@ -52,7 +53,16 @@ function toLabel(felt: string): string {
   return String.fromCharCode(...bytes);
 }
 
-async function readMarket(id: number): Promise<OnChainMarket | null> {
+/**
+ * Memoised for the request, so the title and the body agree without paying twice.
+ *
+ * `generateMetadata` and the page both need to know whether this market exists, and they were
+ * answering it differently: metadata tested the *shape* of the id, so `/m/999999` was titled
+ * "molfi — market #999999" while the body it labelled correctly rendered NO SUCH MARKET · 404.
+ * A shared link previewed as a market that has never existed. React's `cache` makes asking the
+ * real question in both places cost one chain read rather than two.
+ */
+const readMarket = cache(async function readMarket(id: number): Promise<OnChainMarket | null> {
   const address = NETWORKS[NETWORK].market;
   if (!address) return null;
   try {
@@ -94,7 +104,7 @@ async function readMarket(id: number): Promise<OnChainMarket | null> {
   } catch {
     return null;
   }
-}
+})
 
 /**
  * The `starknet_call` this page made, as a shell command.
@@ -128,7 +138,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   // Only a real id gets a market title. "molfi — market #abc" is a page claiming to be
   // about something that was never listed.
-  if (!/^\d+$/.test(id)) return { title: "molfi — no such market" };
+  if (!/^\d+$/.test(id) || !(await readMarket(Number(id)))) {
+    return { title: "molfi — no such market" };
+  }
   return {
     title: `molfi — market #${id}`,
     description:

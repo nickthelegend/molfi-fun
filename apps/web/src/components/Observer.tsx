@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fmtPrice, fmtStrk } from "@molfi/sdk";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetchJson";
 
@@ -123,7 +124,10 @@ export function Observer({ bandOnChain }: { bandOnChain: boolean | null }) {
             </div>
             <dl className="mt-2">
               <Cell k="market" v={`#${p.marketId}${answer.market ? ` · ${answer.market.pair}` : ""}`} />
-              <Cell k="stake" v={p.stake} />
+              {/* Formatted, not raw. This printed `2000000000000000000` on a page whose whole
+                  argument is that a stranger can read the chain for themselves — and the first
+                  thing it showed them was eighteen decimals of unlabelled integer. */}
+              <Cell k="stake" v={`${fmtStrk(BigInt(p.stake))} STRK`} />
               <Cell k="multiplier" v={`${(Number(p.multiplierBps) / 10_000).toFixed(4)}x`} />
               <Cell k="claimed" v={p.claimed ? "yes" : "not yet"} />
               {p.owner && BigInt(p.owner) !== 0n ? (
@@ -131,8 +135,11 @@ export function Observer({ bandOnChain }: { bandOnChain: boolean | null }) {
               ) : null}
               {p.lowOff1e8 ? <Cell k="reach down" v={`${p.lowOff1e8} / 1e8`} /> : null}
               {p.highOff1e8 ? <Cell k="reach up" v={`${p.highOff1e8} / 1e8`} /> : null}
-              {p.bandLow ? <Cell k="band low" v={p.bandLow} tone="text-red" /> : null}
-              {p.bandHigh ? <Cell k="band high" v={p.bandHigh} tone="text-red" /> : null}
+              {/* Prices, so they are shown as prices. These only appear at all on a class that
+                  stores the band in the clear — the leak this page exists to make visible — and
+                  a leak is easier to recognise when it is legible. */}
+              {p.bandLow ? <Cell k="band low" v={fmtPrice(BigInt(p.bandLow))} tone="text-red" /> : null}
+              {p.bandHigh ? <Cell k="band high" v={fmtPrice(BigInt(p.bandHigh))} tone="text-red" /> : null}
             </dl>
           </div>
 
