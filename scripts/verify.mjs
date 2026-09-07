@@ -194,12 +194,42 @@ check("C13", (await get("/api/position/nothex")).status === 400, "a malformed co
   check("C15", r.status === 200 && typeof b.result === "number", "the rpc proxy answers a read", String(b?.result));
 }
 {
-  const r = await fetch(`${BASE}/api/rpc`, {
+  /**
+   * The proxy's allowlist still has teeth — but the line moved, deliberately.
+   *
+   * This used to assert that `starknet_addInvokeTransaction` was refused, because the proxy
+   * was reads-only: every transaction went through the user's browser extension, which
+   * submitted it itself. That stopped being true when molfi grew a Privy wallet. A Privy
+   * account has no extension; starknet.js signs in the browser and sends through *this*
+   * proxy, so refusing the method meant no Privy user could ever trade — and it surfaced as
+   * "chain unreachable", because from inside starknet.js a blocked method and a dead node are
+   * indistinguishable.
+   *
+   * So the check now asserts the two halves of the policy that is actually in force: sends
+   * are allowed, and **declares are not**. Declaring a class is not something a page does,
+   * and it is the method whose absence from the allowlist still matters.
+   */
+  const declare = await fetch(`${BASE}/api/rpc`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_addDeclareTransaction", params: [] }),
+  });
+  const db = await declare.json();
+  const refusesDeclare = declare.status === 403 && db.error?.code === -32601;
+
+  const send = await fetch(`${BASE}/api/rpc`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_addInvokeTransaction", params: [] }),
   });
-  const b = await r.json();
-  check("C16", r.status === 403 && b.error?.code === -32601, "the rpc proxy refuses a write", String(b?.error?.code));
+  // Allowed means "not refused by the allowlist". The node still rejects the empty params,
+  // and that is the node answering rather than the proxy declining to ask.
+  const allowsSend = send.status !== 403;
+
+  check(
+    "C16",
+    refusesDeclare && allowsSend,
+    "the rpc proxy allows a send and refuses a declare",
+    `declare ${db?.error?.code} · send ${send.status}`,
+  );
 }
 {
   const { status, body } = await get("/api/keeper");
