@@ -349,7 +349,22 @@ if (section("C")) {
   const one = await json(`${BASE}/api/audit/1`);
   const settled = one.body?.market?.settledPrice ?? one.body?.settledPrice;
   want("C6", Boolean(settled) && BigInt(settled) > 0n, `market #1 settled at ${settled}`);
-  untested("C7", "covered by scripts/pool-probe.mjs, which reaches SUBCHANNEL_NOT_FOUND on both pools — re-run separately");
+  /**
+   * Actually run it rather than pointing at it.
+   *
+   * This was written as UNTESTED because another script covers it — but the probe is a free,
+   * read-only `compile_actions` against the deployed pool, so "covered elsewhere" was a reason
+   * not to bother rather than a missing dependency. An item nobody re-runs is an item nobody
+   * knows the state of. `SUBCHANNEL_NOT_FOUND` is the pass: the enum parsed, the withdraw and
+   * the InvokeExternal were accepted together, replay protection was satisfied, and validation
+   * got as far as a note this probe has no account to hold.
+   */
+  const { spawnSync: runProbe } = await import("node:child_process");
+  const probe = runProbe("node", ["--experimental-strip-types", "scripts/pool-probe.mjs", "--network", "sepolia"],
+    { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  const probeOut = `${probe.stdout ?? ""}${probe.stderr ?? ""}`;
+  want("C7", /SUBCHANNEL_NOT_FOUND/.test(probeOut) && /NO_REPLAY_PROTECTION/.test(probeOut),
+    (probeOut.match(/molfi's open parses[^\n]*/) ?? ["no probe result"])[0].trim());
 }
 
 if (section("D")) {
