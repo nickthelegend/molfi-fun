@@ -26,8 +26,8 @@ transaction exists.** Everything else in this plan is secondary to that sentence
 | --- | --- | --- |
 | **W1** | Three or more transactions through the mainnet STRK20 pool, listed in `strk20.json` | **NOT MET** — nothing on mainnet |
 | **W2** | The privacy claim is true of every game the product offers, on the deployed class | **PARTLY MET** — true for range; the direction game is direct-only, so stake and identity are public on it |
-| **W3** | A stranger with no wallet can reach a real trade unaided | **MET** — email → wallet → funded → deployed → traded, proven end to end |
-| **W4** | The manifest is complete and the demo is watchable | **NOT MET** — `demo_video` is empty; a rendered MP4 exists but is unpublished |
+| **W3** | A stranger with no wallet can reach a real trade unaided | **REGRESSED TO NOT MET.** The path is built and was proven end to end; it cannot be walked today for two independent reasons, both money: the faucet float holds **0.109 STRK** against a 12 STRK drip, so no new account can be created, and the keeper is below its floor so there are **0 open markets** to trade into. Nothing here is broken code — `/api/door` reports it, the gate says it, and both come back the moment either account is funded |
+| **W4** | The manifest is complete and the demo is watchable | **PARTLY MET.** `demo_video` is published and serves — 200, `video/mp4`, 18.4 MB — and every contract and transaction the manifest claims was checked against the chain and found (3/3 and 5/5 sampled). Two things short of met: `network` still says `sepolia` because W1 is unmet, and the video's device footage predates the redesign |
 | **W5** | The claims survive a sceptic checking them against the chain | **MET** — `/privacy`, `/verify`, `/m/[id]` and `/api/audit` all recompute from chain state |
 
 ### Explicit non-goals
@@ -42,15 +42,22 @@ not volume. A mobile app, an audit, and a token are not goals for this sprint.
 Do not re-litigate these; they are measured.
 
 - **Contracts live on Sepolia** — market `0x053b1721…`, up/down `0x07881b0c…`,
-  relay `0x0275a7fd…`. `pnpm verify` is **38/38 PASS**.
-- **Tests green** — Cairo 119, SDK 110, keeper 26 = **255**, 0 failures.
+  relay `0x0275a7fd…`. `pnpm verify` is **39/39 PASS**.
+- **Tests green** — Cairo 131, SDK 112, keeper 35 = **278**, 0 failures.
+- **Both games have real history on chain** — the range market has positions opened *and*
+  claimed; the direction game has 4+ tickets opened, 2+ claimed and 18+ rounds settled. Neither
+  is a demo path that has never run.
 - **Nine markets** listed and relaying. Four settle against Pragma's own median; five
   (SOL, XRP, DOGE, LINK, AVAX) have no Starknet oracle at all and settle against molfi's
   median across five independent exchanges, relayed with the true source count.
 - **The band is not on chain** on the deployed class — `Position` stores `low_off_1e8` /
   `high_off_1e8`. Verified by `verify` D13.
 - **The keeper runs unattended** on Railway — lists, funds, relays, settles.
-- **57/57** browser verification items pass (`docs/RUN-PLAN.md`).
+- **57/57** browser verification items pass (`docs/RUN-PLAN.md`), and **87/87** of the
+  full-surface audit against production (`docs/AUDIT-PLAN.md`), plus 15/15 desk items locally.
+- **The desk is not currently tradeable.** 0 markets are open and no new account can be funded.
+  Both are the same shortage of testnet STRK, not a defect — recorded here because a status
+  section that lists only what works is a brochure.
 
 ---
 
@@ -132,7 +139,7 @@ Only after phases 1–3. None of this wins the sprint; all of it is visible.
 | # | Task | Status |
 | --- | --- | --- |
 | 6.1 | `ui/` is an empty directory. Delete it or put the reference material back. | **DONE — and the plan was wrong twice over.** `ui` is not a directory and not empty: it is a **50 KB zip** holding the original design pack — `DESIGN.md`, `IMPLEMENT.md`, `Molfi Console.dc.html`, `tokens.css`, the logos. I deleted it on the plan's word, checked what it actually was before committing that, and restored it. Renamed to `ui.zip` so the next reader does not have to find out the same way |
-| 6.2 | `apps/hub` — decide whether it ships or is deleted. | **KEPT, deliberately.** Not unreferenced: `package.json` exposes it as `dev:hub` and the workspace globs `apps/*`. It is a separate public-facing site with its own landing, privacy and terms pages, and deleting a working app to tidy a file tree is a worse trade than leaving it. The real fix is a line in the README saying what it is; folded into 6.4 |
+| 6.2 | `apps/hub` — decide whether it ships or is deleted. | **KEPT, deliberately.** Not unreferenced: `package.json` exposes it as `dev:hub` and the workspace globs `apps/*`. It has its own landing, how-it-works, privacy and terms pages and builds clean — all four routes answer 200 on a fresh port — but it is **not deployed anywhere**: the account holds exactly one Vercel project, `molfi` → molfi.fun. This line previously called it "a separate public-facing site", which was untrue and is the kind of claim a judge checks. It is a working app that ships with the repo and serves no traffic; deleting it to tidy a file tree is still the worse trade. The real fix is a line in the README saying what it is; folded into 6.4 |
 | 6.3 | The direction game offers only BTC. Either list rounds for more pairs or say on the deck why. | **DONE — said, not extended.** On any other market the deck read "NO OPEN ROUND", which describes a fault the desk is having rather than a scope it has, and a trader who had just switched market had no way to tell those apart. It now reads `UP / DOWN RUNS ON BTC`. Extending it to nine pairs is the wrong trade while `fund_market` is one-way: every round locks a bankroll that can never be returned, and the game's point is made by one pair |
 | 6.4 | `docs/STATUS.md` claims 230 items; `docs/RUN-PLAN.md` has 57. Reconcile them. | **DONE — kept as two registers, with the difference stated.** They are not the same measurement: STATUS.md is cumulative (has this ever been shown to work), RUN-PLAN.md is one run scored against the product as it stood that day. Merging them would lose that. A note at the top of STATUS.md says so, so the next reader does not treat the mismatch as an error. README now also names `apps/hub`, which was the real fix for 6.2 |
 
