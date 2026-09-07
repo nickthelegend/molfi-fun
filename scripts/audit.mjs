@@ -643,6 +643,93 @@ if (section("F")) {
   want("F6", /39\/39 PASS/.test(verdict), verdict);
 }
 
+if (section("G")) {
+  console.log("\nG. Surface the first plan missed");
+
+  /**
+   * Sequentially, and that matters.
+   *
+   * The first attempt fired 65 concurrent requests and every one returned 200, which read as a
+   * rate limiter that does not limit. It was the test that was wrong: the limit is per-instance
+   * in-memory and concurrent requests are spread across serverless instances. Sequential
+   * requests land on a warm instance and trip it exactly as designed.
+   */
+  let limited = 0, served = 0, refusal = null;
+  for (let i = 0; i < 75; i += 1) {
+    const r = await json(`${BASE}/api/price?market=BTC`);
+    if (r.status === 429) { limited += 1; refusal ??= r.body?.error; } else if (r.status === 200) served += 1;
+  }
+  want("G1", limited > 0 && /rate limited/.test(refusal ?? ""), `${served} served, ${limited} refused · "${refusal}"`);
+
+  const kroot = await json(`${KEEPER}/`);
+  want("G2", kroot.status === 200 || kroot.status === 503, `keeper / answered ${kroot.status} with a status body`);
+  const kact = await json(`${KEEPER}/actions`);
+  want("G3", kact.status === 200 && Array.isArray(kact.body?.actions) && kact.body.actions.length > 0,
+    `${kact.status} · ${kact.body?.actions?.length} recorded actions · newest ${kact.body?.actions?.[0]?.kind}`);
+  const kset = await json(`${KEEPER}/settled`);
+  want("G4", kset.status === 200 && Array.isArray(kset.body?.markets),
+    `${kset.status} · ${kset.body?.markets?.length} settled markets published`);
+
+  const asset = async (path, type) => {
+    const r = await fetch(`${BASE}${path}`);
+    return { ok: r.status === 200 && (r.headers.get("content-type") ?? "").includes(type), status: r.status, ct: r.headers.get("content-type"), len: r.headers.get("content-length") };
+  };
+  const og = await asset("/opengraph-image", "image/png");
+  want("G5", og.ok, `${og.status} · ${og.ct}`);
+  const mf = await asset("/manifest.webmanifest", "manifest");
+  want("G6", mf.ok, `${mf.status} · ${mf.ct}`);
+  // strk20.json points a judge at this file; a 404 here is a dead submission link.
+  const vid = await asset("/molfi-demo.mp4", "video/mp4");
+  want("G7", vid.ok && Number(vid.len) > 1_000_000, `${vid.status} · ${vid.ct} · ${(Number(vid.len) / 1e6).toFixed(1)}MB`);
+
+  /**
+   * The submission manifest, checked against the chain rather than eyeballed.
+   *
+   * Every contract it names must exist and every transaction hash it claims must be findable.
+   * A manifest listing an address from a superseded deploy is the kind of thing nobody notices
+   * until a judge clicks it.
+   */
+  const manifest = JSON.parse(readFileSync("strk20.json", "utf8"));
+  const contractChecks = await Promise.all((manifest.contracts ?? []).map(async (c) => {
+    const addr = typeof c === "string" ? c : c.address;
+    const r = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_getClassHashAt", params: ["latest", addr] }) }).then((x) => x.json());
+    return { addr, live: typeof r.result === "string" };
+  }));
+  want("G8", contractChecks.length > 0 && contractChecks.every((c) => c.live),
+    `${contractChecks.filter((c) => c.live).length}/${contractChecks.length} contracts in strk20.json are deployed`);
+
+  const sample = (manifest.transactions ?? []).slice(0, 5);
+  const txChecks = await Promise.all(sample.map(async (h) => {
+    const r = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_getTransactionStatus", params: [typeof h === "string" ? h : h.hash] }) }).then((x) => x.json());
+    return Boolean(r.result?.finality_status);
+  }));
+  const robots = await fetch(`${BASE}/robots.txt`).then(async (r) => ({ status: r.status, body: await r.text() }));
+  want("G10", robots.status === 200 && /Disallow: \/api\//.test(robots.body) && /Sitemap:/.test(robots.body),
+    `${robots.status} · disallows /api · names the sitemap`);
+
+  /**
+   * A sitemap is a machine-readable claim, so it is checked by following it.
+   *
+   * The only sitemap this repo had advertised `/markets` and `/contracts`, routes molfi.fun has
+   * never served. Counting URLs would not have caught that; fetching them does.
+   */
+  const sm = await fetch(`${BASE}/sitemap.xml`).then(async (r) => ({ status: r.status, body: await r.text() }));
+  const urls = [...sm.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  const probe = [urls[0], urls[1], urls[2], urls[3], urls[4], urls[urls.length - 1]].filter(Boolean);
+  const statuses = await Promise.all(probe.map(async (u) => {
+    const path = new URL(u).pathname;
+    return { path, status: (await fetch(`${BASE}${path}`, { redirect: "manual" })).status };
+  }));
+  const broken = statuses.filter((x) => x.status !== 200);
+  want("G11", sm.status === 200 && urls.length >= 5 && broken.length === 0,
+    `${urls.length} urls · sampled ${statuses.length} · broken: ${broken.map((b) => b.path + ":" + b.status).join(",") || "none"}`);
+
+  want("G9", sample.length > 0 && txChecks.every(Boolean),
+    `${txChecks.filter(Boolean).length}/${sample.length} sampled transactions found on chain (of ${manifest.transactions?.length} claimed)`);
+}
+
 // ---------------------------------------------------------------- verdict
 const pass = results.filter((r) => r.ok === true).length;
 const fail = results.filter((r) => r.ok === false);
