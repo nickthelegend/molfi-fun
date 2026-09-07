@@ -351,9 +351,21 @@ function Inner({ children }: { children: GateChildren }) {
             <p className="mono text-[11px] tracking-[0.15em] text-amber">THE DESK CANNOT OPEN NEW ACCOUNTS</p>
             <p className="mt-3 text-[12px] leading-relaxed text-white/45">
               molfi funds your first account so it can put itself on chain, and its float is
-              empty right now — so signing in would get you a wallet that cannot move. Nothing
-              else is affected: the markets below are live, they are settling, and everything
-              already open stays claimable.
+              empty right now — so signing in would get you a wallet that cannot move.
+              {/*
+                Only claims that are true whatever the desk is doing.
+                
+                This used to add "the markets below are live, they are settling" — two claims
+                about live state, printed from a static string, on a screen that only appears
+                when something is already wrong. Both were false while it was being shown: zero
+                markets open and the keeper settling nothing. Reassurance a reader can falsify
+                in one click is worse than no reassurance. What is below is permanent: claiming
+                is on the contract and needs nobody's permission, and every settled market stays
+                recomputable by a stranger.
+              */}{" "}
+              Nothing already on chain is affected — settling and claiming are permissionless,
+              so anything open stays claimable by whoever holds it, and every market ever
+              settled stays checkable here without an account.
             </p>
             <p className="mt-3 text-[12px] leading-relaxed text-white/45">
               Look around while you wait — the{" "}
