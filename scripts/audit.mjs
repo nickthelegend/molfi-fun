@@ -226,9 +226,22 @@ if (section("B")) {
   want("B1", c.status === 200 && c.body.network === "sepolia" &&
     String(JSON.stringify(c.body)).includes(D.market.slice(2, 20)), `${c.status} · ${c.body?.network}`);
 
+  /**
+   * The oracle is allowed to be `degraded`; it is not allowed to be `down`.
+   *
+   * Health warns at 420s and the contract refuses at 900s, while Pragma republishes every seven
+   * to ten minutes — so a print legitimately spends part of every cycle in the warning band.
+   * Demanding `ok` made this item flake on the clock rather than on the product: it failed at
+   * 415s+ and passed again a minute later, with every pair settleable and quotable the whole
+   * time. The invariant worth asserting is the one the desk depends on — nothing down, and
+   * every pair still settleable.
+   */
   const h = await json(`${BASE}/api/health`);
-  want("B2", h.status === 200 && h.body.ok === true && ["chain", "oracle", "market", "pool"].every((k) => h.body[k].status === "ok") && Boolean(h.body.door?.status),
-    `${h.status} · chain ${h.body?.chain?.status} oracle ${h.body?.oracle?.status} market ${h.body?.market?.status} pool ${h.body?.pool?.status} door ${h.body?.door?.status}`);
+  const oraclePairs = h.body?.oracle?.pairs ?? [];
+  want("B2", h.status === 200 && h.body.ok === true &&
+    ["chain", "market", "pool"].every((k) => h.body[k].status === "ok") &&
+    h.body.oracle.status !== "down" && oraclePairs.every((x) => x.settleable) && Boolean(h.body.door?.status),
+    `${h.status} · chain ${h.body?.chain?.status} oracle ${h.body?.oracle?.status} (${oraclePairs.filter((x) => x.settleable).length}/${oraclePairs.length} settleable) market ${h.body?.market?.status} pool ${h.body?.pool?.status} door ${h.body?.door?.status}`);
 
   const m = await json(`${BASE}/api/markets`);
   want("B3", m.status === 200 && m.body.count >= 129 && m.body.markets.every((x) => x.pair && "isSettled" in x),
