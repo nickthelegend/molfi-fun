@@ -102,11 +102,12 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
  * Console errors are collected per navigation and handed back with the evaluation, so an item
  * cannot pass on its visible result while quietly logging an exception.
  */
-async function browser(width, height) {
+async function browser(width, height, { flags = [], reducedMotion = false } = {}) {
   const port = 9400 + Math.floor(Math.random() * 500);
   const proc = spawn(CHROME, [
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=/tmp/molfi-audit-${port}`,
     `--window-size=${width},${height}`, "--disable-gpu", "--hide-scrollbars", "--no-first-run",
+    ...flags,
     "about:blank",
   ], { stdio: "ignore" });
 
@@ -139,8 +140,19 @@ async function browser(width, height) {
     new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params })); });
 
   await send("Runtime.enable"); await send("Log.enable"); await send("Page.enable");
+  if (reducedMotion) {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  }
 
   return {
+    /** Navigate to an absolute URL — `visit` prepends BASE, which a file:// parent cannot use. */
+    async open(absoluteUrl, expression, settleMs = 7000) {
+      errors = [];
+      await send("Page.navigate", { url: absoluteUrl });
+      await sleep(settleMs);
+      const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      return { value: r.result?.value, errors: [...errors] };
+    },
     /** Navigate, settle, evaluate, and hand back whatever errors the page logged on the way. */
     async visit(path, expression, settleMs = 8000) {
       errors = [];
@@ -771,6 +783,73 @@ if (section("G")) {
 
   want("G9", sample.length > 0 && txChecks.every(Boolean),
     `${txChecks.filter(Boolean).length}/${sample.length} sampled transactions found on chain (of ${manifest.transactions?.length} claimed)`);
+}
+
+if (section("H")) {
+  console.log("\nH. Hardening and degraded paths");
+
+  const head = await fetchStubborn(`${BASE}/play`, { method: "HEAD" });
+  const h = (n) => head.headers.get(n) ?? "";
+  want("H1",
+    /frame-ancestors 'none'/.test(h("content-security-policy")) &&
+      /DENY/i.test(h("x-frame-options")) && /nosniff/i.test(h("x-content-type-options")) &&
+      h("referrer-policy").length > 0 && h("permissions-policy").length > 0,
+    `csp="${h("content-security-policy")}" xfo=${h("x-frame-options")} nosniff=${h("x-content-type-options")} ref=${h("referrer-policy") ? "set" : "MISSING"} perms=${h("permissions-policy") ? "set" : "MISSING"}`);
+
+  /**
+   * Framing refused by a real browser, not merely a header that claims it.
+   *
+   * Production shipped exactly one security header — Vercel's HSTS — and `/play` loaded happily
+   * inside a cross-origin iframe. On a page whose next click leads to signing a transaction that
+   * is a clickjacking surface, not a theoretical one. A header can be present and still not
+   * applied to the route that matters, so this makes Chrome do the framing and looks for the
+   * refusal it logs.
+   */
+  const { writeFileSync: writeFile } = await import("node:fs");
+  const framePage = `/tmp/molfi-frame-${Date.now()}.html`;
+  writeFile(framePage, `<!doctype html><meta charset=utf-8><iframe src="${BASE}/play" width="600" height="400"></iframe>`);
+  const framer = await browser(1280, 860);
+  try {
+    const framed = await framer.open(`file://${framePage}`, "1", 6000);
+    const refusal = framed.errors.find((e) => /frame-ancestors|X-Frame-Options|Refused to display/i.test(e));
+    want("H2", Boolean(refusal), refusal ? `browser refused the frame: ${refusal.slice(0, 80)}` : "THE SITE CAN BE EMBEDDED — no refusal logged");
+  } finally { framer.close(); }
+
+  /**
+   * The two degraded paths the code explicitly promises to handle.
+   *
+   * `ConsoleStage` probes for a WebGL context before mounting the canvas, and `useGsap` skips
+   * building its timelines under reduced motion on the reasoning that every element is authored
+   * visible and the animations take things away from that. Both are claims about what a visitor
+   * sees, and neither had ever been run: a fallback nobody exercises is a fallback nobody knows
+   * works. The bar is the same in both — the headline and the CTA are on screen, and nothing
+   * throws.
+   */
+  const degraded = `(async()=>{const t=document.body.innerText.replace(/\\s+/g,' ');
+    const dev=document.querySelector('[data-hero=device]');
+    return JSON.stringify({hero:dev?(dev.querySelector('canvas')?'webgl':'css still'):'missing',
+      headline:/A handheld for bets/.test(t), cta:/PLAY THE GAME/.test(t), chars:t.length});})()`;
+
+  const noGl = await browser(1280, 860, { flags: ["--disable-webgl", "--disable-webgl2", "--disable-3d-apis"] });
+  try {
+    const r = await noGl.visit("/", degraded, 9000);
+    const v = JSON.parse(r.value);
+    want("H4", v.hero === "css still" && v.headline && v.cta && realErrors(r.errors, false).length === 0,
+      `hero fell back to "${v.hero}" · headline ${v.headline} · cta ${v.cta} · console ${realErrors(r.errors, false).length}`);
+  } finally { noGl.close(); }
+
+  const reduced = await browser(1280, 860, { reducedMotion: true });
+  try {
+    const r = await reduced.visit("/", degraded, 9000);
+    const v = JSON.parse(r.value);
+    want("H5", v.headline && v.cta && v.chars > 800 && realErrors(r.errors, false).length === 0,
+      `headline ${v.headline} · cta ${v.cta} · ${v.chars} chars · console ${realErrors(r.errors, false).length}`);
+  } finally { reduced.close(); }
+
+  const noJs = await fetchStubborn(`${BASE}/`).then((r) => r.text());
+  const text = noJs.replace(/<script[\s\S]*?<\/script>/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  want("H3", text.length > 800 && /A handheld for bets/.test(text),
+    `${text.length} chars server-rendered without JS · headline present: ${/A handheld for bets/.test(text)}`);
 }
 
 // ---------------------------------------------------------------- verdict

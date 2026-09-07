@@ -160,6 +160,19 @@ Found on a second pass over the repo: components and behaviours the first plan d
 | G10 | `/robots.txt` | 200 · disallows `/api/` · names the sitemap |
 | G11 | `/sitemap.xml` | 200 · lists only routes that **actually answer 200**, verified by following them, not by counting |
 
+## H · Hardening and degraded paths
+
+Surface no earlier pass covered: what the app sends in its headers, and what a visitor gets
+when the browser will not do what the page assumes.
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| H1 | Security headers | `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, a `Referrer-Policy` and a `Permissions-Policy`, all present on `/play` |
+| H2 | Clickjacking | a real Chrome, given a cross-origin page that frames `/play`, **refuses** and logs it. A header that is present but not applied to the route is not a pass |
+| H3 | No JavaScript | the landing page server-renders > 800 characters including the headline — a crawler or a blocked-script visitor gets the pitch, not an empty shell |
+| H4 | WebGL unavailable | `ConsoleStage`'s probe finds no context, the hero renders the CSS still instead of a canvas, headline and CTA are on screen, nothing throws |
+| H5 | Reduced motion | content is fully visible with `prefers-reduced-motion: reduce` — the animations take things away from a visible baseline rather than revealing from nothing — and nothing throws |
+
 ## Result
 
 `node --experimental-strip-types scripts/audit.mjs` against `https://molfi.fun`:
