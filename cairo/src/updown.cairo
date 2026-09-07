@@ -37,6 +37,7 @@
 //! is over-collateralised by construction. Privacy is paid for in capacity here, and this
 //! comment is where that bill is recorded rather than discovered later.
 
+use molfi::objects::OpenNoteDeposit;
 use starknet::ContractAddress;
 
 /// A direction market. Same settlement machinery as a range market, different question.
@@ -122,6 +123,25 @@ pub trait IUpDown<T> {
     fn fund_round(ref self: T, round_id: u64, amount: u256);
     fn settle(ref self: T, round_id: u64);
 
+    /// The one entrypoint the STRK20 pool can drive, mirroring `market.cairo`.
+    ///
+    /// The pool's `InvokeExternal` carries a contract address and calldata and nothing else —
+    /// it cannot name an entrypoint — so an anonymizer has to expose exactly one dispatcher at
+    /// the pool's fixed selector and branch inside it. Without this the direction game had no
+    /// pool route at all: `open_ticket` already zeroes the owner when the caller is the pool,
+    /// but the pool had no way to reach it, so every ticket was opened directly and the stake
+    /// and the trader were public. Only the side was ever hidden.
+    fn privacy_invoke(
+        ref self: T,
+        operation: u8,
+        round_id: u64,
+        direction: felt252,
+        token: ContractAddress,
+        amount: u128,
+        secret: felt252,
+        note_id: felt252,
+    ) -> Span<OpenNoteDeposit>;
+
     fn open_ticket(
         ref self: T, round_id: u64, commitment: felt252, stake: u256,
     );
@@ -149,7 +169,7 @@ pub mod UpDownMarket {
     use starknet::{ContractAddress, get_block_timestamp, get_caller_address, get_contract_address};
     use molfi::objects::{
         DataType, IERC20Dispatcher, IERC20DispatcherTrait, IPragmaOracleDispatcher,
-        IPragmaOracleDispatcherTrait,
+        IPragmaOracleDispatcherTrait, OpenNoteDeposit,
     };
     use molfi::pricing::{BPS, payout_for};
     use super::{Direction, IUpDown, Round, Ticket, direction_felt};
@@ -160,6 +180,10 @@ pub mod UpDownMarket {
     /// preimage valid on one would be valid on the other, and a market id collides trivially
     /// across two contracts that both number from one.
     const DIRECTION_TAG: felt252 = 'MOLFI_DIRECTION_V1';
+
+    /// Operations the pool can drive through `privacy_invoke`, matching `market.cairo`.
+    const OP_OPEN: u8 = 0;
+    const OP_CLAIM: u8 = 1;
 
     /// Same freshness rules as the range market. A direction settled on a stale print is
     /// wrong in exactly the same way.
@@ -193,6 +217,8 @@ pub mod UpDownMarket {
         pub const STAKE_NOT_RECEIVED: felt252 = 'STAKE_NOT_RECEIVED';
         pub const ROUND_TOO_SHORT: felt252 = 'ROUND_SHORTER_THAN_ORACLE';
         pub const BAD_DIRECTION: felt252 = 'DIRECTION_NOT_0_OR_1';
+        pub const UNKNOWN_OP: felt252 = 'UNKNOWN_OPERATION';
+        pub const WRONG_TOKEN: felt252 = 'WRONG_TOKEN';
         pub const EDGE_TOO_HIGH: felt252 = 'EDGE_LEAVES_NOTHING';
         pub const NOT_OWNER_OF_TICKET: felt252 = 'NOT_OWNER_OF_TICKET';
         pub const WRONG_ROUTE: felt252 = 'WRONG_ROUTE_FOR_TICKET';
@@ -380,127 +406,80 @@ pub mod UpDownMarket {
         fn open_ticket(
             ref self: ContractState, round_id: u64, commitment: felt252, stake: u256,
         ) {
-            let mut r = self.round_of(round_id);
-            assert(!r.is_settled, errors::ALREADY_SETTLED);
-            assert(get_block_timestamp() < r.cutoff_at, errors::CLOSED);
-            assert(stake > 0, errors::ZERO_STAKE);
-            assert(!self.tickets.read(commitment).exists, errors::DUPLICATE);
-
-            let payout = payout_for(stake, r.multiplier_bps);
-
-            /// Reserve the whole payout now, not at claim time.
-            ///
-            /// By claim time the money is committed and refusing is too late — the ticket was
-            /// sold at a price the round could not honour and a winner simply does not get
-            /// paid. See the header for why this reserves the sum rather than the maximum.
-            assert(r.paid + r.reserved + payout <= r.staked + stake + r.bankroll, errors::OVER_RESERVED);
-
+            // The public route pulls the stake itself, then books it. The pool route has the
+            // stake delivered by a withdraw action in the same transaction and books the same
+            // way — one accounting path, two ways of the money arriving.
+            let r = self.round_of(round_id);
             let caller = get_caller_address();
             let token = IERC20Dispatcher { contract_address: r.token };
             let before = token.balance_of(get_contract_address());
             token.transfer_from(caller, get_contract_address(), stake);
             let after = token.balance_of(get_contract_address());
             assert(after - before == stake, errors::STAKE_NOT_RECEIVED);
+            self.book_ticket(round_id, commitment, stake, caller);
+        }
 
-            r.staked += stake;
-            r.reserved += payout;
-            self.rounds.write(round_id, r);
-            self.held.write(r.token, self.held.read(r.token) + stake);
+        /// Reveal the direction and take the payout, if it was the right one.
+        /// The pool's one entrypoint, branching on the operation.
+        ///
+        /// Mirrors `market.cairo` exactly, including the shape of the return: the pool
+        /// deserialises the result as `Span<OpenNoteDeposit>` and rejects the call if it is
+        /// anything else, so an open returns an **empty** span — the stake parks here until
+        /// the round settles and there is nothing to credit back yet.
+        fn privacy_invoke(
+            ref self: ContractState,
+            operation: u8,
+            round_id: u64,
+            direction: felt252,
+            token: ContractAddress,
+            amount: u128,
+            secret: felt252,
+            note_id: felt252,
+        ) -> Span<OpenNoteDeposit> {
+            assert(get_caller_address() == self.pool.read(), errors::NOT_POOL);
 
-            // A ticket opened by the pool has no owner: the pool is the caller and recording
-            // it would name the pool on every position, which says nothing, or name the
-            // trader, which says everything.
-            let owner = if caller == self.pool.read() {
-                Zero::zero()
+            if operation == OP_OPEN {
+                let r = self.round_of(round_id);
+                assert(token == r.token, errors::WRONG_TOKEN);
+                assert(direction == 0 || direction == 1, errors::BAD_DIRECTION);
+
+                /// The stake is MEASURED, never believed.
+                ///
+                /// The pool's `InvokeExternalInput` carries a contract address and calldata
+                /// and nothing else — no token, no amount — so the tokens arrive by a separate
+                /// withdraw action in the same transaction and this contract cannot tell from
+                /// the call that they did. Taking `amount` on trust would let anyone who can
+                /// reach this record a ticket backed by nothing and claim a payout funded by
+                /// the bankroll and by other people's stakes.
+                let erc20 = IERC20Dispatcher { contract_address: r.token };
+                let stake: u256 = amount.into();
+                let delivered = erc20.balance_of(get_contract_address()) - self.held.read(r.token);
+                assert(delivered >= stake, errors::STAKE_NOT_RECEIVED);
+
+                let commitment = commitment_of(secret, round_id, direction);
+                self.book_ticket(round_id, commitment, stake, get_caller_address());
+                array![].span()
+            } else if operation == OP_CLAIM {
+                let (payout, paid_in) = self
+                    .resolve_claim(round_id, secret, direction, get_caller_address());
+                assert(token == paid_in, errors::WRONG_TOKEN);
+
+                // A losing claim is still a successful call; it simply credits nothing. The
+                // pool accepts an empty span, and the ticket is marked spent either way.
+                if payout == 0 {
+                    array![].span()
+                } else {
+                    let amount_u128: u128 = payout.try_into().expect(errors::STAKE_TOO_LARGE);
+                    array![OpenNoteDeposit { note_id, token: paid_in, amount: amount_u128 }].span()
+                }
             } else {
-                caller
-            };
-
-            self
-                .tickets
-                .write(
-                    commitment,
-                    Ticket {
-                        round_id,
-                        stake: stake.try_into().expect(errors::STAKE_TOO_LARGE),
-                        multiplier_bps: r.multiplier_bps,
-                        claimed: false,
-                        exists: true,
-                        owner,
-                    },
-                );
-            self.emit(TicketOpened { round_id, commitment, stake });
+                core::panic_with_felt252(errors::UNKNOWN_OP)
+            }
         }
 
         /// Reveal the direction and take the payout, if it was the right one.
         fn claim_ticket(ref self: ContractState, round_id: u64, secret: felt252, direction: felt252) {
-            assert(direction == 0 || direction == 1, errors::BAD_DIRECTION);
-            let mut r = self.round_of(round_id);
-            assert(r.is_settled, errors::NOT_SETTLED);
-
-            let commitment = commitment_of(secret, round_id, direction);
-            let mut t = self.tickets.read(commitment);
-            // A commitment that does not resolve is indistinguishable from one that was never
-            // opened, which is the point: naming a direction you do not hold the secret for
-            // finds nothing rather than telling you that you were close.
-            assert(t.exists, errors::NO_TICKET);
-            assert(t.round_id == round_id, errors::NO_TICKET);
-            assert(!t.claimed, errors::ALREADY_CLAIMED);
-
-            let claimant = get_caller_address();
-            if t.owner.is_zero() {
-                // Pool route: only the pool may present it, and the secret is the credential.
-                assert(claimant == self.pool.read(), errors::WRONG_ROUTE);
-            } else {
-                assert(t.owner == claimant, errors::NOT_OWNER_OF_TICKET);
-            }
-
-            let stake: u256 = t.stake.into();
-            let full = payout_for(stake, t.multiplier_bps);
-
-            /// Three outcomes, and the third one is the honest one.
-            ///
-            /// Above the reference pays Up, below pays Down. Exactly equal pays **the stake
-            /// back**, to either side. A tie is not a loss: the round asked which way the
-            /// price would move and it did not move, so there is no winner to pay and no
-            /// reason to keep the money. Resolving a tie to the house would be a silent extra
-            /// edge that appears nowhere in the quoted multiplier.
-            let won_up = r.settled_price > r.reference_price;
-            let won_down = r.settled_price < r.reference_price;
-            let tie = r.settled_price == r.reference_price;
-
-            let payout = if tie {
-                stake
-            } else if (direction == 0 && won_up) || (direction == 1 && won_down) {
-                full
-            } else {
-                0
-            };
-
-            t.claimed = true;
-            self.tickets.write(commitment, t);
-
-            // The reservation is released in full either way — it was made against the payout
-            // this ticket might have taken, and once claimed it can never take it.
-            r.reserved -= full;
-            if payout > 0 {
-                r.paid += payout;
-                self.rounds.write(round_id, r);
-                self.held.write(r.token, self.held.read(r.token) - payout);
-                IERC20Dispatcher { contract_address: r.token }.transfer(claimant, payout);
-            } else {
-                self.rounds.write(round_id, r);
-            }
-
-            /// A losing claim succeeds, and that is deliberate.
-            ///
-            /// Reverting would be tidier to read and worse in every other way: the ticket
-            /// would stay unclaimed for ever, its reservation would never be released, and
-            /// the round's capacity would be permanently consumed by positions that already
-            /// lost. It would also cost the loser gas to be told something they can read off
-            /// the round for free. So the ticket is marked spent, the reservation comes back,
-            /// and the payout is zero.
-            self.emit(TicketClaimed { round_id, commitment, payout });
+            self.resolve_claim(round_id, secret, direction, get_caller_address());
         }
 
         /// Settle a round against a fresh print. Permissionless, like the range market.
@@ -564,6 +543,163 @@ pub mod UpDownMarket {
 
     #[generate_trait]
     impl Internals of InternalsTrait {
+        /// The whole of a claim, returning what it paid and which token it paid in.
+        ///
+        /// Both routes end here so they cannot resolve a ticket differently. The claimant is
+        /// passed in because on the pool route the caller is the pool and the ownership check
+        /// has to compare against that, not against whoever the pool is acting for — which
+        /// this contract deliberately never learns.
+        fn resolve_claim(
+            ref self: ContractState,
+            round_id: u64,
+            secret: felt252,
+            direction: felt252,
+            claimant: ContractAddress,
+        ) -> (u256, ContractAddress) {
+            assert(direction == 0 || direction == 1, errors::BAD_DIRECTION);
+            let mut r = self.round_of(round_id);
+            assert(r.is_settled, errors::NOT_SETTLED);
+
+            let commitment = commitment_of(secret, round_id, direction);
+            let mut t = self.tickets.read(commitment);
+            // A commitment that does not resolve is indistinguishable from one that was never
+            // opened, which is the point: naming a direction you do not hold the secret for
+            // finds nothing rather than telling you that you were close.
+            assert(t.exists, errors::NO_TICKET);
+            assert(t.round_id == round_id, errors::NO_TICKET);
+            assert(!t.claimed, errors::ALREADY_CLAIMED);
+
+            if t.owner.is_zero() {
+                // Pool route: only the pool may present it, and the secret is the credential.
+                assert(claimant == self.pool.read(), errors::WRONG_ROUTE);
+            } else {
+                assert(t.owner == claimant, errors::NOT_OWNER_OF_TICKET);
+            }
+
+            let stake: u256 = t.stake.into();
+            let full = payout_for(stake, t.multiplier_bps);
+
+            /// Three outcomes, and the third one is the honest one.
+            ///
+            /// Above the reference pays Up, below pays Down. Exactly equal pays **the stake
+            /// back**, to either side. A tie is not a loss: the round asked which way the
+            /// price would move and it did not move, so there is no winner to pay and no
+            /// reason to keep the money. Resolving a tie to the house would be a silent extra
+            /// edge that appears nowhere in the quoted multiplier.
+            let won_up = r.settled_price > r.reference_price;
+            let won_down = r.settled_price < r.reference_price;
+            let tie = r.settled_price == r.reference_price;
+
+            let payout = if tie {
+                stake
+            } else if (direction == 0 && won_up) || (direction == 1 && won_down) {
+                full
+            } else {
+                0
+            };
+
+            t.claimed = true;
+            self.tickets.write(commitment, t);
+
+            // The reservation is released in full either way — it was made against the payout
+            // this ticket might have taken, and once claimed it can never take it.
+            r.reserved -= full;
+            if payout > 0 {
+                r.paid += payout;
+                self.rounds.write(round_id, r);
+                self.held.write(r.token, self.held.read(r.token) - payout);
+                let erc20 = IERC20Dispatcher { contract_address: r.token };
+                if t.owner.is_zero() {
+                    /// Pool route: approve, do not transfer.
+                    ///
+                    /// The pool pulls the payout itself when it applies the `OpenNoteDeposit`
+                    /// this call returns, which is what the anonymizer pattern requires.
+                    /// Transferring here instead would move the tokens to the pool's own
+                    /// balance without any note being credited — the money would arrive and
+                    /// belong to nobody, and the pool's invariant would fail the transaction
+                    /// or, worse, not.
+                    erc20.approve(self.pool.read(), payout);
+                } else {
+                    erc20.transfer(claimant, payout);
+                }
+            } else {
+                self.rounds.write(round_id, r);
+            }
+
+            /// A losing claim succeeds, and that is deliberate.
+            ///
+            /// Reverting would be tidier to read and worse in every other way: the ticket
+            /// would stay unclaimed for ever, its reservation would never be released, and
+            /// the round's capacity would be permanently consumed by positions that already
+            /// lost. It would also cost the loser gas to be told something they can read off
+            /// the round for free. So the ticket is marked spent, the reservation comes back,
+            /// and the payout is zero.
+            self.emit(TicketClaimed { round_id, commitment, payout });
+            (payout, r.token)
+        }
+
+        /// Everything about opening a ticket except how the stake arrived.
+        ///
+        /// Split out so the public route and the pool route cannot drift. The caller is passed
+        /// in rather than read here, because on the pool route `get_caller_address()` inside
+        /// this helper is still the pool — which is the answer we want — but on the public
+        /// route the dispatcher has already read it, and two reads of the same thing is how
+        /// one of them ends up wrong.
+        fn book_ticket(
+            ref self: ContractState,
+            round_id: u64,
+            commitment: felt252,
+            stake: u256,
+            opener: ContractAddress,
+        ) {
+            let mut r = self.round_of(round_id);
+            assert(!r.is_settled, errors::ALREADY_SETTLED);
+            assert(get_block_timestamp() < r.cutoff_at, errors::CLOSED);
+            assert(stake > 0, errors::ZERO_STAKE);
+            assert(!self.tickets.read(commitment).exists, errors::DUPLICATE);
+
+            let payout = payout_for(stake, r.multiplier_bps);
+
+            /// Reserve the whole payout now, not at claim time.
+            ///
+            /// By claim time the money is committed and refusing is too late — the ticket was
+            /// sold at a price the round could not honour and a winner simply does not get
+            /// paid.
+            assert(
+                r.paid + r.reserved + payout <= r.staked + stake + r.bankroll,
+                errors::OVER_RESERVED,
+            );
+
+            r.staked += stake;
+            r.reserved += payout;
+            self.rounds.write(round_id, r);
+            self.held.write(r.token, self.held.read(r.token) + stake);
+
+            // A ticket opened by the pool has no owner: the pool is the caller and recording
+            // it would name the pool on every position, which says nothing, or name the
+            // trader, which says everything.
+            let owner = if opener == self.pool.read() {
+                Zero::zero()
+            } else {
+                opener
+            };
+
+            self
+                .tickets
+                .write(
+                    commitment,
+                    Ticket {
+                        round_id,
+                        stake: stake.try_into().expect(errors::STAKE_TOO_LARGE),
+                        multiplier_bps: r.multiplier_bps,
+                        claimed: false,
+                        exists: true,
+                        owner,
+                    },
+                );
+            self.emit(TicketOpened { round_id, commitment, stake });
+        }
+
         fn round_of(self: @ContractState, round_id: u64) -> Round {
             let r = self.rounds.read(round_id);
             // A round that was never listed reads back as zeroes, and a zero round would

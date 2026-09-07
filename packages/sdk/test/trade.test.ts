@@ -17,6 +17,7 @@ import { num } from "starknet";
 import { claimCalls, openCalls, reachOf, type TradeAddresses } from "../src/trade.ts";
 import { commitmentOf, u256Parts, type PositionSecret } from "../src/positions.ts";
 import { offsetsOf, quoteOff, quote, NORMAL_TABLE } from "../src/pricing.ts";
+import { claimTicketActions, openTicketActions } from "../src/pool-actions.ts";
 
 const A: TradeAddresses = {
   pool: "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
@@ -133,4 +134,59 @@ test("two positions on the same band are different positions", () => {
   // …but the reach is identical, so the chain cannot tell they are the same band.
   assert.equal(da[2], db[2]);
   assert.equal(da[4], db[4]);
+});
+
+/**
+ * The pool route for the direction game, checked at the shape the wallet is handed.
+ *
+ * Two actions and no more: the withdraw that delivers the stake, and the invoke. The withdraw
+ * is the leg that was missing from the range route once and made an invoke move no money at
+ * all — the pool's `InvokeExternalInput` carries a contract and calldata and nothing else, so
+ * without it the contract measures a delivery that never happened and refuses.
+ */
+test("a pool ticket is a withdraw and an invoke, in that order", () => {
+  const a = { pool: "0x1", token: "0x2", upDownMarket: "0x3" };
+  const s = { secret: "0xabc", roundId: 7, direction: "up" as const };
+  const actions = openTicketActions(a, s, 5_000_000_000_000_000_000n);
+
+  assert.equal(actions.length, 2, "exactly two actions");
+  assert.equal(actions[0].type, "withdraw");
+  assert.equal(
+    (actions[0] as { recipient: string }).recipient,
+    "0x3",
+    "the stake goes to the up/down contract, not the pool",
+  );
+  assert.equal(actions[1].type, "invoke");
+  assert.equal((actions[1] as { contract: string }).contract, "0x3");
+
+  // The calldata is `privacy_invoke`'s signature in order. Seven felts, no more: an eighth
+  // would mean something is being sent that the contract does not take, and a wrong order is
+  // a deserialisation error with nothing readable in it.
+  const cd = (actions[1] as { calldata: string[] }).calldata;
+  assert.equal(cd.length, 7, "seven felts, matching privacy_invoke");
+  assert.equal(BigInt(cd[0]), 0n, "operation 0 is open");
+  assert.equal(BigInt(cd[1]), 7n, "round id");
+  assert.equal(BigInt(cd[2]), 0n, "up is felt 0");
+  assert.equal(BigInt(cd[4]), 5_000_000_000_000_000_000n, "the stake");
+  assert.equal(cd[5], "0xabc", "the secret");
+});
+
+/**
+ * The claim opens the note before it invokes, and references it by placeholder.
+ *
+ * Order is not cosmetic: the note has to exist for the invoke to name, and the pool
+ * substitutes `${openNoteIds[0]}` at assembly time. Reversing these produces a call that
+ * references a note that does not exist yet.
+ */
+test("a pool claim opens the note first and names it in the calldata", () => {
+  const a = { pool: "0x1", token: "0x2", upDownMarket: "0x3" };
+  const s = { secret: "0xdef", roundId: 9, direction: "down" as const };
+  const actions = claimTicketActions(a, s, "0xrecipient");
+
+  assert.equal(actions[0].type, "transfer");
+  assert.equal((actions[0] as { amount: string }).amount, "OPEN", "an open note");
+  const cd = (actions[1] as { calldata: string[] }).calldata;
+  assert.equal(BigInt(cd[0]), 1n, "operation 1 is claim");
+  assert.equal(BigInt(cd[2]), 1n, "down is felt 1");
+  assert.equal(cd[6], "${openNoteIds[0]}", "the note placeholder the wallet substitutes");
 });

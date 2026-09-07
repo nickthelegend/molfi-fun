@@ -250,20 +250,21 @@ export function importPosition(json: string): StoredPosition {
  */
 export function rememberDirection(
   secret: DirectionSecret,
-  meta: { pair: string; seconds: number; stake: bigint; txHash?: string },
+  meta: { pair: string; seconds: number; stake: bigint; txHash?: string; route: Route },
 ): StoredDirection {
   const entry: StoredDirection = {
     game: "direction",
     /**
-     * Direct, always — for now.
+     * The route this ticket actually took, recorded rather than assumed.
      *
-     * `updown.cairo` does have a pool route: a ticket opened by the pool records a zero owner
-     * and is claimed by whoever holds the secret, exactly as the range game does. molfi does
-     * not offer it yet because the pool's action list for `open_ticket` has not been built,
-     * and recording "pool" for a ticket opened directly would make the claim take the wrong
-     * branch and fail by name.
+     * It used to be pinned to `"direct"`, because the pool had no way into the up/down
+     * contract — the pool drives an anonymizer through one fixed entrypoint and `updown.cairo`
+     * had none, so every ticket went out publicly and only the side was ever hidden. Now that
+     * `privacy_invoke` exists there, both routes are real and the claim has to take the branch
+     * the open took: a pool ticket records no owner and is presented by the pool, a direct one
+     * is bound to the address that opened it. Recording the wrong one fails by name at claim.
      */
-    route: "direct",
+    route: meta.route,
     secret: secret.secret,
     roundId: secret.roundId,
     direction: secret.direction,

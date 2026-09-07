@@ -13,6 +13,8 @@ import {
   type MarketDef,
   outcomeOf,
   type PositionSecret,
+  openTicketActions,
+  claimTicketActions,
 } from "@molfi/sdk";
 import { ADDRESSES, LIVE_CONFIGURED, liveBlockedReason, provider } from "./chain";
 import {
@@ -122,6 +124,16 @@ export interface LiveState {
    * approved a stake. Null while the probe is in flight.
    */
   directRoute: boolean | null;
+  /**
+   * Whether the **deployed** up/down class can be driven by the pool.
+   *
+   * Read from the chain, not from a config flag or from this repo. `privacy_invoke` was added
+   * to `updown.cairo` and the class carrying it may not be the one live at the address — a
+   * class is deployed, not compiled. Offering the pool route against a class without it would
+   * take a trader's approval and then fail on an entrypoint that is not there, which is the
+   * one failure mode worth an extra read to avoid. Null while the probe is in flight.
+   */
+  directionPoolRoute: boolean | null;
   wallets: StarknetWallet[];
   /** Shielded STRK, as the wallet reports it. molfi never holds a key to check. */
   shielded: bigint | null;
@@ -157,6 +169,7 @@ const EMPTY: LiveState = {
   connection: null,
   blocked: null,
   directRoute: null,
+  directionPoolRoute: null,
   wallets: [],
   shielded: null,
   markets: [],
@@ -303,6 +316,38 @@ export function useLiveDesk(market: MarketDef, tier: number) {
       stop = true;
     };
   }, [addresses]);
+
+  /**
+   * Does the deployed up/down class expose `privacy_invoke`?
+   *
+   * Asked by calling it with an operation the contract rejects. A class that has the
+   * entrypoint answers `UNKNOWN_OPERATION`; one that does not answers that the entrypoint is
+   * missing. Both are refusals, and the difference between them is exactly the question —
+   * which is why this probes with a call that can never succeed rather than one that could.
+   */
+  useEffect(() => {
+    if (!ADDRESSES.upDownMarket) return;
+    let stop = false;
+    void (async () => {
+      try {
+        await provider.callContract({
+          contractAddress: ADDRESSES.upDownMarket!,
+          entrypoint: "privacy_invoke",
+          calldata: ["0xff", "0x1", "0x0", "0x0", "0x0", "0x0", "0x0", "0x0"],
+        });
+        if (!stop) setState((s) => ({ ...s, directionPoolRoute: true }));
+      } catch (e) {
+        const text = String((e as Error)?.message ?? e);
+        const missing =
+          /entrypoint does not exist|ENTRYPOINT_NOT_FOUND|not found in contract/i.test(text);
+        if (!stop) setState((s) => ({ ...s, directionPoolRoute: !missing }));
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, []);
+
 
   // ---- the markets the contract holds
   const refresh = useCallback(async () => {
@@ -841,23 +886,56 @@ export function useLiveDesk(market: MarketDef, tier: number) {
           throw new Error(`the direction game is not deployed on ${ADDRESSES.name}`);
         }
 
+        /**
+         * The most private route the wallet can take, exactly as the range game does.
+         *
+         * This was pinned to `direct` because the pool had no way into the up/down contract —
+         * it exposes one fixed entrypoint to the pool and `updown.cairo` had none. With
+         * `privacy_invoke` on the contract the two games finally offer the same choice, and
+         * the direction game stops being the half of the product that hides only the side.
+         */
+        /**
+         * The pool route only if the deployed class can actually take it.
+         *
+         * `routesFor` answers what the *wallet* can do; the probe answers what the *contract*
+         * can do, and both have to be true. Without the second half a STRK20 wallet would be
+         * routed at a class that has no `privacy_invoke`, and would find out after approving
+         * the stake — the exact failure the direct-route probe exists to prevent on the other
+         * game.
+         */
+        const available = routesFor(c).filter(
+          (r) => r !== "pool" || state.directionPoolRoute === true,
+        );
+        const chosen = available[0] ?? "direct";
+
         const secret: DirectionSecret = { secret: newSecret(), roundId, direction };
         const entry = rememberDirection(secret, {
           pair: market.label,
           seconds: ROUND_SECONDS[tier] ?? 0,
           stake,
+          route: chosen,
         });
 
         setState((s) => ({ ...s, pending: "opening" }));
-        const r = await submitDirect(
-          c,
-          openDirectionCalls(
-            { ...addresses, upDownMarket: ADDRESSES.upDownMarket },
-            secret,
-            stake,
-          ),
-        );
-        if (r.ok) await provider.waitForTransaction(r.txHash!).catch(() => undefined);
+        const poolAddrs = {
+          pool: addresses.pool,
+          token: addresses.token,
+          upDownMarket: ADDRESSES.upDownMarket,
+        };
+        const r =
+          chosen === "pool"
+            ? await submit(c, openTicketActions(poolAddrs, secret, stake))
+            : await submitDirect(
+                c,
+                openDirectionCalls(
+                  { ...addresses, upDownMarket: ADDRESSES.upDownMarket },
+                  secret,
+                  stake,
+                ),
+              );
+        if (r.ok && chosen === "direct") {
+          await provider.waitForTransaction(r.txHash!).catch(() => undefined);
+        }
         setState((s) => ({
           ...s,
           pending: null,
@@ -895,19 +973,33 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         /**
          * Which game first, then which route.
          *
-         * A direction ticket is claimed on the other contract entirely, and it has no pool
-         * leg yet — so the route question, which is about how a *range* position gets its
-         * payout back, does not arise for it.
+         * A direction ticket is claimed on the other contract entirely, but the route
+         * question is the same one and now has the same two answers: a pool ticket has no
+         * owner and is presented by the pool, a direct one is bound to the opener. The stored
+         * route decides, because the contract refuses the wrong pairing by name.
          */
         const r = isDirection(p)
-          ? await submitDirect(
-              c,
-              claimDirectionCalls({ upDownMarket: ADDRESSES.upDownMarket! }, p),
-            )
+          ? p.route === "pool"
+            ? await submit(
+                c,
+                claimTicketActions(
+                  {
+                    pool: addresses.pool,
+                    token: addresses.token,
+                    upDownMarket: ADDRESSES.upDownMarket!,
+                  },
+                  p,
+                  c.address,
+                ),
+              )
+            : await submitDirect(
+                c,
+                claimDirectionCalls({ upDownMarket: ADDRESSES.upDownMarket! }, p),
+              )
           : p.route === "direct"
             ? await submitDirect(c, claimCalls(addresses, p))
             : await submit(c, claimActions(addresses, p, c.address));
-        if (r.ok && (isDirection(p) || p.route === "direct")) {
+        if (r.ok && p.route === "direct") {
           await provider.waitForTransaction(r.txHash!).catch(() => undefined);
         }
         setState((s) => ({

@@ -11,7 +11,8 @@
  */
 
 import { num } from "starknet";
-import { OP, u256Parts, type PositionSecret } from "./positions.ts";
+import { OP, u256Parts, type DirectionSecret, type PositionSecret } from "./positions.ts";
+import { directionFelt } from "./direction.ts";
 
 /**
  * The STRK20 action shape, transcribed rather than imported.
@@ -31,6 +32,13 @@ export interface PoolAddresses {
   pool: string;
   token: string;
   market: string;
+}
+
+/** The direction game lives on its own contract, so its pool actions need that address. */
+export interface UpDownPoolAddresses {
+  pool: string;
+  token: string;
+  upDownMarket: string;
 }
 
 const u256 = u256Parts;
@@ -160,3 +168,92 @@ export function claimActions(
   ];
 }
 
+
+/**
+ * Open a direction ticket through the pool.
+ *
+ * The same two-action shape as `openActions`, against the other contract. Until this existed
+ * the direction game had no pool route at all and every ticket went out publicly — the chain
+ * saw the stake and the address, and only the side was hidden. `updown.cairo` had always
+ * zeroed the owner for a pool-opened ticket; what was missing was a `privacy_invoke` for the
+ * pool to reach it through, which is why this ships with a contract change rather than alone.
+ *
+ * Calldata is the contract's `privacy_invoke` signature in order — operation, round, direction,
+ * token, amount, secret, note_id. The pool deserialises straight into those parameters, so
+ * this array *is* the interface; a wrong order fails as a deserialisation error with nothing
+ * readable in it.
+ *
+ * The direction goes in the calldata, and that is not a leak. The pool is the caller, so what
+ * lands on chain is the pool's transaction, and the ticket is stored under a commitment with
+ * no owner. What the *contract* is told and what an observer can attribute are different
+ * questions; this is the same trade `openActions` makes with the band.
+ */
+export function openTicketActions(
+  a: UpDownPoolAddresses,
+  s: DirectionSecret,
+  stake: bigint,
+): Strk20Action[] {
+  return [
+    // The stake, out of the pool and into the up/down contract. `privacy_invoke` measures the
+    // delivered balance rather than trusting the amount, so this leg is not optional.
+    {
+      type: "withdraw",
+      token: a.token as `0x${string}`,
+      amount: num.toHex(stake),
+      recipient: a.upDownMarket as `0x${string}`,
+    },
+    {
+      type: "invoke",
+      contract: a.upDownMarket as `0x${string}`,
+      calldata: [
+        num.toHex(OP.open),
+        num.toHex(s.roundId),
+        num.toHex(directionFelt(s.direction)),
+        a.token,
+        num.toHex(stake),
+        s.secret,
+        // note_id is unused on open — nothing is credited back until the round settles.
+        "0x0",
+      ],
+    },
+  ];
+}
+
+/**
+ * Claim a settled direction ticket into an open note.
+ *
+ * Note first, so its id exists for the invoke to reference; `${openNoteIds[0]}` is the
+ * placeholder the wallet substitutes at assembly time.
+ *
+ * A losing claim is still a valid call here — the contract marks the ticket spent, releases
+ * the reservation and returns an empty span, and the pool accepts that. So this is the right
+ * action list whether or not the ticket won, which is what lets the desk offer one button.
+ */
+export function claimTicketActions(
+  a: UpDownPoolAddresses,
+  s: DirectionSecret,
+  recipient: string,
+): Strk20Action[] {
+  return [
+    {
+      type: "transfer",
+      token: a.token as `0x${string}`,
+      amount: "OPEN",
+      recipient: recipient as `0x${string}`,
+    },
+    {
+      type: "invoke",
+      contract: a.upDownMarket as `0x${string}`,
+      calldata: [
+        num.toHex(OP.claim),
+        num.toHex(s.roundId),
+        num.toHex(directionFelt(s.direction)),
+        a.token,
+        // amount is unused on claim — the payout is computed on chain from the ticket.
+        "0x0",
+        s.secret,
+        "${openNoteIds[0]}",
+      ],
+    },
+  ];
+}

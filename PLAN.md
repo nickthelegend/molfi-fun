@@ -1,303 +1,179 @@
-# molfi — build plan
+# molfi — the plan
 
-Written 2026-09-06, after the declare landed and the first real trade settled. Planning only:
-nothing in this document was built while writing it.
+Written by reading the repo, the deployed contracts and the running product, not the README.
+Everything below is either evidenced or explicitly marked as unknown. Any agent can pick a
+single task up cold and execute it.
 
-Every status here was checked against the running system rather than remembered. Where a task
-says DONE there is a transaction hash, a test count, or a live URL behind it.
-
----
-
-## 1. What "done" and "winning" mean here
-
-### The product
-
-A prediction market on Starknet where **your position is a commitment, never an address**.
-Two games on one console:
-
-- **Range** — pick a price band and how long it must hold. Tighter pays more.
-- **Up / Down** — pick a direction against a reference fixed when the round is listed. Both
-  sides pay the same multiplier, which is what stops the public reserve leaking which way you
-  went.
-
-The band is never sent to the chain. What the contract is told is how far the band reaches
-from its own midpoint — a pair of ratios with the price divided out — which prices the
-position exactly and says nothing about what it predicts.
-
-### Done means
-
-1. A trader opens a position through a wallet they control. The dapp never sees a viewing key.
-2. **Both games** are playable against their **deployed contracts**, not only against the paper
-   engine.
-3. Markets settle against a fresh multi-publisher median at a stated block, unattended.
-4. Claiming pays exactly `stake × multiplier`, to the unit.
-5. A stranger with no wallet can recompute a settled market and check it against what the
-   contract paid.
-6. At least one real position has been opened and claimed end to end, in each game.
-
-**Where that stands: 6 of 6.** Item 6 is done for range (`0x028801d1…` → `0x0592bf85…`,
-2 STRK in, 2.1026 out) **and for up/down** (`0x01563d53…` → `0x0337599e…`, 2 STRK in, a losing
-ticket claimed and its reservation released). Item 2 is done: both games are playable against
-their deployed contracts.
-
-### Winning means (the hackathon's own bar)
-
-| Requirement | State |
-| --- | --- |
-| Three **mainnet** transactions through the pool `0x040337b1…` | **NOT STARTED** — nothing on mainnet |
-| Contracts listed in `strk20.json` | Sepolia complete: 3 contracts, 21 transactions. Mainnet empty |
-| A 3-minute demo video | **Built, not published** — `demo/molfi-demo/renders/*.mp4`, 1m36s |
-| A reachable `demo_url` | DONE — `https://molfi.fun` |
-| The privacy claim states its own edges | DONE — `/privacy` and `/verify`, drawn from the deployed ABI |
-
-### Explicitly not goals
-
-Sub-accounts, running a prover, a bridge, an order book, a token. `docs/IDEAS.md` tier 4 is the
-recorded list of things deliberately not built.
+**Repo** `github.com/nickthelegend/molfi-fun` · **live** https://molfi.fun ·
+**chain** Starknet Sepolia · **submission manifest** `strk20.json`
 
 ---
 
-## 2. Where the project actually is
+## 1 · What "done" and "winning" actually mean here
 
-| | |
-| --- | --- |
-| Range market | `0x053b17219aa45008548e3633b9fcd78ec9540b00d71fd34ec6217599d3298f1f` — 56 markets, 44 settled |
-| **Up/down market** | `0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9` — 2 rounds, 1 ticket opened, settled and claimed |
-| Price relay | `0x0275a7fdecdb539060b1e7cb2c857f88d505ed0a6c0ea2aafbbcc383456dfcbb` |
-| Keeper | `0x788e67ade3c9e65e04c391518e9de7036a548e9733193d7d6a63ab85f0e9e8f`, ~2,004 STRK |
-| Tests | 119 Cairo · 105 SDK · 23 keeper, all green |
-| `pnpm verify` | 38/38 |
-| Test register | `docs/STATUS.md` — 226 PASS · 4 UNTESTED · 0 FAIL |
+molfi is a prediction market where a position is a commitment, not an order. It is submitted
+to the **STRK20 Private Sprint**, and that fixes what winning means — it is not "a nice app".
+
+**The prize bar, stated exactly.** The sprint scores transactions executed through the
+**STRK20 privacy pool on mainnet**, `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. `strk20.json` is the manifest the judges read:
+its `network`, `contracts`, `transactions`, `demo_url` and `demo_video`. Today that file says
+`"network": "sepolia"` and lists 26 Sepolia transactions and 3 Sepolia contracts. **No mainnet
+transaction exists.** Everything else in this plan is secondary to that sentence.
+
+### Done means all five of these
+
+| | What it means concretely | Where it stands |
+| --- | --- | --- |
+| **W1** | Three or more transactions through the mainnet STRK20 pool, listed in `strk20.json` | **NOT MET** — nothing on mainnet |
+| **W2** | The privacy claim is true of every game the product offers, on the deployed class | **PARTLY MET** — true for range; the direction game is direct-only, so stake and identity are public on it |
+| **W3** | A stranger with no wallet can reach a real trade unaided | **MET** — email → wallet → funded → deployed → traded, proven end to end |
+| **W4** | The manifest is complete and the demo is watchable | **NOT MET** — `demo_video` is empty; a rendered MP4 exists but is unpublished |
+| **W5** | The claims survive a sceptic checking them against the chain | **MET** — `/privacy`, `/verify`, `/m/[id]` and `/api/audit` all recompute from chain state |
+
+### Explicit non-goals
+
+Mainnet **liquidity** is not a goal — three pool transactions and a listed market are the bar,
+not volume. A mobile app, an audit, and a token are not goals for this sprint.
 
 ---
 
-## 3. Phases
+## 2 · Where it stands, with evidence
 
-### Phase 1 — Connect the up/down game to its contract · **DONE**
+Do not re-litigate these; they are measured.
 
-Was: a working contract, a working game, and no wire between them — the only reference to
-`updown.cairo` anywhere in `apps/` or `packages/` was a comment.
-
-Now the loop has run on chain, end to end:
-
-| | |
-| --- | --- |
-| `create_round` | `0x014592d6…` |
-| `fund_round` | `0x013a9c5e…` — 10 STRK behind it |
-| `open_ticket` | `0x01563d53…` — 2 STRK staked, **3.84 reserved**, exactly 2 × 1.92 |
-| `settle` | `0x05b61e04…` — reference 79,900.59 → **79,855.59**, DOWN wins |
-| `claim_ticket` | `0x0337599e…` — **SUCCEEDED**, paid 0, reserved released, marked spent |
-
-### The same loop, driven from the browser
-
-The table above was sent with a script. This one was not — every step below is a key pressed
-on the desk at `localhost:3400`, signed by a wallet the browser does not hold the key for:
-
-| | |
-| --- | --- |
-| account | `0x16a4e21b…` — derived from a key, funded (`0x577700…`), then deployed by itself (`0x7e8e07…`, SUCCEEDED) |
-| `open_ticket` | `0x46a766ea…` — SUCCEEDED, fee 0.2506 STRK |
-| what the chain was told | `["0x7", "0x7ff5f363…", "0x4563918244f40000", "0x0"]` — **four felts**: round, commitment, stake. No fifth. |
-| the event | keys `[selector, 0x7, commitment]`, data `[5 STRK]` — the direction is in neither |
-| the round after | `staked 5.0`, `reserved 9.6` — exactly 5 × 1.92, and 9.6 whichever way the ticket went |
-| the account after | 29.9356 → 24.6849 STRK — 5 staked, 0.2506 in fees |
-
-Then the round closed on its own schedule and paid:
-
-| | |
-| --- | --- |
-| `settle` | reference **79,934.84** → settled **80,000.55**, 10 sources — UP |
-| `claim_ticket` | round `paid 9.6`, ticket `claimed: true` — exactly 5 × 1.92 |
-| the account | 24.6849 → **34.1252 STRK** (+9.60 payout, −0.1598 fee) |
-
-End to end from one browser, with real money on a real chain: 29.9356 staked down to 24.6849,
-settled by a keeper nobody asked, claimed back to 34.1252. The direction was never on chain at
-any point in that sequence — it lived in a secret in `localStorage` and was revealed only to
-the claim, after the price was already fixed.
-
-The reserved figure is the part worth dwelling on. It is public, it is exact, and it is the
-same number for UP as for DOWN — which is only true because the quote is symmetric. A
-per-side multiplier would have made this one figure a public read of every trader's position.
-
-The ticket lost, which is the better test: it exercises the branch where a losing claim must
-*succeed* rather than revert, pay nothing, and give its reservation back so the round's
-capacity returns. And the ticket the chain stores is `roundId, stake, multiplierBps, claimed,
-exists, owner` — **no direction field**. UP lived only inside the commitment until the claim.
-
-| # | Task | State |
-| --- | --- | --- |
-| 1.1 | Add `upDownMarket` to `NetworkConfig` in `packages/sdk/src/networks.ts` and set the Sepolia value to `0x07881b0c…`. Mainnet null. | **DONE** — `upDownMarket` on `NetworkConfig`, Sepolia `0x07881b0c…`, mainnet null |
-| 1.2 | Add `decodeRound` and `decodeTicket` to `packages/sdk/src/decode.ts`, mirroring the `Round` and `Ticket` structs in `cairo/src/updown.cairo`. Cairo lays a struct flat, a `u256` is two felts low-limb-first — the same offsets that produced an 8-trillion-STRK stake when got wrong for `Market`. | **DONE** — verified against the live contract: 26 felts, `pair BTC/USD`, reference 79,637.12, and decoded `multiplierBps` 19200 equal to the contract's own `quote()`, which is the cross-check that proves the offsets rather than merely typechecking them |
-| 1.3 | Add `commitmentOfDirection(secret, roundId, direction)` to `packages/sdk/src/positions.ts`, mirroring `poseidon(MOLFI_DIRECTION_V1, secret, round_id, direction)`. Add a test asserting it differs from the range commitment for the same secret and id. | **DONE** — `commitmentOfDirection`, with tests that it differs from a range commitment for the same secret and id, that up differs from down, and that the same preimage is stable |
-| 1.4 | Teach the keeper to list and settle direction rounds: extend `apps/keeper/src/index.ts` `openNewRounds` and `settleDue` to iterate the up/down contract alongside the range one, using `create_round` / `settle`. | **DONE** — `tendDirectionRounds` settles what is due and lists when none is open. Funding was in the same transaction until an unattended run showed the id could not be guessed; it is a separate pass now (3.8) |
-| 1.5 | Add `openDirection` and `claimDirection` to `apps/web/src/lib/useLiveDesk.ts`, building `open_ticket(round_id, commitment, stake)` and `claim_ticket(round_id, secret, direction)`. | **DONE** — `fireDirection` and a claim path that routes by game before route |
-| 1.6 | Make the deck's game switch select the contract, not just the paper engine: when `game === "direction"` and the desk is live, fire against the up/down market. | **DONE** — but this was marked done once before it was. That pass changed the *store* to a discriminated union and stopped there; `LiveConsole` had no direction path at all, so the switch changed a label and nothing else. Now real: `useRounds` polls the contract, ▲UP/▼DOWN replace the band control, `doFireDirection` targets the up/down market, and the deck quotes, explains and links to whichever game is selected. The lesson is that "the types compile" is not the same claim as "the button does the thing" |
-| 1.7 | Extend `/api/markets` (or add `/api/rounds`) to serve direction rounds so the console can list them. | **DONE** — `/api/rounds` |
-| 1.8 | **Open and claim one real direction ticket on Sepolia.** Record both hashes in `strk20.json`. This is what closes "Done means" item 6 for the second game. | **DONE** — see the table above. Five transactions recorded in `strk20.json`, now 26 |
-
-### Phase 2 — Finish the Privy trading path · **IN PROGRESS**
-
-Privy gives molfi auth, an address, a balance and signing, all verified. The account derivation
-and deployment are proven on chain. What is missing is the UI path.
-
-| # | Task | State |
-| --- | --- | --- |
-| 2.1 | Privy auth, wallet creation, `rawSign`. | **DONE** — verified against the live API; full email OTP round trip walked on production |
-| 2.2 | Derive the account address from OpenZeppelin's class + Privy's public key. | **DONE** — `privyAccountAddress()` in `apps/web/src/lib/wallet.ts` |
-| 2.3 | Prove the derived account deploys and its `__validate__` accepts a Privy signature. | **DONE** — `0x5d8b16f6…` at class `0x5b4b537e…`, tx `0x337e385a…` |
-| 2.4 | `connectPrivy()` returning a `Connection` whose `account` is a plain starknet.js `Account`. | **DONE** — `Connection.account` widened from `Strk20Account`; capabilities honest (direct route only) |
-| 2.5 | Call `connectWithPrivy` from the console so GO LIVE uses the Privy account instead of requiring an extension. | **DONE** — the gate hands down a ready-made `PrivySigner`; `readyToAct` tries Privy before the extension list. The account is still neither deployed nor funded, so the first action fails — 2.6 and 2.7 |
-| 2.8 | Re-run register items D13, D14, D15, D19 against the Privy path. | BLOCKED on 2.5–2.7 |
-
-### Phase 3 — Keeper reliability · **IN PROGRESS**
-
-> **Resolved.** The `pending` nonce read (3.9, first attempt) made this node reject every
-> transaction. The corrected build is live and transacting: `relayed ETH/USD → 0xea2a8f93…`,
-> `settled markets 69, 70, 71, 72 → 0x56090829…`.
->
-> Two replicas overlapped during the rollout, which is worth recording because it is the
-> *cause* of the original `DuplicateNonce`: two processes signing from one account, the
-> confirmed nonce not moving between them. The fix — increment on a duplicate rather than
-> re-read — is exactly right for that, and `/api/keeper` reported the draining replica's
-> state for several minutes while the new one was already working, which is why the endpoint
-> and the logs disagreed.
-
-| # | Task | State |
-| --- | --- | --- |
-| 3.1 | Affordability against the node's real fee, not starknet.js's padded bound. | DONE — `apps/keeper/src/bounds.ts`, 23 tests |
-| 3.2 | `send` treats a reverted transaction as a failure. | DONE |
-| 3.3 | `/health` distinguishes starting from stalled. | DONE |
-| 3.4 | Bound the confirmation wait so a cycle cannot hang for minutes. | **DONE and live** — deployed 18:44:45Z, cycling cleanly: 3 cycles, 4 relays, `lastError: None`, `ok: true` |
-| 3.5 | Verify the bound actually fires. | **DONE — it fired on its own.** From the live log: `list round: listed and funded BTC/USD as 73 … was submitted as 0x193dcc45… but could not be confirmed: not confirmed within 90s — falling back to one pair at a time`. Reported against the hash and moved on, instead of blocking the cycle. No forcing needed; a genuinely slow transaction arrived |
-| 3.6 | Cap keeper log volume so a retry loop cannot cross Railway's 500/sec limit and destroy its own diagnostics. | NOT STARTED — but the cause is now understood and mostly removed. The `RECEIVED` flood came from a failed deploy, and the *sustained* volume came from two loops that no longer run: 24 settle attempts a cycle against already-settled markets (3.11) and a per-market read loop (3.12) |
-| 3.11 | **NEW · DONE** — the keeper was sending ~24 settle transactions every cycle at markets that were already settled. `batchCall` sent `CallData.compile([49])`, which is the *decimal* string `"49"`, and a Starknet node reads a bare felt as **hex** — so it answered for market `0x49` = 73 and nothing errored. The keeper read a different market from the one it asked for, judged two dozen settled markets open, and paid to settle each of them. Felts are normalised to `0x…` at the raw-RPC boundary now, and all 76 markets verified against single reads. |
-| 3.12 | **NEW · DONE** — `allMarkets` looped one `starknet_call` per market, so the read grew with the market list and by 72 markets a cycle could not finish inside its own period: every cycle ended `cycle FAILED: fetch failed`, naming nothing. Both it and `allRounds` are single JSON-RPC batches now — and the reads all come from one block, so the cutoffs and bankrolls compared against each other are from the same instant. |
-| 3.13 | **NEW · DONE** — every keeper transaction had been failing for an hour with `Block identifier unmanaged: pending`. RPC 0.9 renamed the pending tag to `pre_confirmed`; starknet.js v10.5 rejects `pending` client-side before sending. `bareEstimate` was the last place holding it. Estimation is against `latest` now, which is the correct tag for a transaction that has not been sent. |
-| 1.7 | **NEW · DONE** — the JSON-RPC proxy at `/api/rpc` allowed **reads only**, on the reasoning that the user's wallet submits its own transactions. True of a browser extension; false the moment molfi grew a Privy wallet, which has no extension and signs in the browser then sends through this proxy. `starknet_estimateFee` and `starknet_addInvokeTransaction` were refused, so **no Privy user could ever trade** — and it surfaced as "chain unreachable", because from inside starknet.js a blocked method and a dead node are indistinguishable. Writes are allowed now; declares and node administration still are not. |
-| 1.8 | **NEW · DONE** — `riding` counted `p.market && !p.market.isSettled`, which no direction ticket can satisfy: a direction position has no market by construction. A trader who had just opened one saw `0 RIDING` with their stake on chain. It counts both games now, and excludes tickets the chain says do not exist — a trade that fails after the wallet takes it is saved on purpose (it may have landed, and a stake with no local secret is unclaimable), which is the right thing to store and the wrong thing to count. |
-| 1.9 | **NEW · DONE** — direction positions were checked against `/api/position`, which reads the **range** market. It does not fail on a direction commitment; it answers `exists: false` about a contract that has never heard of it. New `/api/ticket/:commitment` reads `get_ticket` on the up/down contract and returns the round with it, so the outcome is decided from one read against one block. |
-| 1.10 | **NEW · DONE** — every V3 transaction downloaded the last three blocks *with all their transactions* before signing, because starknet.js v10.5 estimates a tip when none is given. Three of the heaviest responses in the spec, per trade, on the path between pressing a key and signing — and a throw if any failed, which is what `Failed to analyze tip statistics` was. Starknet does not order by tip today, so the computed answer is zero; it is now passed explicitly at all three send sites. |
-| 1.11 | **NEW · DONE** — `errorText` showed the *request* instead of the failure. starknet.js prints `RPC: <method> with params { … }` and the old filter skipped only the `RPC:` line and lines starting with a brace, so a refused trade displayed `"BLOCK_ID": "LATEST",` — which names the block an estimate was taken against and nothing about why the ticket did not open. Quoted JSON keys are skipped now; unquoted ones are not, because `20: Contract not found` is the answer. |
-| 3.16 | **NEW · DONE** — the fixes above were deployed to Railway, which had been running a build that failed every transaction for an hour while reporting `ok: true`. The corrected build listed and funded round 9 while round 8 still had 294s left, so the list-ahead is running in production and not only locally. |
-| 3.15 | **NEW · DONE** — the keeper listed the next direction round only once nothing was open, so every round boundary left a hole: the close is noticed up to a cycle late, the replacement is listed unfunded, and the funding pass runs a cycle after that. For two to three minutes, several times an hour, every visitor to the direction game saw `NO OPEN ROUND` — the desk shut on a schedule with nothing reporting a fault. It now lists once the furthest open round is inside a lead derived from the cycle length, so a funded round is always waiting. |
-| 2.6 | Deploy the account on first use. | **DONE** — `PrivyGate` prepares the account before the console ever sees it: `/api/wallet/fund` puts STRK there, then the browser sends `DEPLOY_ACCOUNT` signed by the account's own key. Proven with a real email login: account `0x2abba913…` deployed and funded on first visit, then took a 5 STRK position. |
-| 2.7 | Fund a new account so a visitor can act. | **DONE — decided: a faucet drip, and it says so on screen.** A dedicated Sepolia float (deliberately not the keeper, so a bug in the drip cannot touch the bankroll winners are paid from) sends 12 STRK — enough to deploy, take a 10 STRK position and claim it. The address is **derived server-side from the caller's own public key and never read from the request**, so the endpoint can only ever pay the session asking. It tops up below 2 STRK rather than only when empty, because an account worn down by fees cannot claim the ticket it already holds. |
-| 3.14 | **NEW · DONE** — the fee bound gave the **prices** no margin at all. `FEE_MARGIN` and `AMOUNT_MARGIN` were both 150, so the amount padding consumed the entire headroom and the price multiplier `cap / paddedTotal` came out at exactly 1.00: every transaction was bounded at spot gas, and the relay batch that exposed it missed by 0.014%. `PRICE_MARGIN` is now its own constant and `FEE_MARGIN` is derived as the product, with a test asserting the price bound clears spot. |
-| 3.9 | Stop `DuplicateNonce` collisions retrying for ever. | **DONE, second attempt.** Every settle and funding failed on `0x2cf`, three tries each, every cycle: `getNonce()` reports the confirmed state, so a nonce claimed by a not-yet-mined transaction still reads as free, and a retry that re-syncs reads it again. The **first fix read the nonce at `pending` and was worse** — this node answers `Block identifier unmanaged: pending`, so instead of colliding transactions failing, *every* transaction failed. Reverted. The nonce is now incremented on a duplicate, which depends on nothing the node has to support |
-| 3.10 | A watcher that proves funding worked, rather than one a round can age out of. | **NOT STARTED** — the check used `!settled && cutoffAt > now && bankroll == 0` and reported success the moment the unfunded round passed its cutoff and left the set. Round 4 never was funded; it just stopped counting. Any future check has to assert the bankroll *rose*, not that the unfunded list emptied |
-| 3.8 | Fund direction rounds by the id the chain reports rather than `rounds.length + 1`. | **DONE** — found within minutes of the keeper running it unattended: rounds 3 and 4 listed, both fundings landed on 3, which ended with 40 STRK while 4 had nothing. `create_round` returns the id but a multicall cannot feed a return value forward, so funding is now a separate pass over rounds the chain reports unfunded. **Written, not yet proven:** the pass was seen choosing the right id in the logs (`funded direction round 4`) and then failing on the nonce, and it has not landed a funding since |
-| 3.7 | Alert when `ok:false` persists — right now nothing watches the health endpoint. | NOT STARTED — and this pass is the argument for it. The deployed keeper reported `ok:true` with `relayed: 0, settled: 0, listed: 0` while **every transaction it attempted was failing**, for an hour, on a client-side error. Health was green because the loop was running; nobody was watching whether it achieved anything. Any alert has to be on work done, not on liveness. |
-
-### Phase 4 — Mainnet and the submission bar · **NOT STARTED**
-
-| # | Task | State |
-| --- | --- | --- |
-| 4.1 | Fund a mainnet deployer with ≥ 120 STRK. | **BLOCKED — spends real money.** All four accounts hold 0.000000 STRK on mainnet and none is deployed there |
-| 4.2 | `pnpm preflight` (defaults to mainnet). | DONE — clear, 2 warnings, both about the unset deployer. Mainnet Pragma settles all pairs, so mainnet needs no relay |
-| 4.3 | Declare and deploy `MolfiMarket` and `UpDownMarket` on mainnet. `PriceRelay` must **not** be deployed there. | BLOCKED on 4.1 |
-| 4.4 | Set `MOLFI_MARKET.mainnet` and `upDownMarket.mainnet` in `networks.ts`. | BLOCKED on 4.3 |
-| 4.5 | List and fund one market per pair at tier 2 (4h) to keep mainnet burn low. | BLOCKED on 4.3 |
-| 4.6 | Execute **three transactions through the mainnet pool** `0x040337b1…`. | BLOCKED on 4.3 — the prize requirement |
-| 4.7 | `pnpm submission`, then verify `strk20.json` names mainnet and lists the three pool transactions. | BLOCKED on 4.6 |
-
-### Phase 5 — Submission artifacts · **IN PROGRESS**
-
-| # | Task | State |
-| --- | --- | --- |
-| 5.1 | Record a 3-minute demo video. | **DONE** — `demo/molfi-demo`, 1m36s, 1080×1920, built from real captures and real on-chain numbers |
-| 5.2 | Publish it and put the URL in `strk20.json.demo_video`. | NOT STARTED — `npm run publish` defaults to private; `--public` is a distribution decision for a person |
-| 5.3 | Timed shot list. | DONE — `docs/DEMO.md`, updated for the post-declare reality |
-| 5.4 | Re-shoot the console frame if the deck changes. | NOT STARTED |
-| 5.5 | Confirm `demo_url` resolves and every linked page loads without a wallet. | DONE — re-check after any redeploy |
-
-### Phase 6 — Verification · **IN PROGRESS**
-
-| # | Task | State |
-| --- | --- | --- |
-| 6.1 | 119 Cairo tests. | DONE |
-| 6.2 | 105 SDK + 23 keeper tests. | DONE |
-| 6.3 | Three packages typecheck clean. | DONE |
-| 6.4 | `pnpm api:check` against production. | DONE |
-| 6.5 | `pnpm verify` 38/38. | DONE |
-| 6.6 | `docs/STATUS.md` — every plan item with a status. | DONE — 226 PASS · 4 UNTESTED · 0 FAIL |
-| 6.7 | Add register items for the direction game **on chain** — the current O-section items test the paper game only. | NOT STARTED |
-| 6.8 | Contract audit. | DONE — `docs/AUDIT.md`, three findings, all fixed and shipped in the declare |
+- **Contracts live on Sepolia** — market `0x053b1721…`, up/down `0x07881b0c…`,
+  relay `0x0275a7fd…`. `pnpm verify` is **38/38 PASS**.
+- **Tests green** — Cairo 119, SDK 110, keeper 26 = **255**, 0 failures.
+- **Nine markets** listed and relaying. Four settle against Pragma's own median; five
+  (SOL, XRP, DOGE, LINK, AVAX) have no Starknet oracle at all and settle against molfi's
+  median across five independent exchanges, relayed with the true source count.
+- **The band is not on chain** on the deployed class — `Position` stores `low_off_1e8` /
+  `high_off_1e8`. Verified by `verify` D13.
+- **The keeper runs unattended** on Railway — lists, funds, relays, settles.
+- **57/57** browser verification items pass (`docs/RUN-PLAN.md`).
 
 ---
 
-## 4. The gaps, honestly
+## 3 · Phases, in the order they have to happen
 
-Tied to the phase each blocks. Read from the codebase, not the README.
+### Phase 1 — Make the privacy claim true of both games · **CODE DONE, DEPLOY BLOCKED**
 
-### Blocking — the product does not do what it says without these
+The direction game is the newer half of the product and it is the *less private* half. On a
+privacy sprint that is the gap most likely to be noticed by a judge who reads the code.
 
-**G1 · CLOSED.** The up/down contract is wired: address, decoders, commitment helper, keeper
-listing and settling, `/api/rounds`, `fireDirection`, and a claim path that routes by game.
+| # | Task | Status |
+| --- | --- | --- |
+| 1.1 | Write `openTicketActions()` in `packages/sdk/src/pool-actions.ts`. | **DONE** — but the premise in this plan was wrong and the task grew. `updown.cairo` did zero the owner for a pool caller, but the pool drives an anonymizer through **one fixed entrypoint** and `updown.cairo` had none, so the pool could never reach it. Added `privacy_invoke` to the contract (OP_OPEN/OP_CLAIM, mirroring `market.cairo`, **measuring** the delivered stake rather than trusting `amount`), then the action list. |
+| 1.2 | Write `claimTicketActions()` alongside it. | **DONE** — and `claim_ticket` is route-aware now: it **approves** the pool on the pool route instead of transferring, so the pool pulls the payout when it applies the returned `OpenNoteDeposit`. A losing claim returns an empty span rather than reverting. |
+| 1.3 | Remove the hardcoded `route: "direct"` in `rememberDirection`. | **DONE** — records the route it actually used |
+| 1.4 | Route `fireDirection` through `submit()` when the wallet speaks STRK20. | **DONE** — and gated on a probe of the deployed class, see 1.8 |
+| 1.5 | Update the direction copy so it stops saying the chain sees the stake once it does not. | **DONE** — verified by inspection rather than changed: the deck copy already branched on route ("YOUR SIDE AND SIZE STAY HIDDEN" / "NOT YOU, NOT THE SIZE, NOT THE SIDE"). The branch was correct and simply unreachable while the route was pinned to direct |
+| 1.6 | Cairo test that a pool-opened ticket has `owner == 0` and is claimable by secret alone. | **DONE** — 6 new tests: no owner recorded, claimed by secret into a note for stake × 1.92, a losing claim returns no note and releases its reservation, only the pool may call it, an invoke with no tokens delivered is refused, an unknown operation is refused. **Cairo suite 125 passing** (was 119); SDK 112 (was 110) |
+| 1.7 | **NEW** — declare and deploy the `UpDownMarket` class carrying `privacy_invoke`, and point `upDownMarket` at it. | **BLOCKED — testnet STRK that does not exist.** Declare estimated at **61.68 STRK**; all molfi accounts together hold ~24, the keeper 12.4. The Foundation faucet gives 5 STRK per address per 24h and its own script notes that farming fresh addresses is abuse of a shared testnet resource. Everything else in Phase 1 is complete and shipped safely without it |
+| 1.8 | **NEW** — probe the deployed class for `privacy_invoke`; offer the pool route only if it is there. | **DONE** — without it a STRK20 wallet would have been routed at a class with no such entrypoint and failed *after* approving the stake. Verified against the live class: it answers "Requested entrypoint does not exist", the probe returns false, the route stays hidden. It switches itself on when 1.7 lands, the same way `/privacy` corrects itself from the deployed ABI |
 
-**G2 · CLOSED.** A ticket was opened, the round settled, and the ticket was claimed — the
-losing branch, which is the one that had to succeed rather than revert.
+### Phase 2 — Complete the submission · **IN PROGRESS**
 
-**G3 · PARTLY CLOSED.** *(Phase 2.6–2.7)* The console now connects with Privy — the gate hands
-down a signer and `readyToAct` prefers it over an extension. What remains is that the account
-it connects to is counterfactual and empty, so the first transaction still fails. That is G4,
-and it is now the whole of the remaining gap rather than half of it.
+Cheap, fast, and worth more than any feature. Nothing here needs money.
 
-**G4 · A new Privy account is undeployed and unfunded.** *(Phase 2.6–2.7)*
-A Starknet account is an address until someone pays to make it a contract. There is no deploy step and no funding step, so even once 2.5 lands the first action any visitor takes will fail.
+| # | Task | Status |
+| --- | --- | --- |
+| 2.1 | Publish `demo/molfi-demo/renders/molfi-demo_2026-09-06_21-24-29.mp4` somewhere with a stable public URL. | **BLOCKED — the machine's boot volume is full.** Every shell command fails `ENOSPC` before it runs, so the file cannot be read, uploaded or copied. Fix: free space on `/` (start with `rm -rf /private/tmp/claude-501`) |
+| 2.2 | Set `demo_video` in `strk20.json` to that URL, then re-run `pnpm submission`. | **BLOCKED on 2.1** |
+| 2.3 | Watch the video end to end and confirm it shows the *current* product — it predates the nine-market change, the landing rebuild and the UP/DOWN redesign. | **BLOCKED on 2.1** — and the concern is now near-certain rather than suspected: production carries nine markets and the rebuilt landing page, neither of which existed when the video was rendered |
+| 2.4 | Fix production parity: `molfi.fun/play` still serves "THREE MARKETS", so the deployed build is behind `69f9557`. | **CONFIRMED STILL OPEN, FIX BLOCKED** — re-checked against the live site: it returns `THREE MARKETS` where the current source derives the count from `MARKETS`. Redeploying needs a `git push`, which needs a shell |
+| 2.5 | Re-run `pnpm verify` against production rather than localhost. | **PARTLY DONE without the shell.** Checked live from the browser: `/api/markets` 200 with **120 markets across 9 pairs**, `/api/rounds` 200 with 18 rounds, `/api/health` 200 `ok:true` `oracle:ok`, `/api/keeper` 200 `configured:true`. Zero console errors on `/play`. The full 38-check suite needs the shell |
 
-**G5 · The keeper hangs for minutes at a time on an unbounded wait.** *(Phase 3.4–3.5)*
-Caught mid-stall: `cycles: 101`, `lastCycleAt` **eleven minutes** old, `ok: false`, 2,004 STRK
-in the account and four markets sitting past their cutoff unsettled.
+### Phase 3 — Mainnet, the prize bar · **BLOCKED**
 
-It then **recovered by itself, in the same process** — `startedAt` never changed — which is the
-more useful version of the finding: `waitForTransaction` was not waiting forever, it was
-waiting for a transaction that took about twelve minutes to confirm. On a 120-second loop that
-is still a stall, and it is worse than a crash: nothing restarts, nothing alerts, and the
-retry polling floods the log while it happens.
+Every task here spends real money. Nothing in this phase should be started by an agent
+without the operator funding an account first.
 
-**Fixed and live** as of 18:44:45Z — a 90-second bound, then report against the hash rather
-than keep waiting, which is the rule that function already applied to a failed confirmation.
-The new build is cycling cleanly.
+| # | Task | Status |
+| --- | --- | --- |
+| 3.1 | Fund a mainnet deployer with ≥ 120 STRK. | **BLOCKED — needs real funds.** All molfi accounts hold 0 STRK on mainnet |
+| 3.2 | `pnpm preflight` (defaults to mainnet) and read its warnings. | DONE — clear; mainnet Pragma settles all four original pairs, so mainnet needs no relay |
+| 3.3 | Declare and deploy `MolfiMarket` and `UpDownMarket` on mainnet. **Do not deploy `PriceRelay`** — mainnet reads Pragma directly. | **BLOCKED on 3.1** |
+| 3.4 | Set `market` and `upDownMarket` for mainnet in `packages/sdk/src/networks.ts`. | **BLOCKED on 3.3** |
+| 3.5 | List and fund one market per pair at tier 2 (4h) to keep mainnet burn low. Only the four Pragma-backed pairs — the five molfi-median pairs need the relay, which is not deployed on mainnet. | **BLOCKED on 3.3** |
+| 3.6 | Execute **three transactions through the mainnet pool** `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. This is the prize requirement. | **BLOCKED on 3.3** |
+| 3.7 | `pnpm submission`; confirm `strk20.json` names mainnet and lists the three pool transactions. | **BLOCKED on 3.6** |
 
-**What is still open is the proof.** The bound is in the code path and has never fired, because
-no transaction has been slow since the deploy. Until one is — or is made to be — this is a fix
-believed rather than demonstrated, which is exactly the distinction the rest of this project
-holds itself to. That is task 3.5.
+### Phase 4 — Keeper economics · **IN PROGRESS**
 
-### Real, non-blocking
+The desk stops when the keeper runs dry, and it has run dry twice. The mechanism is
+understood and half-fixed.
 
-**G6 · Nothing watches the keeper's health.** *(Phase 3.7)* The endpoint reports `ok:false` correctly and no one is told. The stall above was found by hand.
+| # | Task | Status |
+| --- | --- | --- |
+| 4.1 | Size each market's bankroll to what is spendable above the floor rather than a constant. | **DONE — verified in production** — `bankrollFor()` in `apps/keeper/src/index.ts` |
+| 4.2 | Enforce the floor **as money leaves**, not as a share computed once. | **DONE — verified in production.** Railway logs over 12 cycles show the keeper holding at 12.3–12.7 STRK and declining to list ("balance … is below the floor 15000000000000000000") while still relaying all nine pairs and settling round 18. Previously it drained to 0.01 and stopped doing anything. The floor now behaves as a floor |
+| 4.3 | Add a `defund_market` / sweep entrypoint to `market.cairo` so a settled market's unused bankroll returns to the keeper. `fund_market` is one-way and **every market ever listed locks its backing permanently** — the root cause of both drains. | **NOT STARTED — and it is now the binding constraint, not just the highest-value change.** 120 markets × their bankroll is locked and unrecoverable; that is why the keeper sits under its floor with no way back up except the faucet's 5 STRK a day. Needs a new class, so it also depends on the same STRK that blocks 1.7 |
+| 4.4 | Have the keeper sweep settled markets once 4.3 exists. | **BLOCKED on 4.3** |
+| 4.5 | Alert when the keeper reports `ok:true` while doing no work. It reported healthy for an hour while every transaction failed, because health checks liveness rather than output. | **NOT STARTED — but partly disproved as written.** Health is currently reporting `ok:false` *correctly*, because the balance floor feeds into it. The gap is narrower than the plan claimed: it is specifically that a keeper whose transactions all fail while its balance is fine still reads healthy. Any alert must key on work done per cycle, not on liveness or balance |
+| 4.6 | Recover or write off the 200 STRK stranded in `devnet0` (`0x34ba56f9…`). Its salt was never recorded and no class/salt combination tried reproduces the address; treat as written off unless the operator has the salt. | **BLOCKED — unrecoverable without the salt** |
 
-**G7 · The keeper can flood its own logs.** *(Phase 3.6)* A retry loop printed thousands of `RECEIVED` lines, crossed Railway's 500/sec limit and dropped the logs — so the stall destroyed the evidence of itself.
+### Phase 5 — Verification breadth · **IN PROGRESS**
 
-**G8 · The demo video is built and unpublished.** *(Phase 5.2)* `strk20.json.demo_video` is still `""`, which is a hard submission requirement.
+The suites are green but they no longer cover the whole product.
 
-**G9 · The test register covers the paper direction game, not the on-chain one.** *(Phase 6.7)* Section O tests the switch, the quote and the card. There is no item for `open_ticket`, `claim_ticket`, or a settled direction round.
+| # | Task | Status |
+| --- | --- | --- |
+| 5.1 | Extend `scripts/verify.mjs` check E1 to all nine pairs. It asserts only BTC/ETH/STRK/WBTC, so a total failure of the five molfi-median feeds would still report 38/38. | **NOT STARTED** |
+| 5.2 | Add a verify check that a molfi-relayed price matches a freshly computed five-venue median within a tolerance, and that its source count is ≥ 3. | **NOT STARTED** |
+| 5.3 | Add a keeper unit test for `bankrollFor` and the floor guard — both drains would have been caught by one. | **NOT STARTED** |
+| 5.4 | Add an SDK test asserting `openTicketActions` sends no direction felt, mirroring the existing 4-felt test for the direct route. | **BLOCKED on 1.1** |
 
-**G10 · Mainnet is untouched.** *(Phase 4)* Three mainnet pool transactions are the prize requirement and nothing is deployed there.
+### Phase 6 — Polish · **NOT STARTED**
 
-### Checked and clean — do not spend time re-auditing
+Only after phases 1–3. None of this wins the sprint; all of it is visible.
 
-- **The eight `mock|stub|fake|dummy|placeholder|todo` hits are all benign.** Four are HTML
-  `placeholder` attributes, three are comments explaining why placeholders are *not* used, and
-  two are the devnet test doubles in `cairo/src/devnet.cairo` which `scripts/deploy.mjs`
-  refuses to put on any public network. The live contract's `oracle()` and `pool()` were read
-  back from chain and are the real relay and the real STRK20 pool.
-- **The band is not on chain.** The deployed `Position` is
-  `market_id, low_off_1e8, high_off_1e8, stake, multiplier_bps, claimed, exists, owner`.
-- **Payouts are exact.** 2 STRK at 1.0513x paid 2.1026 STRK, verified on chain.
-- **Conservation holds.** `pnpm verify` D7 checks `paid + reserved <= staked + bankroll` across
-  every market.
-- **The three audit findings are fixed and shipped**, in the class currently deployed.
+| # | Task | Status |
+| --- | --- | --- |
+| 6.1 | `ui/` is an empty directory. Delete it or put the reference material back. | **NOT STARTED** |
+| 6.2 | `apps/hub` is a second Next app with its own landing, privacy and terms pages. Decide whether it ships or is deleted — right now it is unreferenced weight a reader has to work out. | **NOT STARTED** |
+| 6.3 | The direction game offers only BTC. Either list rounds for more pairs or say on the deck why it is BTC-only. | **NOT STARTED** |
+| 6.4 | `docs/STATUS.md` claims 230 items; `docs/RUN-PLAN.md` has 57. Reconcile them into one register. | **NOT STARTED** |
 
 ---
 
-## 5. If you only do three things
+## 4 · The honest gap list
 
-1. **Phase 1** — wire the up/down contract. It is deployed, tested, and doing nothing. This is
-   the biggest gap between what the project claims and what it does.
-2. **Phase 3.4/3.5** — get the keeper fix live. The desk recovered on its own this time; the
-   next slow transaction hangs it again, and nothing is watching.
-3. **Phase 2.5–2.7** — make the Privy account usable, so a judge with no extension can trade.
+Every gap, tied to the task it blocks. Ordered by what it costs the submission.
 
-Mainnet (Phase 4) is gated on money, and the video (5.2) on one command by a person.
+| # | Gap | Evidence | Blocks |
+| --- | --- | --- | --- |
+| **G1** | **Nothing exists on mainnet.** The sprint scores mainnet pool transactions; molfi has none. | All accounts hold 0 STRK on mainnet and none is deployed there | 3.1–3.7, and W1 |
+| **G2** | **The direction game has no pool route**, so stake and identity are public on it. Only the side is hidden. `updown.cairo` supports the route; the SDK action list was never written. | `positions.ts:258` pins `route: "direct"` and says why | 1.1–1.4, and W2 |
+| **G3** | **`demo_video` is empty** in the manifest although an MP4 is rendered. | `strk20.json`; `demo/molfi-demo/renders/` | 2.1–2.2, and W4 |
+| **G4** | **Production is behind the repo.** `molfi.fun/play` serves "THREE MARKETS", fixed in `69f9557`. | Fetched from production | 2.4 |
+| **G5** | **A market's bankroll can never be recovered.** `fund_market` is one-way, so every listed market locks its backing for ever. This is why the keeper drained twice; the floor guard treats the symptom. | No defund entrypoint in `market.cairo` | 4.3–4.4 |
+| **G6** | **The verifier does not cover five of the nine markets.** E1 asserts four pairs. | `scripts/verify.mjs` E1 | 5.1–5.2 |
+| **G7** | **Health reports liveness, not work.** The keeper said `ok:true` for an hour while every transaction failed. | Observed | 4.5 |
+| **G8** | **The demo video may show a product that no longer exists** — it predates nine markets, the landing rebuild and the UP/DOWN redesign. | Rendered 2026-09-06 21:24, before those commits | 2.3 |
+| **G9** | **200 STRK is permanently stranded** in an account whose salt was never recorded. | No class/salt combination reproduces `0x34ba56f9…` | 4.6 |
+| **G10** | **The direction game is BTC-only.** | `tendDirectionRounds` lists `MARKETS[0]` | 6.3 |
+| **G11** | **Two Next apps, one unreferenced.** `apps/hub` ships nothing the sprint reads. | `apps/hub` | 6.2 |
+| **G12** | **`ui/` is an empty directory.** | `ls ui` | 6.1 |
+
+### Explicitly NOT gaps
+
+Checked and clean, so nobody re-opens them:
+
+- **No mocks or stubs in shipped code.** `verify` G1 greps for them and passes. The only
+  `Stub*` contracts are `cairo/src/devnet.cairo`, reachable only on a local devnet, and the
+  deploy script refuses to put them on a public network.
+- **No secrets in the client bundle.** The dev key, faucet key and Privy secret are all absent
+  from a production build.
+- **Pyth is not an option** and should not be revisited: its Starknet feeds are up to 780 days
+  stale and its update service answers 401. Documented in `docs/AUDIT.md`.
+
+---
+
+## 5 · What to do first
+
+1. **Phase 2** — free, fast, and it is a third of the manifest the judges read.
+2. **Phase 1** — the privacy claim is the pitch; a judge reading `updown.cairo` will see the
+   pool route exists and is unused.
+3. **Phase 3** — needs the operator to fund mainnet. Nothing else unblocks it.
+4. **Phase 4.3** — the only remaining contract-level defect.

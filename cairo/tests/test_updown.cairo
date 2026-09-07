@@ -488,3 +488,109 @@ fn the_reference_is_read_from_the_oracle_not_supplied_by_the_house() {
     assert(r.reference_sources == 10, 'and carries its breadth');
     assert(r.reference_at == NOW, 'and its publish time');
 }
+
+// ──────────────────────────────────────────────────────── the pool route
+
+/// Open through the pool the way the pool actually does it: the stake is *delivered* by a
+/// separate withdraw action in the same transaction, then `privacy_invoke` is called with no
+/// token movement of its own.
+fn open_via_pool(
+    m: IUpDownDispatcher,
+    token: ContractAddress,
+    id: u64,
+    secret: felt252,
+    direction: felt252,
+    stake: u256,
+) {
+    let t = IStubTokenDispatcher { contract_address: token };
+    // The withdraw leg: the pool sends the tokens here before the invoke, which is exactly
+    // what phase order guarantees on the real pool (Withdraw is phase 6, InvokeExternal 7).
+    t.mint(m.contract_address, stake);
+    start_cheat_caller_address(m.contract_address, pool());
+    m.privacy_invoke(0, id, direction, token, stake.try_into().unwrap(), secret, 0);
+    stop_cheat_caller_address(m.contract_address);
+}
+
+#[test]
+fn a_pool_opened_ticket_records_no_owner() {
+    let (m, _, token) = setup();
+    let id = a_round(m, token);
+    open_via_pool(m, token, id, 'viapool', UP, 1_000);
+
+    let t = m.get_ticket(commit('viapool', id, UP));
+    assert(t.exists, 'ticket exists');
+    assert(t.stake == 1_000, 'stake booked');
+    // The whole point: the chain records that a ticket was opened and for how much, and
+    // nothing that says who opened it. On the public route this field is the trader.
+    assert(t.owner == addr(0), 'no owner on the pool route');
+}
+
+#[test]
+fn a_pool_ticket_is_claimed_by_the_secret_alone() {
+    let (m, o, token) = setup();
+    let id = a_round(m, token);
+    open_via_pool(m, token, id, 'winner', UP, 1_000);
+    settle_at(m, o, id, REFERENCE + 1);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    let notes = m.privacy_invoke(1, id, UP, token, 0, 'winner', 'note-1');
+    stop_cheat_caller_address(m.contract_address);
+
+    // One note credited, for the full payout, against the note id the pool named.
+    assert(notes.len() == 1, 'one deposit returned');
+    let n = *notes.at(0);
+    assert(n.note_id == 'note-1', 'credits the named note');
+    assert(n.token == token, 'in the round token');
+    assert(n.amount == 1_920, 'stake times 1.92');
+    assert(m.get_ticket(commit('winner', id, UP)).claimed, 'marked spent');
+}
+
+#[test]
+fn a_losing_pool_ticket_returns_no_note_and_still_settles() {
+    let (m, o, token) = setup();
+    let id = a_round(m, token);
+    open_via_pool(m, token, id, 'loser', UP, 1_000);
+    settle_at(m, o, id, REFERENCE - 1);
+
+    start_cheat_caller_address(m.contract_address, pool());
+    let notes = m.privacy_invoke(1, id, UP, token, 0, 'loser', 'note-2');
+    stop_cheat_caller_address(m.contract_address);
+
+    // An empty span, not a revert. The pool accepts it, the ticket is spent, and the
+    // reservation goes back to the round — the same contract as the public route.
+    assert(notes.len() == 0, 'nothing credited');
+    assert(m.get_ticket(commit('loser', id, UP)).claimed, 'marked spent');
+    assert(m.get_round(id).reserved == 0, 'reservation released');
+}
+
+#[test]
+#[should_panic(expected: 'CALLER_NOT_POOL')]
+fn only_the_pool_may_drive_privacy_invoke() {
+    let (m, _, token) = setup();
+    let id = a_round(m, token);
+    let t = IStubTokenDispatcher { contract_address: token };
+    t.mint(m.contract_address, 1_000);
+    // Anyone else reaching this would be opening a ticket against tokens they did not send.
+    start_cheat_caller_address(m.contract_address, trader());
+    m.privacy_invoke(0, id, UP, token, 1_000, 'thief', 0);
+}
+
+#[test]
+#[should_panic(expected: 'STAKE_NOT_RECEIVED')]
+fn an_invoke_with_no_tokens_delivered_is_refused() {
+    let (m, _, token) = setup();
+    let id = a_round(m, token);
+    // No withdraw leg. The amount is a claim, and the contract measures instead of believing:
+    // without this a caller who can reach the pool could book a free position.
+    start_cheat_caller_address(m.contract_address, pool());
+    m.privacy_invoke(0, id, UP, token, 1_000, 'freebie', 0);
+}
+
+#[test]
+#[should_panic(expected: 'UNKNOWN_OPERATION')]
+fn an_unknown_operation_is_refused() {
+    let (m, _, token) = setup();
+    let id = a_round(m, token);
+    start_cheat_caller_address(m.contract_address, pool());
+    m.privacy_invoke(7, id, UP, token, 0, 's', 0);
+}
