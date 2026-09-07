@@ -11,7 +11,7 @@
   "settleable": true,
   "oracleNote": [
     "Pragma stopped publishing to Sepolia months ago, so this deployment settles against a",
-    "relay that republishes mainnet Pragma's median. One publisher \u2014 us. Every relayed value",
+    "relay that republishes mainnet Pragma's median. One publisher — us. Every relayed value",
     "carries the mainnet block it was read at. On mainnet molfi reads Pragma directly."
   ],
   "markets": [],
@@ -19,12 +19,13 @@
     "0x0276c9724a72f624139663d33c0195f2416b5d740809042deef4d25df85778fa",
     "0x026e7bdce6dd89fce776d01db7437d062822ac802aa80bc6df2cebe67761fd40",
     "0x040a174c1b66eb8d4857f44d715090e17513524a206956963c6a40fbd077b90d",
-    "0x0100c1d5df0a7f85f943ead6a3e960a5e8270a910daa8545b0cbde1f95167bd0"
+    "0x0100c1d5df0a7f85f943ead6a3e960a5e8270a910daa8545b0cbde1f95167bd0",
+    "0x02d60698a8ee4023f0226fdf1ac48791bd1f2c2f874d6ce6006d424565d55ddc"
   ],
   "transactionLog": [
     {
       "hash": "0x0276c9724a72f624139663d33c0195f2416b5d740809042deef4d25df85778fa",
-      "what": "declare MolfiMarket \u2014 the class that stores reach ratios, not the band"
+      "what": "declare MolfiMarket — the class that stores reach ratios, not the band"
     },
     {
       "hash": "0x026e7bdce6dd89fce776d01db7437d062822ac802aa80bc6df2cebe67761fd40",
@@ -32,10 +33,14 @@
     },
     {
       "hash": "0x040a174c1b66eb8d4857f44d715090e17513524a206956963c6a40fbd077b90d",
-      "what": "declare UpDownMarket \u2014 the direction game"
+      "what": "declare UpDownMarket — the direction game"
     },
     {
       "hash": "0x0100c1d5df0a7f85f943ead6a3e960a5e8270a910daa8545b0cbde1f95167bd0",
+      "what": "deploy UpDownMarket"
+    },
+    {
+      "hash": "0x02d60698a8ee4023f0226fdf1ac48791bd1f2c2f874d6ce6006d424565d55ddc",
       "what": "deploy UpDownMarket"
     }
   ],
@@ -48,6 +53,14 @@
     "markets": 3,
     "note": "Superseded 2026-09-06. Its Position struct stored band_low and band_high in the clear, so a market's positions could be enumerated and read. 52 markets settled against it and their history stays at this address."
   },
-  "upDownClassHash": "0x04e1b77a5dcca83a0319103381bdd3abf656bdf2c8b73cbd9ac07c9734f49020",
-  "upDownMarket": "0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9"
+  "upDownClassHash": "0x031465ddf2b63415c93ce10417f4a6f644754c21c1f66a62ffc8caa38d67100b",
+  "upDownMarket": "0x0430f21af5698905bcc4728995ee677ecc2297ccfe794ce068e8ac83463927d7",
+  "supersedes_updown": [
+    {
+      "classHash": "0x04e1b77a5dcca83a0319103381bdd3abf656bdf2c8b73cbd9ac07c9734f49020",
+      "address": "0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9",
+      "supersededAt": "2026-09-07T15:52:00.990Z",
+      "note": "replaced by a class carrying privacy_invoke"
+    }
+  ]
 }

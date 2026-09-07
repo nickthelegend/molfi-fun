@@ -90,7 +90,7 @@ export const CHAIN_IDS = {
 /** The direction game, per network. Same rules as `MOLFI_MARKET` — null is honest. */
 export const MOLFI_UPDOWN: Record<NetworkName, string | null> = {
   devnet: null,
-  sepolia: "0x07881b0cabd145d7135b8964c4b613697ef2fb2260d97657ef4c4f6245c17ce9",
+  sepolia: "0x0430f21af5698905bcc4728995ee677ecc2297ccfe794ce068e8ac83463927d7",
   mainnet: null,
 };
 
