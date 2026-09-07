@@ -112,6 +112,14 @@ if (args.oracle && network === "mainnet") {
 
 let settleable = true;
 let oracleNote = null;
+/**
+ * Pairs this oracle cannot settle, so a deploy can list around them.
+ *
+ * Empty on a chain where every pair reads. On mainnet, Pragma carries the four original pairs
+ * and does not carry SOL, XRP, DOGE, LINK or AVAX at all — molfi is its own oracle for those,
+ * through a relay that is deliberately not deployed on mainnet.
+ */
+const unsettleable = new Set();
 if (!isLocal) {
   const { MARKETS: PAIRS, decodePrint, freshness, pairId } = await import(
     "../packages/sdk/src/index.ts"
@@ -134,27 +142,59 @@ if (!isLocal) {
         }),
       });
       const body = await res.json();
+      /**
+       * An oracle that does not carry a pair *errors*; it does not return a stale price.
+       *
+       * Without this the error object fell through to `decodePrint(undefined)` and the pair was
+       * reported as "Cannot read properties of undefined (reading 'length')" — a JS stack
+       * detail standing where the actual reason belongs. On mainnet that is the message telling
+       * someone why five markets are being skipped, so it has to say the true thing: Pragma
+       * does not carry this pair at all.
+       */
+      if (body.error) throw new Error(`the oracle does not carry this pair (${body.error.message ?? "contract error"})`);
       // Whether a market listed here could ever resolve is the contract's 900s rule.
       const check = freshness(decodePrint(body.result), undefined, SETTLEMENT_MAX_PRICE_AGE_SECONDS);
-      if (!check.fresh) dead.push(`${m.label}: ${check.reason}`);
+      if (!check.fresh) { dead.push(`${m.label}: ${check.reason}`); unsettleable.add(m.label); }
     } catch (e) {
       dead.push(`${m.label}: ${e.message.slice(0, 60)}`);
+      unsettleable.add(m.label);
     }
   }
   if (dead.length > 0) {
-    settleable = false;
     oracleNote = dead;
-    if (args["accept-unsettleable"] !== true) {
+    /**
+     * Three answers, not two, because the two it had were both wrong for mainnet.
+     *
+     * Refusing is right by default. `--accept-unsettleable` lists everything anyway, which is
+     * defensible on a testnet where the point is proving the deploy path. Neither of those is
+     * what a mainnet deploy needs: Pragma carries four of molfi's nine pairs and carries the
+     * other five not at all, so the only sensible mainnet deploy lists the four that work —
+     * and until now the tooling could only refuse, or spend real money listing five markets
+     * that could never resolve and whose stakes could never be claimed.
+     *
+     * `--skip-unsettleable` is that third answer. What was skipped is written into the
+     * deployment record, so a smaller deployment is a stated fact rather than a silent one.
+     */
+    if (args["skip-unsettleable"] === true) {
+      say(`  ! skipping ${dead.length} pair(s) this oracle cannot settle:`);
+      for (const d of dead) say(`      ${d}`);
+      say("");
+      // `settleable` stays true: every market this deploy actually lists can resolve.
+    } else if (args["accept-unsettleable"] === true) {
+      settleable = false;
+      say(`  ! oracle cannot settle: ${dead.length} pair(s). Listing anyway, and recording it.\n`);
+    } else {
+      settleable = false;
       console.error(
         `\nThe oracle on ${network} cannot settle these pairs:\n` +
           dead.map((d) => `  ${d}`).join("\n") +
-          "\n\nMarkets listed here would never resolve. Pass --accept-unsettleable to do it\n" +
-          "anyway — which is reasonable on a testnet, where the point is proving the deploy\n" +
-          "path and the pool integration rather than trading.\n",
+          "\n\nMarkets listed here would never resolve. Either:\n" +
+          "  --skip-unsettleable    list only the pairs that do settle (what mainnet wants)\n" +
+          "  --accept-unsettleable  list them anyway — reasonable on a testnet, where the point\n" +
+          "                         is proving the deploy path rather than trading\n",
       );
       process.exit(1);
     }
-    say(`  ! oracle cannot settle: ${dead.length} pair(s). Listing anyway, and recording it.\n`);
   }
 }
 
@@ -304,6 +344,8 @@ if (listedAlready > 0) say(`  ${listedAlready} market(s) already listed, skippin
 
 let index = 0;
 for (const m of CALIBRATED_MARKETS) {
+  // A pair the oracle cannot read is a market that could take a stake and never resolve it.
+  if (args["skip-unsettleable"] === true && unsettleable.has(m.label)) continue;
   for (const [tier, round] of m.rounds.entries()) {
     // A deployment may list a subset of the rounds. Every listing is two transactions —
     // create then fund — and on a testnet where the deployer is not refillable, listing all
@@ -383,6 +425,8 @@ const out = {
    */
   settleable,
   oracleNote,
+  /** Pairs this deployment deliberately did not list, because its oracle cannot settle them. */
+  skippedPairs: args["skip-unsettleable"] === true ? [...unsettleable] : [],
   markets: listed,
   /** Every transaction, so the submission is filled from what happened rather than by hand. */
   transactions: [...(resuming ? (previous.transactions ?? []) : []), ...transactions.map((t) => t.hash)],
