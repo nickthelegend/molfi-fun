@@ -142,11 +142,29 @@ These are recorded as **UNTESTED**, never as PASS.
 
 ---
 
+## G · Surface the first plan missed
+
+Found on a second pass over the repo: components and behaviours the first plan did not name.
+
+| # | Item | Correct means |
+| --- | --- | --- |
+| G1 | `/api/price` rate limit | past 60 requests in 10s the route answers **429** with a readable refusal and a `retry-after`. Must be tested **sequentially** — concurrent requests spread across serverless instances and never trip a per-instance limit |
+| G2 | Keeper `/` | answers with a status body (200 or 503 — 503 is correct when it is genuinely not listing) |
+| G3 | Keeper `/actions` | 200 · a non-empty array of recorded actions from the Postgres ledger |
+| G4 | Keeper `/settled` | 200 · an array of settled markets |
+| G5 | `/opengraph-image` | 200 · `image/png` — the social card a judge sees when the link is shared |
+| G6 | `/manifest.webmanifest` | 200 · `application/manifest+json` |
+| G7 | `/molfi-demo.mp4` | 200 · `video/mp4` · > 1 MB. `strk20.json` points a judge here; a 404 is a dead submission link |
+| G8 | `strk20.json` contracts | every address it names is deployed on chain |
+| G9 | `strk20.json` transactions | a sample of the hashes it claims are findable on chain |
+| G10 | `/robots.txt` | 200 · disallows `/api/` · names the sitemap |
+| G11 | `/sitemap.xml` | 200 · lists only routes that **actually answer 200**, verified by following them, not by counting |
+
 ## Result
 
 `node --experimental-strip-types scripts/audit.mjs` against `https://molfi.fun`:
 
-**76 PASS · 0 FAIL · 7 untestable on production**
+**87 PASS · 0 FAIL · 7 untestable on production** (second pass, after section G was added)
 
 The seven are the desk items (E8–E14), which production gates behind Privy. They were run in
 the same real Chrome against the same desk code on a local server with the repo's development
