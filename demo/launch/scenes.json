@@ -1,0 +1,57 @@
+[
+  {
+    "id": "intro",
+    "speed": 1,
+    "narration": 5.159
+  },
+  {
+    "id": "landing",
+    "speed": 1,
+    "narration": 13.137
+  },
+  {
+    "id": "problem",
+    "speed": 1,
+    "narration": 8.721
+  },
+  {
+    "id": "privacy",
+    "speed": 1,
+    "narration": 6.972
+  },
+  {
+    "id": "desk-range",
+    "speed": 1,
+    "narration": 7.335
+  },
+  {
+    "id": "desk-updown",
+    "speed": 1,
+    "narration": 5.351
+  },
+  {
+    "id": "verify",
+    "speed": 1,
+    "narration": 5.543
+  },
+  {
+    "id": "audit",
+    "speed": 1,
+    "narration": 6.46
+  },
+  {
+    "id": "keeper",
+    "speed": 1,
+    "narration": 9.404
+  },
+  {
+    "id": "mainnet",
+    "speed": 1,
+    "narration": 6.844
+  },
+  {
+    "id": "outro",
+    "speed": 1,
+    "narration": 5.479
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "intro",
+    "seconds": 6.6,
+    "leadIn": 0.69,
+    "consoleErrors": []
+  },
+  {
+    "id": "landing",
+    "seconds": 8.9,
+    "leadIn": 0.37,
+    "consoleErrors": []
+  },
+  {
+    "id": "problem",
+    "seconds": 6.2,
+    "leadIn": 0.37,
+    "consoleErrors": []
+  },
+  {
+    "id": "privacy",
+    "seconds": 16.6,
+    "leadIn": 3.33,
+    "consoleErrors": []
+  },
+  {
+    "id": "desk-range",
+    "seconds": 6.1,
+    "leadIn": 1.14,
+    "consoleErrors": []
+  },
+  {
+    "id": "desk-updown",
+    "seconds": 4.2,
+    "leadIn": 1.32,
+    "consoleErrors": []
+  },
+  {
+    "id": "verify",
+    "seconds": 11.7,
+    "leadIn": 2.17,
+    "consoleErrors": []
+  },
+  {
+    "id": "audit",
+    "seconds": 14.4,
+    "leadIn": 1.17,
+    "consoleErrors": []
+  },
+  {
+    "id": "keeper",
+    "seconds": 10.2,
+    "leadIn": 0.9,
+    "consoleErrors": []
+  },
+  {
+    "id": "mainnet",
+    "seconds": 15,
+    "leadIn": 7.24,
+    "consoleErrors": []
+  },
+  {
+    "id": "outro",
+    "seconds": 6.7,
+    "leadIn": 0.79,
+    "consoleErrors": []
+  }
+]

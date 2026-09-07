@@ -1,0 +1,11 @@
+# Kokoro's weights: ~350 MB, fetched by `make-models` and identical for everyone.
+models/
+
+# Raw takes and intermediates. Re-recordable from record.mjs against the live product, and a
+# repository is a poor place to keep several hundred megabytes of webm.
+raw/
+work/
+audio/
+
+# The cut itself. Published to the site rather than versioned here.
+*.mp4

@@ -1,0 +1,13 @@
+[
+  { "id": "intro",       "line": "molfi. A prediction market where your position is a commitment, not an order." },
+  { "id": "landing",     "line": "Nine markets, priced live. Four settle against Pragma. The other five had no Starknet oracle at all, so molfi is its own: a median across five exchanges, published with the true source count." },
+  { "id": "problem",     "line": "On a public chain your order is a signal before it is a trade. Anyone watching can price against it, crowd it, or get there first." },
+  { "id": "privacy",     "line": "This page is built from the contract's own ABI. It lists what an observer learns, and what they do not." },
+  { "id": "desk-range",  "line": "Pick a band, and how long it has to hold. Tighter pays more, priced from the same table the contract settles with." },
+  { "id": "desk-updown", "line": "Or just pick a direction. Same console, same settlement, one less decision." },
+  { "id": "verify",      "line": "Any commitment can be looked up by anyone. The stake is public. The band never was." },
+  { "id": "audit",       "line": "Every settled market recomputes itself in front of you. Eleven checks, no wallet, no account." },
+  { "id": "keeper",      "line": "A keeper lists the rounds and settles what is due. It cannot see a position, and settlement is permissionless: anyone can poke an expired market." },
+  { "id": "mainnet",     "line": "The contract is live on Starknet mainnet, reading Pragma directly, with four markets funded and open." },
+  { "id": "outro",       "line": "molfi. Your band, your size, and your name. None of them are the market's business." }
+]
