@@ -139,3 +139,45 @@ These are recorded as **UNTESTED**, never as PASS.
 | U2 | A signed trade: open → settle → claim | an open market *and* a funded account; the keeper holds ~8 STRK against a 15 floor and the faucet float 1.46 against a 12 drip |
 | U3 | A transaction through the STRK20 pool | a privacy-enabled wallet (Ready/Xverse) and FPI screening — molfi holds no viewing key by design |
 | U4 | Mainnet anything | real money; all four accounts hold 0.000000 STRK and none is deployed |
+
+---
+
+## Result
+
+`node --experimental-strip-types scripts/audit.mjs` against `https://molfi.fun`:
+
+**76 PASS · 0 FAIL · 7 untestable on production**
+
+The seven are the desk items (E8–E14), which production gates behind Privy. They were run in
+the same real Chrome against the same desk code on a local server with the repo's development
+door open — `15 PASS · 0 FAIL` — and are reported here as verified-locally rather than as
+production passes, because that is what they are.
+
+### Corrections made to this plan during the run
+
+Seven items failed first time and **six of them were this plan being wrong, not the product**.
+Each was resolved by reading the code's actual contract rather than by changing the product to
+match a guess:
+
+| Item | What I asserted | What is actually correct |
+| --- | --- | --- |
+| B6 | `sources` at the top of `/api/price` | it is nested under `oracle` |
+| B8 | no `market` param → 400 | the route reads `?? "BTC"` — a deliberate default, not an error |
+| B12 | error says "unknown parameters" | it pluralises with the count; one bad param says "parameter" |
+| B2 | oracle must be `ok` | health warns at 420s and the contract refuses at 900s, so a print is legitimately in the warning band part of every cycle. The invariant is *not down, every pair settleable* |
+| C3 | `decodePrint().price` | it returns `raw` |
+| D1/D2 | `aggregate("BTCUSDT")`, `.median` | it takes a **base** symbol and appends each venue's own suffix — `"BTCUSDT"` built `BTCUSDTUSDT` and read as a total outage while all five venues answered 200 to curl. It returns `.price` as an 8-dp bigint |
+| E8 | no red button in UP/DOWN | the red key is the CONNECT affordance, not the trade key that was asked to go. ▲ UP / ▼ DOWN are correctly in its place |
+| E12 | Fire disabled with no open market | `state.connection` resolves asynchronously, so `.disabled` at one instant tests a race. The contract that matters — and holds — is that the deck states NO OPEN MARKET and three presses open nothing |
+
+Three further failures were defects in the **harness**, not the product or the plan: `execSync`
+with a shell pipeline returned an empty string with exit 0 for both toolchain checks; `sh()`
+swallowed a failed command into `""`, so an item could fail with no evidence; and a fixed sleep
+after the CTA click passed against production and failed against a cold `next dev`. All three
+are fixed — the toolchains run through `spawnSync`, failures return their output, and navigation
+waits on a predicate to a deadline.
+
+**Zero product defects were found by this run.** The four found earlier in the same session —
+the unconfigured faucet closing the front door, `fetchJson` discarding every server error
+message, raw wei in the observer, and `/m/999999` titled as a real market — were fixed and
+deployed before this plan was written, and are covered by items A8, B28, E5 and E6.
