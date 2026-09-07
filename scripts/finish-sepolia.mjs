@@ -139,10 +139,27 @@ if (todo.length === 0) {
 if (checkOnly) {
   say("");
   let needed = 0n;
+  const costs = [];
   for (const job of todo) {
     const { felts, fri } = await declareCost(job.sierra, rpcCall);
     needed += fri;
+    costs.push({ job, fri });
     say(`  ${job.contract}: ${felts} felts, declare costs about ${strk(fri)}`);
+  }
+
+  /**
+   * The two are independent, and the cheaper one is the one the sprint is about.
+   *
+   * `privacy_invoke` is the privacy claim for the direction game; `defund_market` is the
+   * desk's economics. Presenting them as a single 113 STRK bill hides that 44 buys the first
+   * of them outright — which matters when the money arrives 5 STRK a day.
+   */
+  const cheapest = costs.slice().sort((a, b) => (a.fri < b.fri ? -1 : 1))[0];
+  if (costs.length > 1 && cheapest) {
+    say(
+      `\n  They are independent: --only ${cheapest.job.key} deploys ${cheapest.job.contract} alone` +
+        ` for ${strk(cheapest.fri)}.`,
+    );
   }
   // The deploy that follows each declare, and the fee on it, are small beside the declare —
   // but "about enough" is how a run dies between the two, having spent the expensive half.
@@ -152,6 +169,17 @@ if (checkOnly) {
       ? `\n  ${strk(have)} against ${strk(needed)} needed. Enough — run it without --check.\n`
       : `\n  ${strk(have)} against ${strk(needed + margin)} needed (10% margin). Short by ${strk(needed + margin - have)}.\n`,
   );
+  /**
+   * Ask for more than the declares cost, because the declares are not the last thing to happen.
+   *
+   * A keeper that spends its final STRK on a declare comes back up below its own floor, lists
+   * nothing, and the product is down at the exact moment its two new features go live. The
+   * shortfall figure above is the declare bill; this is the number to actually send.
+   */
+  if (have < needed + margin) {
+    say(`  Send ${strk(needed + margin + 40n * 10n ** 18n)} or so: the bill above, plus enough left`);
+    say(`  over that the desk is still above its floor once the declares are paid.\n`);
+  }
   process.exit(0);
 }
 
