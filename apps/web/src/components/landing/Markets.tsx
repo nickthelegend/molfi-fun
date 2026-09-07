@@ -29,6 +29,8 @@ interface Row {
   dp: number;
   settle: "pragma" | "molfi";
   price: string | null;
+  /** How old the *settlement* feed is, when it is too old to quote on. Null when healthy. */
+  staleMinutes: number | null;
 }
 
 export function Markets() {
@@ -40,6 +42,7 @@ export function Markets() {
       dp: m.dp,
       settle: m.settle,
       price: null,
+      staleMinutes: null,
     })),
   );
 
@@ -49,13 +52,30 @@ export function Markets() {
       const next = await Promise.all(
         MARKETS.map(async (m) => {
           try {
-            const d = await fetchJson<{ price?: string }>(`/api/price?market=${m.key}`);
+            const d = await fetchJson<{
+              price?: string;
+              oracle?: { quotable?: boolean; ageSeconds?: number };
+            }>(`/api/price?market=${m.key}`);
             if (!d.price) return null;
             const n = Number(BigInt(d.price)) / 1e8;
-            return n.toLocaleString("en-US", {
-              minimumFractionDigits: m.dp,
-              maximumFractionDigits: m.dp,
-            });
+            return {
+              price: n.toLocaleString("en-US", {
+                minimumFractionDigits: m.dp,
+                maximumFractionDigits: m.dp,
+              }),
+              /**
+               * The mark moves every twelve seconds; the feed that *settles* it may not.
+               *
+               * These are two different numbers and the card was quietly conflating them —
+               * showing an exchange mark under a label naming the settlement oracle. When the
+               * feed falls behind, a market cannot resolve, and a page that keeps ticking a
+               * live price over a frozen oracle is the most misleading thing it could do.
+               */
+              staleMinutes:
+                d.oracle && d.oracle.quotable === false && typeof d.oracle.ageSeconds === "number"
+                  ? Math.round(d.oracle.ageSeconds / 60)
+                  : null,
+            };
           } catch {
             // Unreachable is not zero, and it is not a guess either. The card stays blank.
             return null;
@@ -63,7 +83,13 @@ export function Markets() {
         }),
       );
       if (!alive) return;
-      setRows((prev) => prev.map((r, i) => ({ ...r, price: next[i] ?? r.price })));
+      setRows((prev) =>
+        prev.map((r, i) => ({
+          ...r,
+          price: next[i]?.price ?? r.price,
+          staleMinutes: next[i] ? next[i]!.staleMinutes : r.staleMinutes,
+        })),
+      );
     };
     void read();
     const id = setInterval(read, 12_000);
@@ -125,9 +151,21 @@ export function Markets() {
               <div className="tnum mt-2.5 text-[17px] font-bold leading-none text-white">
                 {r.price ?? <span className="text-white/20">—</span>}
               </div>
+              {/*
+                Says what it means, rather than naming a source the number did not come from.
+                This read `PRAGMA MEDIAN` directly under an exchange mark — so a sceptic who did
+                the obvious thing, compare the card against Pragma's on-chain median, found two
+                different numbers and a page that looked wrong. The label names where the market
+                *settles*; the figure above it is the live mark, which is what "read now" means.
+              */}
               <div className="mono mt-2 text-[8.5px] tracking-[0.1em] text-white/25">
-                {r.settle === "pragma" ? "PRAGMA MEDIAN" : "5-VENUE MEDIAN"}
+                {r.settle === "pragma" ? "SETTLES ON PRAGMA" : "SETTLES ON MOLFI'S MEDIAN"}
               </div>
+              {r.staleMinutes !== null ? (
+                <div className="mono mt-1 text-[8.5px] tracking-[0.1em] text-amber">
+                  FEED {r.staleMinutes}M OLD
+                </div>
+              ) : null}
             </motion.div>
           ))}
         </div>

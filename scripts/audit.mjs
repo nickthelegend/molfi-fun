@@ -234,6 +234,28 @@ if (section("A")) {
     const norm = (s) => String(s).replace(/,/g, "");
     const ok = norm(value.stats[0]) === value.count && norm(value.stats[1]) === value.settled && norm(value.stats[2]) === value.relayed;
     want("A1c", ok, `proof counters ${value.stats.join(" / ")} vs api ${value.count} / ${value.settled} / ${value.relayed}`);
+
+    /**
+     * The markets grid must not attribute its number to a source it did not come from.
+     *
+     * It showed the live exchange mark under the label `PRAGMA MEDIAN`. A sceptic doing the
+     * obvious thing — comparing the card against Pragma's on-chain median — found two different
+     * numbers (79,066 against 79,487) and a page that looked wrong. The label names where the
+     * market settles; and when that settlement feed is too old to quote on, the card has to say
+     * so, because a live price ticking over a frozen oracle is the most misleading thing here.
+     */
+    const mk = await b.visit("/", `(async()=>{
+      document.querySelector('[data-mk=root]').scrollIntoView(); await new Promise(r=>setTimeout(r,3500));
+      const t=document.body.innerText.replace(/\\s+/g,' ');
+      const p=await fetch('/api/price?market=BTC').then(r=>r.json());
+      return {claimsPragmaMedian:/PRAGMA MEDIAN|5-VENUE MEDIAN/.test(t), saysSettlesOn:/SETTLES ON/.test(t),
+        showsStale:/FEED \\d+M OLD/.test(t), oracleQuotable:p?.oracle?.quotable, age:p?.oracle?.ageSeconds};
+    })()`);
+    const v = mk.value;
+    // When the feed is healthy no staleness marker should appear; when it is not, it must.
+    const staleHonest = v.oracleQuotable === false ? v.showsStale : !v.showsStale;
+    want("A1d", v.claimsPragmaMedian === false && v.saysSettlesOn && staleHonest,
+      `mislabels the mark: ${v.claimsPragmaMedian} · names settlement: ${v.saysSettlesOn} · feed quotable ${v.oracleQuotable} (${v.age}s) and staleness shown: ${v.showsStale}`);
   } finally { b.close(); }
 }
 
