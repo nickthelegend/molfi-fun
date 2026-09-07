@@ -38,6 +38,8 @@ const D = JSON.parse(readFileSync("deployments/sepolia.json", "utf8"));
 /** A real position, opened by a real transaction, used for the observer's happy path. */
 const REAL_COMMITMENT = "0x621f98efdc0b62f2e3fe2096eb4c680e8a6115e5a2728fc87c558d0a14b2fc7";
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 const results = [];
 const record = (id, ok, detail) => {
   results.push({ id, ok, detail });
@@ -51,13 +53,33 @@ const untested = (id, why) => {
 const want = (id, cond, detail) => record(id, Boolean(cond), detail);
 const section = (s) => ONLY === null || ONLY.includes(s);
 
+/**
+ * A fetch that survives the network being briefly unavailable.
+ *
+ * A whole audit run — every section, forty minutes of work — was lost to one `ECONNRESET`
+ * from a public RPC endpoint, because an unhandled rejection aborts the process. A dropped
+ * connection is not a finding about the product; it is noise, and a harness that reports
+ * nothing because of it is worse than one that waits two seconds. Real refusals still come
+ * back as statuses and are still judged: this retries only when there is no answer at all.
+ */
+const fetchStubborn = async (url, init, attempts = 4) => {
+  for (let i = 1; ; i += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (e) {
+      if (i >= attempts) throw new Error(`${String(url).slice(0, 80)} unreachable after ${attempts} tries: ${e.message}`);
+      await sleep(1000 * i);
+    }
+  }
+};
+
 const json = async (url, init) => {
-  const res = await fetch(url, { cache: "no-store", ...init });
+  const res = await fetchStubborn(url, { cache: "no-store", ...init });
   const body = await res.json().catch(() => null);
   return { status: res.status, body };
 };
 const call = async (address, fn, calldata = []) => {
-  const r = await fetch(RPC, {
+  const r = await fetchStubborn(RPC, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -73,7 +95,6 @@ const call = async (address, fn, calldata = []) => {
 // ---------------------------------------------------------------- the browser
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * One Chrome, reused for every page item.
@@ -165,7 +186,7 @@ async function browser(width, height) {
       }
     },
     async status(path) {
-      const res = await fetch(BASE + path, { redirect: "manual" });
+      const res = await fetchStubborn(BASE + path, { redirect: "manual" });
       return res.status;
     },
     close() { try { ws.close(); } catch { /* already gone */ } proc.kill(); },
@@ -375,11 +396,11 @@ if (section("C")) {
   const print = decodePrint(btc);
   want("C3", print.sources >= 3 && print.raw > 0n,
     `relay BTC/USD ${(Number(print.raw) / 1e8).toFixed(2)} · ${print.sources} sources · ${Math.floor(Date.now() / 1000) - print.updatedAt}s old`);
-  const poolClass = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+  const poolClass = await fetchStubborn(RPC, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_getClassHashAt", params: ["latest", D.pool] }) }).then((r) => r.json());
   want("C4", typeof poolClass.result === "string", `pool class ${String(poolClass.result).slice(0, 18)}…`);
 
-  const cls = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+  const cls = await fetchStubborn(RPC, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_getClassAt", params: ["latest", D.market] }) }).then((r) => r.json());
   const abi = typeof cls.result.abi === "string" ? JSON.parse(cls.result.abi) : cls.result.abi;
   const flat = JSON.stringify(abi);
@@ -633,7 +654,7 @@ if (section("F")) {
   const todo = sh(`grep -rniE "\\b(todo|fixme|xxx)\\b" apps/web/src packages/sdk/src apps/keeper/src | head -3`);
   want("F2", debug === "" && todo === "", [debug, todo].filter(Boolean).join(" | ") || "no console.log, no TODO/FIXME");
 
-  const html = await fetch(`${BASE}/play`).then((r) => r.text());
+  const html = await fetchStubborn(`${BASE}/play`).then((r) => r.text());
   want("F3", !html.includes("DEV_WALLET"), `dev bypass strings in production HTML: ${(html.match(/DEV_WALLET/g) ?? []).length}`);
   const leaked = ["PRIVY_APP_SECRET", "FAUCET_PRIVATE_KEY", "KEEPER_PRIVATE_KEY", "DEV_WALLET_PRIVATE_KEY"].filter((k) => html.includes(k));
   want("F4", leaked.length === 0, leaked.length ? `LEAKED: ${leaked.join(",")}` : "no secret names in the shipped page");
@@ -693,7 +714,7 @@ if (section("G")) {
     `${kset.status} · ${kset.body?.markets?.length} settled markets published`);
 
   const asset = async (path, type) => {
-    const r = await fetch(`${BASE}${path}`);
+    const r = await fetchStubborn(`${BASE}${path}`);
     return { ok: r.status === 200 && (r.headers.get("content-type") ?? "").includes(type), status: r.status, ct: r.headers.get("content-type"), len: r.headers.get("content-length") };
   };
   const og = await asset("/opengraph-image", "image/png");
@@ -714,7 +735,7 @@ if (section("G")) {
   const manifest = JSON.parse(readFileSync("strk20.json", "utf8"));
   const contractChecks = await Promise.all((manifest.contracts ?? []).map(async (c) => {
     const addr = typeof c === "string" ? c : c.address;
-    const r = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+    const r = await fetchStubborn(RPC, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_getClassHashAt", params: ["latest", addr] }) }).then((x) => x.json());
     return { addr, live: typeof r.result === "string" };
   }));
@@ -723,11 +744,11 @@ if (section("G")) {
 
   const sample = (manifest.transactions ?? []).slice(0, 5);
   const txChecks = await Promise.all(sample.map(async (h) => {
-    const r = await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+    const r = await fetchStubborn(RPC, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_getTransactionStatus", params: [typeof h === "string" ? h : h.hash] }) }).then((x) => x.json());
     return Boolean(r.result?.finality_status);
   }));
-  const robots = await fetch(`${BASE}/robots.txt`).then(async (r) => ({ status: r.status, body: await r.text() }));
+  const robots = await fetchStubborn(`${BASE}/robots.txt`).then(async (r) => ({ status: r.status, body: await r.text() }));
   want("G10", robots.status === 200 && /Disallow: \/api\//.test(robots.body) && /Sitemap:/.test(robots.body),
     `${robots.status} · disallows /api · names the sitemap`);
 
@@ -737,7 +758,7 @@ if (section("G")) {
    * The only sitemap this repo had advertised `/markets` and `/contracts`, routes molfi.fun has
    * never served. Counting URLs would not have caught that; fetching them does.
    */
-  const sm = await fetch(`${BASE}/sitemap.xml`).then(async (r) => ({ status: r.status, body: await r.text() }));
+  const sm = await fetchStubborn(`${BASE}/sitemap.xml`).then(async (r) => ({ status: r.status, body: await r.text() }));
   const urls = [...sm.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
   const probe = [urls[0], urls[1], urls[2], urls[3], urls[4], urls[urls.length - 1]].filter(Boolean);
   const statuses = await Promise.all(probe.map(async (u) => {
