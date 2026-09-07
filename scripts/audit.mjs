@@ -147,6 +147,23 @@ async function browser(width, height) {
         return { value: r.result?.value, errors: [...errors] };
       }
     },
+    /**
+     * Poll until the page satisfies a predicate, instead of sleeping a guessed duration.
+     *
+     * A fixed wait passed against production and failed against a cold `next dev`, which
+     * compiles a route on first request — so E1 reported "the CTA did not navigate" when it
+     * had navigated, just later than the guess. Timing out is still a real failure; arriving
+     * slowly is not.
+     */
+    async until(expression, timeoutMs = 25_000) {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const r = await this.evaluate(expression).catch(() => ({ value: false }));
+        if (r.value) return true;
+        if (Date.now() > deadline) return false;
+        await sleep(500);
+      }
+    },
     async status(path) {
       const res = await fetch(BASE + path, { redirect: "manual" });
       return res.status;
@@ -405,14 +422,16 @@ if (section("E")) {
   try {
     await b.visit("/", "1");
     await b.evaluate(`[...document.querySelectorAll('a')].find(a=>/PLAY THE GAME/i.test(a.innerText)).click()`);
-    await sleep(4000);
+    await b.until(`location.pathname === "/play" && document.title === "molfi — the desk"`);
     const onPlay = await b.evaluate(`JSON.stringify([location.pathname, document.title])`);
     const p1 = JSON.parse(onPlay.value);
     want("E1", p1[0] === "/play" && p1[1] === "molfi — the desk", `CTA → ${p1[0]} "${p1[1]}"`);
 
-    await b.evaluate("history.back()"); await sleep(3500);
+    await b.evaluate("history.back()");
+    await b.until(`location.pathname === "/" && document.body.innerText.length > 150`);
     const back = JSON.parse((await b.evaluate(`JSON.stringify([location.pathname, document.title])`)).value);
-    await b.evaluate("history.forward()"); await sleep(3500);
+    await b.evaluate("history.forward()");
+    await b.until(`location.pathname === "/play" && document.body.innerText.length > 150`);
     const fwd = JSON.parse((await b.evaluate(`JSON.stringify([location.pathname, document.title, document.body.innerText.length>150])`)).value);
     want("E2", back[0] === "/" && fwd[0] === "/play" && fwd[2] === true,
       `back → ${back[0]} · forward → ${fwd[0]} · body non-blank ${fwd[2]}`);
