@@ -62,6 +62,26 @@ export function Hero() {
      * explained.
      */
     const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+
+    /**
+     * The words must exist even if this timeline never gets to run.
+     *
+     * GSAP advances on `requestAnimationFrame`, and rAF is not guaranteed to run at speed —
+     * background tabs, battery savers and headless capture tooling throttle it, in one
+     * measured case to **two frames per second** with `visibilityState` still reporting
+     * "visible". A three second intro then takes a minute and a half of wall clock, and until
+     * it finishes the headline is held at `opacity: 0` by its own `from()`. The page renders a
+     * console and no sentence: the one element that says what molfi is, absent, with no error
+     * anywhere.
+     *
+     * So the entrance is an enhancement with a deadline. If the timeline has not finished on
+     * wall-clock time it is snapped to its end state, which is simply the page as authored.
+     * Under normal rAF this fires after the animation has already completed and does nothing.
+     */
+    const deadline = window.setTimeout(() => {
+      if (tl.progress() < 1) tl.progress(1);
+    }, 2_600);
+    tl.eventCallback("onComplete", () => window.clearTimeout(deadline));
     tl.from("[data-hero=device]", { yPercent: 14, scale: 0.92, opacity: 0, duration: 1.1 })
       .from("[data-hero=glow]", { opacity: 0, scale: 0.6, duration: 1.2 }, "-=0.75")
       .from(
