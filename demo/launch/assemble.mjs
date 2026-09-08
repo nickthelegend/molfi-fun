@@ -44,12 +44,6 @@ const leadIns = existsSync(join(HERE, "recorded.json"))
   ? Object.fromEntries(JSON.parse(readFileSync(join(HERE, "recorded.json"), "utf8")).map((r) => [r.id, r.leadIn ?? 0]))
   : {};
 
-/** Per-scene camera windows, written by the recorder from real element boxes. */
-const crops = Object.fromEntries(
-  JSON.parse(readFileSync(join(HERE, "recorded.json"), "utf8"))
-    .filter((r) => r && r.crop)
-    .map((r) => [r.id, r.crop]),
-);
 const speeds = useSpeeds && existsSync(join(HERE, "scenes.json"))
   ? Object.fromEntries(JSON.parse(readFileSync(join(HERE, "scenes.json"), "utf8")).map((s) => [s.id, s.speed]))
   : {};
@@ -165,17 +159,6 @@ for (const [i, n] of narration.entries()) {
    */
   const lead = Number(leadIns[n.id] ?? 0);
   const vDur = probe(video) - lead;
-  const box = crops[n.id];
-  /*
-    A panning crop is the crop's own `y` written as a function of `t`, so ffmpeg moves the
-    window while it decodes. Clamped at both ends, because the ramp below retimes the clip and
-    an unclamped expression would keep travelling past the bottom of the object into padding.
-  */
-  const crop = !box
-    ? ""
-    : box.pan
-      ? `crop=${box.w}:${box.h}:${box.x}:'${box.pan.from}+(${box.pan.to}-${box.pan.from})*min(1\,max(0\,t/${Math.max(0.1, vDur).toFixed(2)}))',`
-      : `crop=${box.w}:${box.h}:${box.x}:${box.y},`;
   /** The narration is the clock; a multiplier shortens both together so they stay in sync. */
   const target = n.seconds / speed;
   const seg = join(WORK, `${String(i).padStart(2, "0")}-${n.id}.mp4`);
@@ -190,8 +173,8 @@ for (const [i, n] of narration.entries()) {
   const ratio = target / vDur;
   const vf =
     ratio < 1
-      ? `${crop}setpts=${ratio.toFixed(6)}*PTS,fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b`
-      : `${crop}fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b,tpad=stop_mode=clone:stop_duration=${(target - vDur).toFixed(3)}`;
+      ? `setpts=${ratio.toFixed(6)}*PTS,fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b`
+      : `fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b,tpad=stop_mode=clone:stop_duration=${(target - vDur).toFixed(3)}`;
 
   // Audio is retimed by the same multiplier. atempo preserves pitch, so a 2x scene still sounds
   // like the same narrator rather than a chipmunk.

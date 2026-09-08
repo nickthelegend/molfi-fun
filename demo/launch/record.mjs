@@ -197,7 +197,6 @@ async function scene(browser, id, body, opts = {}) {
    */
   let leadIn = 0;
   let failure = null;
-  let crop = null;
   const ready = () => { if (!leadIn) leadIn = (Date.now() - started) / 1000; };
 
   /**
@@ -211,73 +210,20 @@ async function scene(browser, id, body, opts = {}) {
    * `w`/`h` are the 16:9 window to hold, in CSS pixels; the box is centred inside it and
    * clamped to the page so the crop never runs off the edge into black.
    */
-  const frame = async (selector, w = SIZE.width, h = SIZE.height, pan = false) => {
-    /*
-      Zoom is applied here, after the page has hydrated, rather than before it loads.
-
-      Injecting it at init time worked, and made React warn that the server HTML and the client
-      properties disagreed — because they did: the style was on `<html>` before hydration ran.
-      A recording with a hydration warning in the console is a recording of a page in a state
-      no visitor would see, so the zoom waits until the deck is up and the scene is about to
-      aim at it.
-    */
-    if (opts.zoom && opts.zoom !== 1) {
-      await page.evaluate((z) => { document.documentElement.style.zoom = String(z); }, opts.zoom);
-      await sleep(600); // one layout pass, so the box below is measured after the reflow
-    }
-    const box = await page.evaluate((sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { x: r.x, y: r.y, w: r.width, h: r.height };
-    }, selector);
-    if (!box) throw new Error(`cannot aim at "${selector}" — it is not on screen`);
-    /*
-      How many video pixels one laid-out pixel is worth, measured rather than assumed.
-
-      Under `zoom` the page lays out in a smaller coordinate space than the viewport, and
-      `getBoundingClientRect` answers in that space. Reading the ratio off the document itself
-      means the crop stays correct whatever the zoom is — and if the zoom silently failed to
-      apply, the ratio comes back 1 and the crop is merely wide, not pointed at empty canvas.
-    */
-    const scale = view.width / (await page.evaluate(() => document.documentElement.clientWidth));
-    const cw = w / scale, ch = h / scale; // the window, in the page's own coordinates
-    const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
-    const x = Math.max(0, Math.min(view.width / scale - cw, cx - cw / 2));
-    const y = Math.max(0, Math.min(view.height / scale - ch, cy - ch / 2));
-    crop = {
-      w: Math.round(w) & ~1, h: Math.round(h) & ~1,
-      x: Math.round(x * scale) & ~1, y: Math.round(y * scale) & ~1,
-    };
-
-    /*
-      A slow travel down the object, instead of one fixed window on part of it.
-
-      The console is 1:1.9 and the frame is 16:9, so a still camera has to choose: hold the
-      whole device and it is a third of the width and unreadable, or hold a third of the device
-      at a readable size and never show the rest. Neither is what a demo is for.
-
-      Panning resolves it in the only direction that exists — time. The frame opens on the
-      screen at full size and travels down to the payout panel and the keys, so the whole
-      interface is shown and all of it is legible. `crop` takes an expression in `t`, so this
-      is the crop's own y moving between two measured stops rather than a second pass over an
-      already-cropped picture.
-    */
-    if (pan) {
-      const top = Math.max(0, box.y - 6);
-      const bottom = Math.max(top, box.y + box.h - ch + 6);
-      crop.pan = { from: Math.round(top * scale) & ~1, to: Math.round(bottom * scale) & ~1 };
-    }
-  };
-
   /**
-   * Render the page bigger, rather than blowing up a small picture afterwards.
+   * Kept as a no-op so scenes can still name what they are pointing at.
    *
-   * The console is capped at 460 CSS pixels wide, so in a 1280-wide frame it is a third of the
-   * width no matter where the camera points. `zoom` makes the browser lay the same page out at
-   * twice the size — real layout, real text rasterised at that size — so a native 1280x720 crop
-   * holds the console at about two thirds of the frame with no upscaling anywhere in the chain.
+   * This used to zoom the page and crop a window onto the console, which made the device big
+   * by hiding most of it: the finished cut held a middle slice with the price cut off the top
+   * and the payout cut off the bottom, and travelled down it like a scroll. The frame was full
+   * of console and showed the interface not at all.
+   *
+   * A portrait handheld cannot fill a landscape frame on its own — that is arithmetic, not
+   * framing — so the fix belonged in the product, not the camera. The desk now puts real
+   * panels either side of the console on a wide screen, so a plain full-viewport recording
+   * holds the whole interface at a readable size and nothing is cut off anything.
    */
+  const frame = async () => {};
 
   try {
     await body(page, ready, frame);
@@ -301,7 +247,7 @@ async function scene(browser, id, body, opts = {}) {
   // exactly there can still catch the tail of a fade.
   const trim = leadIn ? Number((leadIn + 0.25).toFixed(2)) : 0;
   log(`  ${id.padEnd(12)} ${secs}s  lead-in ${trim}s${errors.length ? `  CONSOLE: ${errors.slice(0, 2).join(" | ")}` : ""}`);
-  return { id, seconds: Number(secs), leadIn: trim, crop, consoleErrors: errors, failure };
+  return { id, seconds: Number(secs), leadIn: trim, consoleErrors: errors, failure };
 }
 
 /**
@@ -410,7 +356,13 @@ made.push(await scene(browser, "privacy", async (page, ready) => {
  * `TAll` gives the whole 830-pixel console somewhere to exist; without it the payout panel sat
  * below the fold and every take cut the device off at the knees.
  */
-const TALL = { width: 1400, height: 1760, zoom: 2 };
+/**
+ * The desk is filmed at the frame's own size, because it now fills it.
+ *
+ * 1280x720 with no zoom and no crop: the three-column desk lands console-centred with the
+ * chain panel and the round list either side, which is both the whole interface and legible.
+ */
+const TALL = {};
 
 /** The deck is only worth filming when it has a live round on it. */
 const liveDeck = (page) =>

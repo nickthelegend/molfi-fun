@@ -30,6 +30,8 @@ import { MenuSheet } from "./menu/MenuSheet";
 import { useSound } from "@/lib/useSound";
 import { ADDRESSES, activeNetwork, explorerTx, shortAddress } from "@/lib/chain";
 import { DeviceFrame } from "./device/DeviceFrame";
+import { DeskRail } from "./device/DeskRail";
+import { ChainRail } from "./device/ChainRail";
 import { RangeChart } from "./device/RangeChart";
 import { BandControl } from "./device/BandControl";
 import { StatusBar } from "./device/StatusBar";
@@ -541,7 +543,22 @@ export function LiveConsole({
   const coins = state.shielded === null ? 0 : Number(state.shielded / parseStrk(5));
 
   return (
-    <div className="tiled min-h-dvh">
+    /*
+      The console, and the window it sits in.
+
+      `items-start` rather than centring the pair: the rail is shorter than the device and a
+      centred rail floats beside it with a gap above and below, which reads as two unrelated
+      panels rather than one desk. Below `xl` the rail is not rendered at all and this collapses
+      back to exactly what it was — the handheld, alone, centred.
+    */
+    <div className="tiled flex min-h-dvh items-start justify-center gap-4 px-3 xl:px-6">
+      <ChainRail
+        market={target}
+        position={state.positions[0] ?? null}
+        now={now}
+        spot={state.spot}
+        dp={market.dp}
+      />
       <DeviceFrame
         glass={
           <div className="screen overflow-hidden rounded-[15px]">
@@ -1161,6 +1178,18 @@ export function LiveConsole({
             </div>
           </div>
         }
+      />
+
+      <DeskRail
+        pairs={TRADEABLE.map((m) => ({ key: m.key, label: m.label, symbol: m.symbol, dp: m.dp }))}
+        markets={state.markets}
+        positions={state.positions}
+        activeKey={market.key}
+        onPick={setMarketKey}
+        now={now}
+        network={activeNetwork.name}
+        contract={ADDRESSES.market}
+        explorer={activeNetwork.explorer}
       />
 
       {menuOpen ? (
