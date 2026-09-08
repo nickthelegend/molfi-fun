@@ -382,6 +382,21 @@ export function LiveConsole({
 
   const claimable = state.positions.filter((p) => p.won === true && !p.claimedTxHash);
 
+  /**
+   * What happened when a key asked for a wallet.
+   *
+   * `readyToAct` used to answer `true`/`false`, and `false` meant two different things: "there
+   * is nothing to act with" and "I just connected one for you". Every caller treated both as
+   * stop, so the first press of a key silently connected and did nothing else — and said
+   * nothing about it.
+   *
+   * On the fire key that is survivable; people press again. On CLAIM it is not: a trader with
+   * a settled, winning position presses the only key that pays them, watches nothing happen,
+   * and concludes the desk has eaten their stake. It cost me an hour believing the button did
+   * not exist.
+   */
+  type Ready = "ready" | "connected" | "no";
+
   const routes = live.routes;
   const route: Route | null =
     routes.length === 0 ? null : routePref && routes.includes(routePref) ? routePref : routes[0];
@@ -396,7 +411,7 @@ export function LiveConsole({
    * connect, say plainly when there is nothing to connect to, and never leak a developer's
    * sentence onto the screen.
    */
-  const readyToAct = useCallback(async (): Promise<boolean> => {
+  const readyToAct = useCallback(async (): Promise<Ready> => {
     if (!state.connection) {
       /**
        * Privy first, an extension second.
@@ -407,6 +422,7 @@ export function LiveConsole({
        * there is no Privy session, which is how someone who prefers their own keys connects.
        */
       if (privyWallet && signer) {
+        let ok = true;
         await live
           .connectWithPrivy(
             privyWallet.publicKey,
@@ -414,24 +430,29 @@ export function LiveConsole({
             // Only for an account that already exists; a Privy wallet's address is derived.
             privyWallet.deployed ? privyWallet.address : undefined,
           )
-          .catch((e) => say(errorFlash(e)));
-        return false;
+          .catch((e) => {
+            ok = false;
+            say(errorFlash(e));
+          });
+        return ok ? "connected" : "no";
       }
       const wallet = state.wallets[0];
       if (!wallet) {
         say("NO STARKNET WALLET FOUND");
-        return false;
+        return "no";
       }
-      await live.connect(wallet).catch((e) => say(errorFlash(e)));
-      // Connecting is its own action. The key does the thing on the next press, once the
-      // address is on screen and the trader can see what they are about to act with.
-      return false;
+      let ok = true;
+      await live.connect(wallet).catch((e) => {
+        ok = false;
+        say(errorFlash(e));
+      });
+      return ok ? "connected" : "no";
     }
     if (state.blocked) {
       say(state.blocked.slice(0, 60).toUpperCase());
-      return false;
+      return "no";
     }
-    return true;
+    return "ready";
   }, [state.connection, state.wallets, state.blocked, live, say]);
 
   /**
@@ -442,7 +463,17 @@ export function LiveConsole({
    * rather than a market on this one — so the checks that matter are different checks.
    */
   const doFireDirection = useCallback(async (side: "up" | "down" = picked) => {
-    if (!(await readyToAct())) return;
+    /*
+      Connecting is still its own press before a spend: the address goes on screen and the
+      trader sees what they are about to stake with. What was missing is the desk saying so —
+      the key appeared to do nothing at all.
+    */
+    const ready = await readyToAct();
+    if (ready === "no") return;
+    if (ready === "connected") {
+      say("CONNECTED · PRESS AGAIN TO SEND");
+      return;
+    }
     const round = rounds.open;
     if (!round) {
       say(rounds.ready ? noRoundReason : "READING ROUNDS…");
@@ -468,7 +499,17 @@ export function LiveConsole({
   }, [readyToAct, rounds.open, rounds.ready, live, picked, stake, say]);
 
   const doFire = useCallback(async () => {
-    if (!(await readyToAct())) return;
+    /*
+      Connecting is still its own press before a spend: the address goes on screen and the
+      trader sees what they are about to stake with. What was missing is the desk saying so —
+      the key appeared to do nothing at all.
+    */
+    const ready = await readyToAct();
+    if (ready === "no") return;
+    if (ready === "connected") {
+      say("CONNECTED · PRESS AGAIN TO SEND");
+      return;
+    }
     // Never a silent no-op. A key that does nothing and says nothing is indistinguishable
     // from a broken app, and it cost an afternoon of debugging to find out which it was.
     if (!target) {
@@ -874,7 +915,15 @@ export function LiveConsole({
                 <button
                   onClick={() =>
                     void (async () => {
-                      if (!(await readyToAct())) return;
+                      /*
+                        No second press here. Settling an expired market and claiming a
+                        position that already won are not decisions about money to be risked —
+                        one is a public chore anyone may do and the other is collecting a
+                        payout the chain has already agreed to. The desk's actions read the
+                        connection from a ref rather than React state, so acting immediately
+                        after connecting works on the same press.
+                      */
+                      if ((await readyToAct()) === "no") return;
                       await live
                         .settle(state.dueMarkets[0].id)
                         .then((h) => {
@@ -899,7 +948,15 @@ export function LiveConsole({
                 <button
                   onClick={() =>
                     void (async () => {
-                      if (!(await readyToAct())) return;
+                      /*
+                        No second press here. Settling an expired market and claiming a
+                        position that already won are not decisions about money to be risked —
+                        one is a public chore anyone may do and the other is collecting a
+                        payout the chain has already agreed to. The desk's actions read the
+                        connection from a ref rather than React state, so acting immediately
+                        after connecting works on the same press.
+                      */
+                      if ((await readyToAct()) === "no") return;
                       await live
                         .claim(claimable[0])
                         .then((h) => {
