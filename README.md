@@ -8,6 +8,54 @@ your position because they saw it coming.
 
 ---
 
+## Live on Starknet mainnet
+
+- **Live demo — [molfi.fun](https://molfi.fun)**
+- **Demo video — [molfi.fun/molfi-demo.mp4](https://molfi.fun/molfi-demo.mp4)**
+- **Public repository — [github.com/nickthelegend/molfi-fun](https://github.com/nickthelegend/molfi-fun)**
+
+**Market contract** — [`0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9`](https://starkscan.co/contract/0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9)
+
+It reads **Pragma mainnet directly** — no relay, because Pragma is alive there — and holds four
+markets, each funded with 5 STRK of house bankroll so it can actually take a position rather than
+refusing every one. The five pairs Pragma does not carry (SOL, XRP, DOGE, LINK, AVAX) were
+deliberately **not** listed: a market whose oracle cannot be read is one that could take a stake and
+never resolve.
+
+### Mainnet transactions
+
+Every one below is `ACCEPTED_ON_L1` — finalised on Ethereum, not merely accepted on L2.
+
+| # | What it did | Transaction |
+| --- | --- | --- |
+| 1 | Account deployed | [`0x00d87d1a99356044…`](https://starkscan.co/tx/0x00d87d1a993560448ca27ed54ab8b0b2f56aa34d01133d881928aa528fbb3524) |
+| 2 | Deploy MolfiMarket | [`0x01b5c98db224b3e1…`](https://starkscan.co/tx/0x01b5c98db224b3e1547363401480feb8449989011b02d868bb76a7c787393104) |
+| 3 | Listed BTC/USD 14400s | [`0x05216ca2e525199f…`](https://starkscan.co/tx/0x05216ca2e525199f2b8a9ab4ac252093e7ba4ea696d0c91f2686a9834039bddc) |
+| 4 | Listed ETH/USD 14400s | [`0x05d013bcd0833a2b…`](https://starkscan.co/tx/0x05d013bcd0833a2b6bef47de3aac8ac504df7fe43ae6baa8b4dd231fd92ba548) |
+| 5 | Listed STRK/USD 14400s | [`0x0427053cb94b8e3a…`](https://starkscan.co/tx/0x0427053cb94b8e3a167f00bd6c3568f1f2e183f14ef5617ffa820b8e2f8d32d0) |
+| 6 | Listed WBTC/USD 14400s | [`0x032e99b955f617fe…`](https://starkscan.co/tx/0x032e99b955f617fe80aadd8a8d5e27f47cab51eee44d0f73303fa6e6a79c51eb) |
+| 7 | Sent bankroll for market 1 | [`0x04008e34322365bd…`](https://starkscan.co/tx/0x04008e34322365bd19c07714dba5451cc1ddaf6c6711be2aaef4d35b806b2cff) |
+| 8 | Funded market 1 | [`0x068791d225e83f58…`](https://starkscan.co/tx/0x068791d225e83f581bd18c66acd4516fcf91cfd14042e166d5a8f4a1903abc65) |
+| 9 | Sent bankroll for market 2 | [`0x07445742d327a10a…`](https://starkscan.co/tx/0x07445742d327a10a9395df7f82284c8af2cc04031c2e5ca1e63889293d13a24a) |
+| 10 | Funded market 2 | [`0x01d7d11f35aae507…`](https://starkscan.co/tx/0x01d7d11f35aae5078e375cccc53a8cf86aebfb711eec7867b95e57bd266ec4f5) |
+| 11 | Sent bankroll for market 3 | [`0x036733490c368068…`](https://starkscan.co/tx/0x036733490c36806889348b6ab0d3879b439699b4c88729b0e63393b06c012e62) |
+| 12 | Funded market 3 | [`0x0698df34713efeac…`](https://starkscan.co/tx/0x0698df34713efeac5b6da0424d7a9a139e6cc0b13517940a7a2111beb7271c1c) |
+| 13 | Sent bankroll for market 4 | [`0x07a1bfd57939b05f…`](https://starkscan.co/tx/0x07a1bfd57939b05f5245d3a945e32b04f913eb6a1280f42adb50c680804809b0) |
+| 14 | Funded market 4 | [`0x03977ebb9896e690…`](https://starkscan.co/tx/0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d) |
+
+`strk20.json` carries the same list in machine-readable form.
+
+### Still to come
+
+Three transactions **through the STRK20 pool itself** are the sprint's own bar and are not done
+yet. molfi's pool route is built and shape-validated — `scripts/pool-probe.mjs` runs the deployed
+pool's own `compile_actions` against exactly the actions molfi would send and gets as far as
+`SUBCHANNEL_NOT_FOUND`, which means the withdraw and the `InvokeExternal` parsed, ordered and
+replay-protected correctly. What it needs is a privacy-enabled wallet to sign them; molfi holds no
+viewing key by design, so that step belongs to a person.
+
+---
+
 ## Why privacy is the mechanic here
 
 On a public chain your order is a signal before it is a trade. Anyone watching the mempool or
@@ -125,8 +173,8 @@ checked against the chain rather than trusted.
 | | Sepolia | Mainnet |
 | --- | --- | --- |
 | STRK20 privacy pool | `0x0254a6b2…cfe0d91` | `0x040337b1…6ffe812a` |
-| molfi market | `0x053b1721…d3298f1f` | not deployed |
-| molfi up/down | `0x07881b0c…45c17ce9` | not deployed |
+| molfi market | `0x053b1721…d3298f1f` | [`0x0215dc0b…65a3aaf9`](https://starkscan.co/contract/0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9) |
+| molfi up/down | `0x07881b0c…45c17ce9` | not deployed — one contract was the budget |
 | Price relay | `0x0275a7fd…456dfcbb` | not deployed, and should not be |
 | Settles against | the relay | Pragma directly |
 
@@ -142,5 +190,7 @@ the mainnet block it was read at so the number can be checked against the chain 
 It serves Pragma's timestamp rather than its own, because returning the relay time would let
 a stale price pass a freshness check it should fail. On mainnet it is not deployed at all.
 
-Mainnet spends real STRK, so it stays a deliberate, human-run step. `pnpm preflight` checks
-everything that can be checked without spending anything, and currently passes.
+Mainnet spends real STRK, so it stayed a deliberate, human-run step — taken on 2026-09-07 and
+listed transaction by transaction under **[Live on Starknet mainnet](#live-on-starknet-mainnet)**
+above. `pnpm preflight` checks everything that can be checked without spending anything, and
+currently passes.
