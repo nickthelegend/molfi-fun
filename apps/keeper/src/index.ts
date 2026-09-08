@@ -146,6 +146,17 @@ const RELAY_MIN_AGE = Number(process.env.KEEPER_RELAY_MIN_AGE ?? 420);
  */
 const LIST_LEAD = Math.max((3 * CYCLE_MS) / 1000, 180);
 
+/**
+ * The pairs this keeper is allowed to list, which depends on where it is.
+ *
+ * Five of the nine settle against molfi's own relayed median. That relay only exists on
+ * Sepolia, so on mainnet those five have no oracle behind them — listing one would create a
+ * market that can take a stake and can never resolve, which is the single worst thing this
+ * process could do with its permissions. The deploy script already refuses them for the same
+ * reason; this is the same rule applied to the thing that runs continuously.
+ */
+const LISTABLE = MARKETS.filter((m) => (NETWORK === "mainnet" ? m.settle === "pragma" : true));
+
 const state = {
   startedAt: new Date().toISOString(),
   cycles: 0,
@@ -205,11 +216,19 @@ function shortfall(): string {
  * and must not launder one, so a stale or thin mainnet print simply does not cross.
  */
 async function relayPrices(): Promise<void> {
+  /*
+    No relay, nothing to relay.
+
+    On mainnet Pragma publishes directly and molfi reads it; there is no courier in the path
+    and no contract to write to. Returning here rather than guarding at the call site keeps
+    the one fact — "this network has a relay" — in one place.
+  */
+  if (!RELAY) return;
   const now = Math.floor(Date.now() / 1000);
   const calls: Call[] = [];
   const relayed: { pair: string; price: bigint; sources: number; block: number }[] = [];
 
-  for (const m of MARKETS) {
+  for (const m of LISTABLE) {
     try {
       const held = await readRelayed(m.label);
 
@@ -572,7 +591,7 @@ async function tendDirectionRounds(): Promise<void> {
   }
 
   const seconds = ROUND_SECONDS[TIER] ?? 900;
-  const pair = MARKETS[0]?.label ?? "BTC/USD";
+  const pair = LISTABLE[0]?.label ?? "BTC/USD";
   try {
     const tx = await send(
       createRoundCall(pair, now + seconds + 60, seconds, TOKEN, Number(HOUSE_EDGE_BPS)),
@@ -716,7 +735,7 @@ async function openNewRounds(): Promise<void> {
   const chainNow = Math.floor(Date.now() / 1000);
   // A market still open but inside `LIST_LEAD` of its cutoff no longer counts as covered, so
   // its replacement is listed while it is still tradeable rather than after it has gone.
-  const wanted = MARKETS.filter(
+  const wanted = LISTABLE.filter(
     (m) => !fresh.some((x) => x.pair === m.label && !x.isSettled && x.cutoffAt > chainNow + LIST_LEAD),
   );
   if (wanted.length === 0) return;

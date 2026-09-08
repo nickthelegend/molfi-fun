@@ -39,7 +39,16 @@ export const MARKET = required("MOLFI_MARKET");
  * network has no direction game", and the cycle skips that half rather than failing.
  */
 export const UPDOWN = process.env.MOLFI_UPDOWN ?? "";
-export const RELAY = required("MOLFI_RELAY");
+/**
+ * The price relay, where there is one.
+ *
+ * Optional, because it only exists on Sepolia. Pragma stopped publishing there, so molfi
+ * couriers mainnet's median onto the testnet; on mainnet Pragma is alive and a relay would be
+ * a second, worse copy of a feed that is already on the chain. `required` here meant the
+ * keeper could not boot against mainnet at all — it demanded the address of a contract it
+ * must not use.
+ */
+export const RELAY = process.env.MOLFI_RELAY ?? "";
 export const TOKEN = required("MOLFI_TOKEN");
 
 function required(name: string): string {
@@ -48,7 +57,18 @@ function required(name: string): string {
   return v;
 }
 
-export const provider = new RpcProvider({ nodeUrl: SEPOLIA_RPC });
+/**
+ * The chain the keeper acts on, which is not always Sepolia.
+ *
+ * This was pinned to `SEPOLIA_RPC` while `NETWORK` was read from the environment two lines
+ * above and used for labelling — so a keeper configured for mainnet would have reported
+ * itself as mainnet in its own health endpoint while listing, funding and settling on the
+ * testnet. Wrong in the most expensive direction: every claim it made about where it was
+ * would have been false, and nothing would have failed.
+ */
+export const provider = new RpcProvider({
+  nodeUrl: NETWORK === "mainnet" ? MAINNET_RPC : SEPOLIA_RPC,
+});
 export const mainnet = new RpcProvider({ nodeUrl: MAINNET_RPC });
 
 export const account = new Account({
