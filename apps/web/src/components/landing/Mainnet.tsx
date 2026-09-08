@@ -25,13 +25,28 @@ import { useGsap } from "./useGsap";
  */
 export function Mainnet() {
   const scope = useGsap(({ gsap, root }) => {
+    /*
+      The rows slide, and they do not fade.
+
+      A `from` tween writes its start state the moment it is built and holds it until the
+      trigger fires, so `opacity: 0` here means "invisible until a scroll listener decides
+      otherwise". The first cut of this section did exactly that and the trigger never fired:
+      the list rendered as an empty bordered box on production — the fourteen transactions
+      this whole section exists to show, replaced by nothing, on the page a judge opens.
+
+      So the animation is allowed to move the rows and not to hide them. `immediateRender:
+      false` is the second lock: the start state is not written until the tween actually
+      begins, so a trigger that never fires leaves the list exactly as authored. The worst
+      case either lock permits is a list that did not slide, which nobody will notice, rather
+      than a list that is not there, which is the only thing anyone would.
+    */
     gsap.from("[data-mainnet=row]", {
       x: -14,
-      opacity: 0,
       duration: 0.45,
       ease: "power2.out",
       stagger: 0.025,
-      scrollTrigger: { trigger: root, start: "top 78%" },
+      immediateRender: false,
+      scrollTrigger: { trigger: root, start: "top 85%" },
     });
   });
 
