@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { MARKETS } from "@molfi/sdk";
 import { CoinMark, StarknetSpark } from "@/components/CoinMark";
+import { Signer, type SignerInterface } from "starknet";
 import { PrivySigner } from "@/lib/privy-signer";
 import { prepareAccount, type PrepareStage } from "@/lib/prepare-account";
 import { errorText } from "@/lib/pool";
@@ -81,7 +82,16 @@ export interface Wallet {
  * the provider. Handing down a wallet alone would mean the console reaching back for a context
  * it is not guaranteed to be inside.
  */
-export type GateChildren = (wallet: Wallet, signer: PrivySigner) => React.ReactNode;
+/**
+ * What the gate hands the console.
+ *
+ * `SignerInterface`, not `PrivySigner`. Nothing downstream of the gate uses anything specific
+ * to Privy's signer — the desk asks for a signature over a hash and does not care where the
+ * key lives — so naming the concrete class here only had the effect of making any other real
+ * signer a type error. Widening it to the interface starknet.js already defines is what the
+ * code was always doing.
+ */
+export type GateChildren = (wallet: Wallet, signer: SignerInterface) => React.ReactNode;
 
 export function PrivyGate({ children }: { children: GateChildren }) {
   if (!APP_ID) {
@@ -203,10 +213,33 @@ function Inner({ children }: { children: GateChildren }) {
    */
   const signer = useMemo(
     () =>
-      new PrivySigner(wallet?.publicKey ?? "0x0", {
-        accessToken: () => getAccessToken(),
-        identityToken: () => identityToken ?? null,
-      }),
+      /*
+        In development, with the bypass explicitly on and a key explicitly supplied, the desk
+        signs locally with starknet.js's own signer.
+
+        This is not a stub. It produces a real signature over the real transaction hash and the
+        result is broadcast down the same path as every other trade — same calldata, same fee
+        estimate, same sequencer, same block. The single thing that differs from production is
+        who holds the key: an environment variable here, Privy's server there.
+
+        It exists because the desk could not be filmed. The bypass wallet carries an empty id
+        so that anything trying to sign with it fails loudly, which is right for a stand-in and
+        useless for a demo — every recording of the console showed a deck nobody could trade
+        on, under narration describing a trade. The choice was a local key or a video that
+        never shows the product working.
+
+        Three locks, all of which must be open: it is compiled out of production builds, it
+        requires the bypass to have been turned on by hand, and it requires a key that is not
+        in the repository.
+      */
+      process.env.NODE_ENV !== "production" &&
+      process.env.NEXT_PUBLIC_DEV_WALLET_BYPASS === "1" &&
+      process.env.NEXT_PUBLIC_DEV_WALLET_PRIVATE_KEY
+        ? new Signer(process.env.NEXT_PUBLIC_DEV_WALLET_PRIVATE_KEY)
+        : new PrivySigner(wallet?.publicKey ?? "0x0", {
+            accessToken: () => getAccessToken(),
+            identityToken: () => identityToken ?? null,
+          }),
     [wallet?.publicKey, getAccessToken, identityToken],
   );
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SiteHeader } from "@/components/landing/SiteHeader";
 import { Hero } from "@/components/landing/Hero";
 import { ChainSees } from "@/components/landing/ChainSees";
 import { Games } from "@/components/landing/Games";
@@ -56,6 +57,7 @@ export default function Home() {
       cuts the overflow without creating one.
     */
     <main className="relative overflow-x-clip bg-ground">
+      <SiteHeader />
       <Hero />
       <ChainSees />
       <Games />

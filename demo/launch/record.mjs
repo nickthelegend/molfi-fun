@@ -44,16 +44,58 @@ const BASE = String(args.base ?? "https://molfi.fun").replace(/\/$/, "");
  * quotes, the multiplier — is still read live from Starknet.
  */
 const DESK_BASE = String(args["desk-base"] ?? BASE).replace(/\/$/, "");
+/**
+ * This take's own transactions, or nothing.
+ *
+ * Written by `scripts/trade.mjs` when it opens the position and again when it claims. The
+ * recorder reads the hashes from here rather than holding constants, and refuses to run
+ * without the file — the failure mode being guarded against is a beat that films *a* real
+ * transaction under narration describing *this* trade, which looks perfect and is a lie.
+ */
+const TAKE = (() => {
+  const at = join(HERE, "take-txs.json");
+  if (!existsSync(at)) {
+    throw new Error(
+      "NO_TAKE_TXS: demo/launch/take-txs.json is missing. Open a position with " +
+        "`node --experimental-strip-types scripts/trade.mjs --network sepolia --account molfi_trader --stake 1` " +
+        "first; the recorder will not film a trade it cannot name.",
+    );
+  }
+  const t = JSON.parse(readFileSync(at, "utf8"));
+  for (const k of ["open", "commitment", "marketId", "explorer"]) {
+    if (!t[k]) throw new Error(`NO_TAKE_TXS: take-txs.json has no "${k}"`);
+  }
+  return t;
+})();
+
 const ONLY = args.only ? String(args.only).split(",").map((s) => s.trim()) : null;
 
 /** The running order, so a merged log keeps the cut's sequence rather than run order. */
 const SCENE_ORDER = [
-  "intro", "landing", "problem", "privacy", "desk-range", "desk-updown",
-  "verify", "audit", "keeper", "mainnet", "outro",
+  "intro", "landing", "problem",
+  "deck-open", "deck-band", "deck-pays", "deck-updown",
+  "trade-live", "trade", "verify", "settle", "payout", "keeper", "mainnet", "outro",
 ];
 
 /** 1280x720 keeps the deck legible at YouTube's smallest sane size without letterboxing. */
 const SIZE = { width: 1280, height: 720 };
+
+/**
+ * The picture is captured at twice the layout, so a close-up costs nothing.
+ *
+ * The console is a portrait handheld capped at 460 CSS pixels wide. In a 16:9 frame that is
+ * about 30% of the width, and the first cut proved what that looks like: a device too small to
+ * read, marooned in background pattern, while the narration described numbers nobody could see.
+ *
+ * A portrait object cannot fill a landscape frame, so the answer is to stop trying to hold the
+ * whole object and crop into it. Cropping a 1280x720 recording would mean upscaling a 400-pixel
+ * region by three and shipping mush. Recording the same viewport at 2560x1440 instead makes
+ * every CSS pixel two video pixels, so a 1280x720 crop is *native* — no scaling at all — and the
+ * console lands at 68% of the frame instead of 30%.
+ *
+ * The page still lays out at 1280 CSS. Nothing about the product changes; only the camera.
+ */
+const VIDEO = { width: SIZE.width * 2, height: SIZE.height * 2 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (s) => process.stdout.write(`${s}\n`);
@@ -64,11 +106,11 @@ const log = (s) => process.stdout.write(`${s}\n`);
  * A fixed wait is the reason recordings drift: it is too short on a cold route and wasted on a
  * warm one, and either way the clip no longer matches what the narration describes.
  */
-async function until(page, fn, timeout = 25_000) {
+async function until(page, fn, timeout = 25_000, arg = undefined) {
   const deadline = Date.now() + timeout;
   for (;;) {
     try {
-      if (await page.evaluate(fn)) return true;
+      if (await page.evaluate(fn, arg)) return true;
     } catch { /* mid-navigation */ }
     if (Date.now() > deadline) return false;
     await sleep(250);
@@ -84,8 +126,8 @@ async function until(page, fn, timeout = 25_000) {
  * that accepts the wrong screen is worse than no wait: it fails silently and only the finished
  * video shows it. This throws instead, and the scene is reported as failed rather than shipped.
  */
-async function mustSee(page, label, fn, timeout = 30_000) {
-  if (!(await until(page, fn, timeout))) {
+async function mustSee(page, label, fn, timeout = 30_000, arg = undefined) {
+  if (!(await until(page, fn, timeout, arg))) {
     const seen = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 120)).catch(() => "?");
     throw new Error(`never reached "${label}" — screen said: ${seen}`);
   }
@@ -112,16 +154,31 @@ async function glide(page, toY, ms = 1800) {
 }
 
 /** A scene's page, recorded on its own context so its video is its own file. */
-async function scene(browser, id, body) {
+async function scene(browser, id, body, opts = {}) {
   if (ONLY && !ONLY.includes(id)) return null;
   const dir = join(RAW, `.tmp-${id}`);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
 
+  /**
+   * A scene may ask for a taller viewport than the frame it will end up in.
+   *
+   * The console is 830 CSS pixels tall and a 720-tall viewport cut its bottom off — the payout
+   * panel, which is the number the narration is about, was below the fold in every desk take.
+   * Giving those scenes a taller page and cropping back to 16:9 afterwards shows the whole
+   * device *and* lets the crop choose which part of it the frame holds.
+   */
+  const view = { width: opts.width ?? SIZE.width, height: opts.height ?? SIZE.height };
   const context = await browser.newContext({
-    viewport: SIZE,
-    recordVideo: { dir, size: SIZE },
-    deviceScaleFactor: 2,
+    viewport: view,
+    /*
+      The video is exactly the viewport. Asking `recordVideo` for a larger `size` than the
+      viewport does not supersample — it renders the page at the viewport and pads the rest of
+      the canvas grey. A crop computed against the larger number then lands on the padding, and
+      the first frame of the test cut was two thirds empty background with the console sliced
+      down the middle. Size follows the viewport, and resolution is bought with `zoom` instead.
+    */
+    recordVideo: { dir, size: view },
     colorScheme: "dark",
   });
   const page = await context.newPage();
@@ -140,9 +197,90 @@ async function scene(browser, id, body) {
    */
   let leadIn = 0;
   let failure = null;
+  let crop = null;
   const ready = () => { if (!leadIn) leadIn = (Date.now() - started) / 1000; };
+
+  /**
+   * Aim the frame at a real element, in that element's own measured position.
+   *
+   * The crop is computed from `getBoundingClientRect` at record time rather than typed in as
+   * pixel constants, so it cannot drift when the layout changes — a hand-written crop that is
+   * fifty pixels stale points the camera at the bezel instead of the screen, and the first
+   * anyone knows is in the finished cut.
+   *
+   * `w`/`h` are the 16:9 window to hold, in CSS pixels; the box is centred inside it and
+   * clamped to the page so the crop never runs off the edge into black.
+   */
+  const frame = async (selector, w = SIZE.width, h = SIZE.height, pan = false) => {
+    /*
+      Zoom is applied here, after the page has hydrated, rather than before it loads.
+
+      Injecting it at init time worked, and made React warn that the server HTML and the client
+      properties disagreed — because they did: the style was on `<html>` before hydration ran.
+      A recording with a hydration warning in the console is a recording of a page in a state
+      no visitor would see, so the zoom waits until the deck is up and the scene is about to
+      aim at it.
+    */
+    if (opts.zoom && opts.zoom !== 1) {
+      await page.evaluate((z) => { document.documentElement.style.zoom = String(z); }, opts.zoom);
+      await sleep(600); // one layout pass, so the box below is measured after the reflow
+    }
+    const box = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    }, selector);
+    if (!box) throw new Error(`cannot aim at "${selector}" — it is not on screen`);
+    /*
+      How many video pixels one laid-out pixel is worth, measured rather than assumed.
+
+      Under `zoom` the page lays out in a smaller coordinate space than the viewport, and
+      `getBoundingClientRect` answers in that space. Reading the ratio off the document itself
+      means the crop stays correct whatever the zoom is — and if the zoom silently failed to
+      apply, the ratio comes back 1 and the crop is merely wide, not pointed at empty canvas.
+    */
+    const scale = view.width / (await page.evaluate(() => document.documentElement.clientWidth));
+    const cw = w / scale, ch = h / scale; // the window, in the page's own coordinates
+    const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    const x = Math.max(0, Math.min(view.width / scale - cw, cx - cw / 2));
+    const y = Math.max(0, Math.min(view.height / scale - ch, cy - ch / 2));
+    crop = {
+      w: Math.round(w) & ~1, h: Math.round(h) & ~1,
+      x: Math.round(x * scale) & ~1, y: Math.round(y * scale) & ~1,
+    };
+
+    /*
+      A slow travel down the object, instead of one fixed window on part of it.
+
+      The console is 1:1.9 and the frame is 16:9, so a still camera has to choose: hold the
+      whole device and it is a third of the width and unreadable, or hold a third of the device
+      at a readable size and never show the rest. Neither is what a demo is for.
+
+      Panning resolves it in the only direction that exists — time. The frame opens on the
+      screen at full size and travels down to the payout panel and the keys, so the whole
+      interface is shown and all of it is legible. `crop` takes an expression in `t`, so this
+      is the crop's own y moving between two measured stops rather than a second pass over an
+      already-cropped picture.
+    */
+    if (pan) {
+      const top = Math.max(0, box.y - 6);
+      const bottom = Math.max(top, box.y + box.h - ch + 6);
+      crop.pan = { from: Math.round(top * scale) & ~1, to: Math.round(bottom * scale) & ~1 };
+    }
+  };
+
+  /**
+   * Render the page bigger, rather than blowing up a small picture afterwards.
+   *
+   * The console is capped at 460 CSS pixels wide, so in a 1280-wide frame it is a third of the
+   * width no matter where the camera points. `zoom` makes the browser lay the same page out at
+   * twice the size — real layout, real text rasterised at that size — so a native 1280x720 crop
+   * holds the console at about two thirds of the frame with no upscaling anywhere in the chain.
+   */
+
   try {
-    await body(page, ready);
+    await body(page, ready, frame);
   } catch (e) {
     failure = String(e.message).slice(0, 160);
     log(`  ! ${id} FAILED: ${failure}`);
@@ -163,7 +301,7 @@ async function scene(browser, id, body) {
   // exactly there can still catch the tail of a fade.
   const trim = leadIn ? Number((leadIn + 0.25).toFixed(2)) : 0;
   log(`  ${id.padEnd(12)} ${secs}s  lead-in ${trim}s${errors.length ? `  CONSOLE: ${errors.slice(0, 2).join(" | ")}` : ""}`);
-  return { id, seconds: Number(secs), leadIn: trim, consoleErrors: errors, failure };
+  return { id, seconds: Number(secs), leadIn: trim, crop, consoleErrors: errors, failure };
 }
 
 /**
@@ -226,18 +364,29 @@ made.push(await scene(browser, "landing", async (page, ready) => {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await until(page, () => /A handheld for bets/.test(document.body.innerText));
   ready();
-  await sleep(3600);
-  // The market grid: real prices, and the oracle each one settles against.
-  await page.evaluate(() => document.querySelector("[data-mk=root]")?.scrollIntoView({ block: "center" }));
-  await sleep(4200);
+  await sleep(5200);
+  // The market grid: real prices, and the oracle each one settles against. Glided rather than
+  // snapped — a cut that jumps position reads as an edit, and this is one continuous look.
+  const gridY = await page.evaluate(() => {
+    const el = document.querySelector("[data-mk=root]");
+    return el ? el.getBoundingClientRect().top + window.scrollY - 80 : 900;
+  });
+  await glide(page, gridY, 2600);
+  await sleep(7000);
 }));
 
 made.push(await scene(browser, "problem", async (page, ready) => {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await until(page, () => document.querySelectorAll("section").length > 3);
   ready();
-  await page.evaluate(() => document.querySelectorAll("section")[1]?.scrollIntoView({ block: "center" }));
-  await sleep(5200);
+  const seesY = await page.evaluate(() => {
+    const el = document.querySelectorAll("section")[1];
+    return el ? el.getBoundingClientRect().top + window.scrollY - 60 : 800;
+  });
+  await glide(page, seesY, 2400);
+  await sleep(6000);
+  await glide(page, seesY + 520, 2600);
+  await sleep(6500);
 }));
 
 made.push(await scene(browser, "privacy", async (page, ready) => {
@@ -251,38 +400,197 @@ made.push(await scene(browser, "privacy", async (page, ready) => {
   await sleep(3200);
 }));
 
-made.push(await scene(browser, "desk-range", async (page, ready) => {
+/**
+ * The desk, held close enough to read.
+ *
+ * Every desk beat records a 900-tall page and crops a 640x360 CSS window — native 1280x720 in
+ * the 2x recording — aimed at a measured element. The console lands at about two thirds of the
+ * frame instead of a third, and the numbers the narration is talking about are legible.
+ *
+ * `TAll` gives the whole 830-pixel console somewhere to exist; without it the payout panel sat
+ * below the fold and every take cut the device off at the knees.
+ */
+const TALL = { width: 1400, height: 1760, zoom: 2 };
+
+/** The deck is only worth filming when it has a live round on it. */
+const liveDeck = (page) =>
+  mustSee(
+    page,
+    "a live deck with an open round",
+    () =>
+      /BAND/.test(document.body.innerText) &&
+      !/CONNECT TO PLAY/.test(document.body.innerText) &&
+      !/NO OPEN MARKET/.test(document.body.innerText) &&
+      /CLOSES IN/.test(document.body.innerText),
+    40_000,
+  );
+
+made.push(await scene(browser, "deck-open", async (page, ready, frame) => {
   await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
-  // The deck, and nothing that merely looks like progress. BAND only exists on the console.
-  await mustSee(page, "the range deck", () => /BAND/.test(document.body.innerText) && !/CONNECT TO PLAY/.test(document.body.innerText));
+  await liveDeck(page);
+  // The whole device, top to bottom, at a size the numbers can be read at.
+  await frame(".shell", SIZE.width, SIZE.height, true);
   ready();
-  await sleep(2600);
-  const click = async (label) => {
+  // Held on the live price and the round clock, both counting, both read from the chain.
+  await sleep(13500);
+}, TALL));
+
+made.push(await scene(browser, "deck-band", async (page, ready, frame) => {
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  await frame(".screen");
+  ready();
+  await sleep(1800);
+  const click = async (label, n = 1) => {
     const b = page.locator(`button:text-is("${label}")`).first();
     if (!(await b.count())) throw new Error(`control "${label}" is not on screen`);
-    await b.click();
-    await sleep(1100);
+    for (let i = 0; i < n; i++) { await b.click(); await sleep(850); }
   };
-  for (const _ of [0, 1, 2]) await click("+");
-  for (const _ of [0, 1]) await click("−");
-  await click("1h"); await click("4h"); await click("15m");
-  await sleep(1600);
-}));
-
-made.push(await scene(browser, "desk-updown", async (page, ready) => {
-  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
-  await mustSee(page, "the deck's game switch", () => /RANGE/.test(document.body.innerText) && !/CONNECT TO PLAY/.test(document.body.innerText));
-  ready();
+  // Wide, then tight. The band percentage and the payout move together on screen.
+  await click("+", 5);
   await sleep(2200);
+  await click("−", 7);
+  await sleep(2400);
+  await click("+", 3);
+  await sleep(3000);
+}, TALL));
+
+made.push(await scene(browser, "deck-pays", async (page, ready, frame) => {
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  // Aimed low, at the payout panel — the number a trader actually decides on.
+  await frame(".shell");
+  await page.evaluate(() => {
+    const el = document.querySelector(".shell");
+    if (el) el.scrollIntoView({ block: "end" });
+  });
+  ready();
+  await sleep(2000);
+  const tier = async (label) => {
+    const b = page.locator(`button:text-is("${label}")`).first();
+    if (!(await b.count())) throw new Error(`tier "${label}" is not on screen`);
+    await b.click();
+    await sleep(2800);
+  };
+  await tier("1h"); await tier("4h"); await tier("15m"); await tier("1h");
+  await sleep(3500);
+}, TALL));
+
+made.push(await scene(browser, "deck-updown", async (page, ready, frame) => {
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  // Travels, because the direction switch changes the screen and lights the keys, and on a
+  // device this size those two things are nowhere near each other.
+  await frame(".shell", SIZE.width, SIZE.height, true);
+  ready();
+  await sleep(1600);
   const ud = page.locator('button:text-is("UP / DOWN")').first();
   if (!(await ud.count())) throw new Error("UP / DOWN key is not on screen");
   await ud.click();
-  await mustSee(page, "the direction keys", () => /▲ UP/.test(document.body.innerText), 10_000);
-  await sleep(2600);
+  await mustSee(page, "the direction keys", () => /▲ UP/.test(document.body.innerText), 12_000);
+  await sleep(7500);
   const rg = page.locator('button:text-is("RANGE")').first();
   if (!(await rg.count())) throw new Error("RANGE key is not on screen");
   await rg.click();
+  await sleep(1600);
+}, TALL));
+
+/**
+ * The whole trade, taken on the console, in one unbroken shot.
+ *
+ * This is the beat the previous cuts did not have. They filmed a deck nobody could trade on
+ * and then cut to a block explorer, so the product was never once seen doing the thing it is
+ * for — the narration said "a position" over a page of hexadecimal.
+ *
+ * Here the camera stays on the device while a person would use it: widen the band, set the
+ * size, press the key. The first press connects the wallet and the address appears on the
+ * strip; the second signs and broadcasts. The shot holds until the chain answers and the
+ * RIDING counter moves, because the wait is the honest part — this is a real transaction on
+ * Starknet Sepolia and it takes as long as it takes.
+ *
+ * Nothing is simulated. A run of this scene costs real testnet STRK and leaves a real position
+ * on a real market, which is why the stake is trimmed down first: a take should not cost five
+ * STRK to re-shoot.
+ */
+made.push(await scene(browser, "trade-live", async (page, ready, frame) => {
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  await frame(".shell", SIZE.width, SIZE.height, true);
+  ready();
+  await sleep(2200);
+
+  /*
+    Controls are found by their accessible name, not their label.
+
+    The stake keys are labelled with the value they will jump to — "▼ 2" one moment and "▼ 1"
+    the next — so a selector written against the text matched on the first take and timed out
+    on the second. `aria-label` is the part of a control that is supposed to be stable, and
+    using it means the recorder is pressing the key a screen reader would name, not a string
+    that happens to be printed on it today.
+  */
+  const press = async (name, n = 1, wait = 900) => {
+    const b = page.locator(`button:text-is("${name}"), button[aria-label="${name}"]`).first();
+    if (!(await b.count())) throw new Error(`control "${name}" is not on screen`);
+    for (let i = 0; i < n; i++) { await b.click(); await sleep(wait); }
+  };
+  const fire = page.locator('button[aria-label="Fire"], button:text-is("Fire")').first();
+  if (!(await fire.count())) throw new Error("the Fire key is not on screen");
+
+  // Choose a band, then a size — the two decisions the whole product is about.
+  await press("+", 3, 800);
+  await sleep(1400);
+  await press("Lower the stake", 2, 800);
   await sleep(1800);
+
+  // First press connects: the address replaces NOT CONNECTED on the strip.
+  await fire.click();
+  await mustSee(page, "a connected wallet on the deck",
+    () => !/NOT CONNECTED/.test(document.body.innerText), 45_000);
+  await sleep(2600);
+
+  // Second press signs and broadcasts. Read the counter before, so the wait ends on a change
+  // rather than on a timer that could expire while the transaction was still in flight.
+  const riding = () => page.evaluate(() => {
+    const m = document.body.innerText.match(/(\d+)\s*RIDING/);
+    return m ? Number(m[1]) : 0;
+  });
+  const before = await riding();
+  await fire.click();
+  await mustSee(page, "the position land on chain", (n) => {
+    const m = document.body.innerText.match(/(\d+)\s*RIDING/);
+    return Boolean(m) && Number(m[1]) > n;
+  }, 150_000, before);
+  await sleep(6000);
+}, TALL));
+
+/**
+ * The trade itself, on the explorer that anyone can open.
+ *
+ * These hashes are this take's. `demo/launch/take-txs.json` is written by the trade script when
+ * the position is opened and by the claim when it pays; the recorder refuses to film if it is
+ * missing rather than reaching for a hash that happened to be lying around. A demo that shows
+ * *a* transaction under a line describing *this* trade is the exact lie this guard exists for.
+ */
+made.push(await scene(browser, "trade", async (page, ready) => {
+  await page.goto(`${TAKE.explorer}/tx/${TAKE.open}`, { waitUntil: "domcontentloaded" });
+  await mustSee(page, "the open_position transaction", () => /open_position|Succeeded|SUCCEEDED/i.test(document.body.innerText), 45_000);
+  ready();
+  await sleep(6000);
+  await glide(page, 620, 2200);
+  await sleep(5500);
+  await glide(page, 1150, 2200);
+  await sleep(5000);
+}));
+
+made.push(await scene(browser, "settle", async (page, ready) => {
+  await page.goto(`${BASE}/m/${TAKE.marketId}`, { waitUntil: "domcontentloaded" });
+  await mustSee(page, "the market's own audit", () => /check/i.test(document.body.innerText), 30_000);
+  ready();
+  await sleep(4500);
+  await glide(page, 700, 2400);
+  await sleep(5500);
+  await glide(page, 1400, 2400);
+  await sleep(5000);
 }));
 
 made.push(await scene(browser, "verify", async (page, ready) => {
@@ -293,11 +601,13 @@ made.push(await scene(browser, "verify", async (page, ready) => {
   const input = page.locator("input[placeholder*=commitment]").first();
   await input.click();
   // Typed, not pasted — a real commitment from a real position, entered like a person would.
-  await input.type("0x621f98efdc0b62f2e3fe2096eb4c680e8a6115e5a2728fc87c558d0a14b2fc7", { delay: 18 });
+  await input.type(TAKE.commitment, { delay: 14 });
   await sleep(700);
   await page.locator('button:text-is("LOOK")').first().click();
   await until(page, () => /WHAT THE CHAIN REVEALS/.test(document.body.innerText), 20_000);
-  await sleep(4200);
+  await sleep(6500);
+  await glide(page, 620, 2200);
+  await sleep(6000);
 }));
 
 made.push(await scene(browser, "audit", async (page, ready) => {
@@ -311,13 +621,28 @@ made.push(await scene(browser, "audit", async (page, ready) => {
   await sleep(2600);
 }));
 
+/** The claim: the band revealed for the first time, and the payout landing. */
+made.push(await scene(browser, "payout", async (page, ready) => {
+  if (!TAKE.claim) throw new Error("NO_TAKE_TXS: take-txs.json has no claim hash — the payout has not happened yet");
+  await page.goto(`${TAKE.explorer}/tx/${TAKE.claim}`, { waitUntil: "domcontentloaded" });
+  await mustSee(page, "the claim transaction", () => /claim|Succeeded|SUCCEEDED/i.test(document.body.innerText), 45_000);
+  ready();
+  await sleep(6000);
+  await glide(page, 700, 2200);
+  await sleep(5500);
+  await glide(page, 1250, 2200);
+  await sleep(4500);
+}));
+
 made.push(await scene(browser, "keeper", async (page, ready) => {
   await page.goto(`${BASE}/keeper`, { waitUntil: "domcontentloaded" });
   await until(page, () => /Nobody has to run this/.test(document.body.innerText));
   ready();
-  await sleep(3000);
-  await glide(page, 800, 2200);
-  await sleep(3400);
+  await sleep(4500);
+  await glide(page, 620, 2200);
+  await sleep(5500);
+  await glide(page, 1180, 2400);
+  await sleep(5500);
 }));
 
 made.push(await scene(browser, "mainnet", async (page, ready) => {
@@ -342,6 +667,10 @@ made.push(await scene(browser, "mainnet", async (page, ready) => {
   // and the previous take drifted all the way to Starkscan's own footer.
   // No scroll. The evidence is the contract header and the transaction list directly under it;
   // the previous takes drifted into Starkscan's footer, which is half a frame of their links.
+  await sleep(9000);
+  // A short walk down the transaction list — 420, not 900. A previous take glided far enough
+  // to reach Starkscan's own footer and spent half a beat on somebody else's links.
+  await glide(page, 420, 2600);
   await sleep(7000);
 }));
 

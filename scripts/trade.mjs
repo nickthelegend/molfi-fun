@@ -45,15 +45,43 @@ const deployment = JSON.parse(readFileSync(`deployments/${network}.json`, "utf8"
 const MARKET = deployment.market;
 const TOKEN = deployment.token;
 
-async function rpc(method, params) {
-  const r = await fetch(RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const body = await r.json();
-  if (body.error) throw new Error(JSON.stringify(body.error).slice(0, 300));
-  return body.result;
+/**
+ * A JSON-RPC call that survives the network dropping one connection.
+ *
+ * A single `ECONNRESET` on the first read used to end the whole trade — before the position
+ * was opened, so nothing was lost but the run, and after a fee had been quoted, so the retry
+ * started from scratch. The endpoint was healthy each time; one TLS read failed. A transport
+ * hiccup is not an answer from the chain, so it is retried rather than reported.
+ *
+ * A *contract* refusal is never retried. It is the chain's real answer and it will be the
+ * same the second time, so it throws on the first hearing with the reason intact.
+ */
+async function rpc(method, params, tries = 4) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(RPC, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      const body = await r.json();
+      if (body.error) throw new Error(JSON.stringify(body.error).slice(0, 300));
+      return body.result;
+    } catch (e) {
+      // Only transport failures get another go; anything the node actually said stands.
+      const transport =
+        e instanceof TypeError ||
+        ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN", "UND_ERR_SOCKET"].includes(
+          e?.cause?.code,
+        );
+      if (!transport) throw e;
+      last = e;
+      say(`  … ${method} hit ${e?.cause?.code ?? "a transport error"}, retrying (${i + 1}/${tries})`);
+      await new Promise((r) => setTimeout(r, 400 * 2 ** i));
+    }
+  }
+  throw last;
 }
 
 const call = (to, selector, calldata = []) =>
@@ -244,8 +272,31 @@ invoke(
   "opened",
 );
 
-const p = await call(MARKET, sel("get_position"), [commitment]);
-if (BigInt(p[9]) !== 1n) throw new Error("the chain has no position under that commitment");
+/**
+ * Read the position back only once the chain agrees it exists.
+ *
+ * `sncast invoke` returns as soon as the transaction is *accepted for processing*, not once
+ * it is in a block. Reading `get_position` on the next line therefore asked a state that had
+ * not been updated yet, and the answer — an empty slot — was indistinguishable from a trade
+ * that never landed. So a run that had already approved the stake and opened the position,
+ * both SUCCEEDED on chain, ended by telling its operator the chain had no position: the one
+ * report that must never be wrong, wrong in the direction that hides a real trade.
+ *
+ * Polling here rather than sleeping: the wait is over when the answer arrives, and if it
+ * never does, that is a real failure worth raising with the hash to check.
+ */
+let p;
+for (let i = 0; i < 40; i++) {
+  p = await call(MARKET, sel("get_position"), [commitment]);
+  if (BigInt(p[9]) === 1n) break;
+  await new Promise((r) => setTimeout(r, 3000));
+}
+if (BigInt(p[9]) !== 1n) {
+  throw new Error(
+    `the chain still has no position under ${commitment} two minutes after the open was sent — ` +
+      `check the open transaction on the explorer before assuming the stake was not taken`,
+  );
+}
 const after = (await markets()).find((x) => x.id === m.id);
 
 say("\nwhat the chain now holds");

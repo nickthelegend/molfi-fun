@@ -1,78 +1,160 @@
 [
   {
     "id": "intro",
-    "seconds": 6.8,
-    "leadIn": 0.91,
+    "seconds": 6.9,
+    "leadIn": 0.93,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "landing",
-    "seconds": 9,
-    "leadIn": 0.5,
+    "seconds": 16.1,
+    "leadIn": 0.54,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "problem",
-    "seconds": 6.2,
-    "leadIn": 0.38,
+    "seconds": 18.8,
+    "leadIn": 0.39,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
-    "id": "privacy",
-    "seconds": 17.3,
-    "leadIn": 4,
+    "id": "deck-open",
+    "seconds": 57.9,
+    "leadIn": 43.5,
+    "crop": {
+      "w": 1280,
+      "h": 720,
+      "x": 60,
+      "y": 502,
+      "pan": {
+        "from": 26,
+        "to": 980
+      }
+    },
     "consoleErrors": [],
     "failure": null
   },
   {
-    "id": "desk-range",
-    "seconds": 15.3,
-    "leadIn": 1.51,
+    "id": "deck-band",
+    "seconds": 30.4,
+    "leadIn": 6.75,
+    "crop": {
+      "w": 1280,
+      "h": 720,
+      "x": 60,
+      "y": 162
+    },
     "consoleErrors": [],
     "failure": null
   },
   {
-    "id": "desk-updown",
-    "seconds": 8.6,
-    "leadIn": 1.43,
+    "id": "deck-pays",
+    "seconds": 22.8,
+    "leadIn": 5.17,
+    "crop": {
+      "w": 1280,
+      "h": 720,
+      "x": 60,
+      "y": 502
+    },
+    "consoleErrors": [],
+    "failure": null
+  },
+  {
+    "id": "deck-updown",
+    "seconds": 17.9,
+    "leadIn": 6.28,
+    "crop": {
+      "w": 1280,
+      "h": 720,
+      "x": 60,
+      "y": 502,
+      "pan": {
+        "from": 26,
+        "to": 980
+      }
+    },
+    "consoleErrors": [],
+    "failure": null
+  },
+  {
+    "id": "trade-live",
+    "seconds": 35.8,
+    "leadIn": 5.78,
+    "crop": {
+      "w": 1280,
+      "h": 720,
+      "x": 60,
+      "y": 502,
+      "pan": {
+        "from": 26,
+        "to": 980
+      }
+    },
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+    ],
+    "failure": null
+  },
+  {
+    "id": "trade",
+    "seconds": 23.4,
+    "leadIn": 1.79,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "verify",
-    "seconds": 11.5,
-    "leadIn": 2,
+    "seconds": 21.7,
+    "leadIn": 1.88,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
-    "id": "audit",
-    "seconds": 14.7,
-    "leadIn": 1.43,
+    "id": "settle",
+    "seconds": 21.7,
+    "leadIn": 1.12,
+    "crop": null,
+    "consoleErrors": [],
+    "failure": null
+  },
+  {
+    "id": "payout",
+    "seconds": 23.2,
+    "leadIn": 2.2,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "keeper",
-    "seconds": 10.1,
-    "leadIn": 0.82,
+    "seconds": 21.9,
+    "leadIn": 1,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "mainnet",
-    "seconds": 15.2,
-    "leadIn": 7.41,
+    "seconds": 27.7,
+    "leadIn": 8.17,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "outro",
-    "seconds": 6.6,
-    "leadIn": 0.71,
+    "seconds": 6.8,
+    "leadIn": 0.84,
+    "crop": null,
     "consoleErrors": [],
     "failure": null
   }

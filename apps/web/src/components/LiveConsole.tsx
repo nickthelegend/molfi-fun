@@ -20,7 +20,7 @@ import { useLiveDesk, type LiveMarket } from "@/lib/useLiveDesk";
 import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
 import type { Wallet } from "@/components/PrivyGate";
-import type { PrivySigner } from "@/lib/privy-signer";
+import type { SignerInterface } from "starknet";
 import { useBand } from "@/lib/useBand";
 import { useRounds } from "@/lib/useRounds";
 import { GameSwitch, type Game } from "./device/GameSwitch";
@@ -139,7 +139,15 @@ export function LiveConsole({
 }: {
   /** The Privy account, when the visitor came through the gate rather than an extension. */
   wallet?: Wallet;
-  signer?: PrivySigner;
+  /**
+   * Whatever will sign for this account.
+   *
+   * The interface rather than Privy's implementation of it: the desk needs a signature over a
+   * hash and has no business knowing whether the key sits on Privy's servers, in an extension,
+   * or in a development environment variable. Naming the concrete class made every other real
+   * signer a compile error for no benefit anywhere in this file.
+   */
+  signer?: SignerInterface;
 }) {
   const router = useRouter();
   const [marketKey, setMarketKey] = useState("BTC");

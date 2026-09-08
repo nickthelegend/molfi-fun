@@ -43,6 +43,13 @@ const narration = JSON.parse(readFileSync(join(HERE, "narration.json"), "utf8"))
 const leadIns = existsSync(join(HERE, "recorded.json"))
   ? Object.fromEntries(JSON.parse(readFileSync(join(HERE, "recorded.json"), "utf8")).map((r) => [r.id, r.leadIn ?? 0]))
   : {};
+
+/** Per-scene camera windows, written by the recorder from real element boxes. */
+const crops = Object.fromEntries(
+  JSON.parse(readFileSync(join(HERE, "recorded.json"), "utf8"))
+    .filter((r) => r && r.crop)
+    .map((r) => [r.id, r.crop]),
+);
 const speeds = useSpeeds && existsSync(join(HERE, "scenes.json"))
   ? Object.fromEntries(JSON.parse(readFileSync(join(HERE, "scenes.json"), "utf8")).map((s) => [s.id, s.speed]))
   : {};
@@ -80,6 +87,50 @@ function wrap(text, max = 46) {
   return lines;
 }
 
+/**
+ * One narration line becomes several caption cues, split where a speaker would breathe.
+ *
+ * A cue per scene is a cue per paragraph. The direction beat's line ran to three lines of type
+ * and sat directly over the UP and DOWN keys the sentence was pointing at — the caption covered
+ * its own subject for twelve seconds. Splitting at sentence ends first, then at clause commas,
+ * then at words as a last resort, keeps every cue to a phrase a reader takes in at a glance.
+ *
+ * Time is shared out by character count rather than evenly: a six-word clause and a twenty-word
+ * one do not take the same time to say, and an even split leaves the short cue lingering while
+ * the long one races.
+ */
+const CUE_MAX = 52;
+function phrases(text) {
+  // Sentences first — the strongest break a reader already expects.
+  const out = [];
+  for (const sentence of text.match(/[^.!?]+[.!?]*\s*/g) ?? [text]) {
+    const t = sentence.trim();
+    if (!t) continue;
+    if (t.length <= CUE_MAX) { out.push(t); continue; }
+    // Then clause commas, accumulating until the next one would overflow.
+    let buf = "";
+    for (const clause of t.split(/(?<=,)\s+/)) {
+      if (!buf) buf = clause;
+      else if ((buf + " " + clause).length <= CUE_MAX) buf += " " + clause;
+      else { out.push(buf); buf = clause; }
+    }
+    if (buf) out.push(buf);
+  }
+  // Last resort: a clause that is still too long is broken on words.
+  const final = [];
+  for (const chunk of out) {
+    if (chunk.length <= CUE_MAX) { final.push(chunk); continue; }
+    let buf = "";
+    for (const w of chunk.split(" ")) {
+      if (!buf) buf = w;
+      else if ((buf + " " + w).length <= CUE_MAX) buf += " " + w;
+      else { final.push(buf); buf = w; }
+    }
+    if (buf) final.push(buf);
+  }
+  return final.length ? final : [text];
+}
+
 /** ASS wants H:MM:SS.cc — hours unpadded, centiseconds. */
 const assTime = (s) => {
   const cs = Math.max(0, Math.round(s * 100));
@@ -104,8 +155,27 @@ for (const [i, n] of narration.entries()) {
   }
 
   const speed = Number(speeds[n.id] ?? 1) || 1;
+  /**
+   * The camera window this scene asked for, measured at record time.
+   *
+   * A desk scene records a 900-tall page at 2x and names a 16:9 window over a real element, so
+   * the console fills the frame rather than floating in it. Applied before anything else in the
+   * chain: cropping after a scale would be cropping an already-shrunk picture, and the whole
+   * point is that this crop is native pixels.
+   */
   const lead = Number(leadIns[n.id] ?? 0);
   const vDur = probe(video) - lead;
+  const box = crops[n.id];
+  /*
+    A panning crop is the crop's own `y` written as a function of `t`, so ffmpeg moves the
+    window while it decodes. Clamped at both ends, because the ramp below retimes the clip and
+    an unclamped expression would keep travelling past the bottom of the object into padding.
+  */
+  const crop = !box
+    ? ""
+    : box.pan
+      ? `crop=${box.w}:${box.h}:${box.x}:'${box.pan.from}+(${box.pan.to}-${box.pan.from})*min(1\,max(0\,t/${Math.max(0.1, vDur).toFixed(2)}))',`
+      : `crop=${box.w}:${box.h}:${box.x}:${box.y},`;
   /** The narration is the clock; a multiplier shortens both together so they stay in sync. */
   const target = n.seconds / speed;
   const seg = join(WORK, `${String(i).padStart(2, "0")}-${n.id}.mp4`);
@@ -120,8 +190,8 @@ for (const [i, n] of narration.entries()) {
   const ratio = target / vDur;
   const vf =
     ratio < 1
-      ? `setpts=${ratio.toFixed(6)}*PTS,fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b`
-      : `fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b,tpad=stop_mode=clone:stop_duration=${(target - vDur).toFixed(3)}`;
+      ? `${crop}setpts=${ratio.toFixed(6)}*PTS,fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b`
+      : `${crop}fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x0a0a0b,tpad=stop_mode=clone:stop_duration=${(target - vDur).toFixed(3)}`;
 
   // Audio is retimed by the same multiplier. atempo preserves pitch, so a 2x scene still sounds
   // like the same narrator rather than a chipmunk.
@@ -140,7 +210,19 @@ for (const [i, n] of narration.entries()) {
   ]);
 
   const actual = probe(seg);
-  cues.push({ start: clock, end: clock + actual, text: n.line });
+  /*
+    Cue times are measured on the normalised clip, after the mux. `-shortest` trims each
+    segment to its own narration, so timing the cues from the raw footage would put them
+    progressively further ahead of the picture as the cut went on.
+  */
+  const parts = phrases(n.line);
+  const chars = parts.reduce((a, t) => a + t.length, 0);
+  let at = clock;
+  for (const t of parts) {
+    const share = (t.length / chars) * actual;
+    cues.push({ start: at, end: at + share, text: t });
+    at += share;
+  }
   clock += actual;
   segments.push(seg);
   console.log(
@@ -171,22 +253,32 @@ mkdirSync(subsDir, { recursive: true });
 const capBrowser = await chromium.launch();
 const capPage = await capBrowser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
 for (const [i, c] of cues.entries()) {
-  const lines = wrap(c.text).map((l) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;"));
+  const wrapped = wrap(c.text, 62);
+  if (wrapped.length > 1) {
+    throw new Error(
+      `CAPTION_TOO_LONG: "${c.text}" will not set on one line. Split it further in phrases() ` +
+        `or shorten the narration in script.json — silently dropping the tail of a sentence ` +
+        `looks fine in a spot check and is wrong everywhere else.`,
+    );
+  }
+  const line = wrapped[0].replace(/&/g, "&amp;").replace(/</g, "&lt;");
   await capPage.setContent(`<!doctype html><meta charset=utf-8>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&display=swap');
       html,body{margin:0;width:${W}px;height:${H}px;background:transparent}
-      /* A scrim, because the footage underneath is a real product and not a backdrop.
-         A shadow alone left the caption sitting on top of body text and audit rows — legible
-         if you squint, which is not legible. The gradient is transparent well before the
-         middle of the frame, so it darkens the caption band and nothing the scene is about. */
-      .scrim{position:absolute;left:0;right:0;bottom:0;height:190px;
-             background:linear-gradient(to top,rgba(6,6,8,.94) 0%,rgba(6,6,8,.82) 34%,rgba(6,6,8,.45) 66%,rgba(6,6,8,0) 100%)}
-      .cap{position:absolute;left:0;right:0;bottom:40px;text-align:center;padding:0 90px;
-           font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:600;font-size:25px;
-           line-height:1.38;color:#fff;letter-spacing:-.005em;
-           text-shadow:0 2px 8px rgba(0,0,0,.9)}
-    </style><div class=scrim></div><div class=cap>${lines.join("<br>")}</div>`);
+      /*
+        A black plate only as wide as the words, not a gradient across the frame.
+
+        The previous captions were a 190px scrim spanning the full width, which dimmed the
+        bottom quarter of every shot to light two lines of type — and on the direction beat it
+        was the quarter holding the UP and DOWN keys. One short line on its own plate leaves
+        the picture alone.
+      */
+      .row{position:absolute;left:0;right:0;bottom:32px;display:flex;justify-content:center}
+      .cap{font-family:'Bricolage Grotesque',system-ui,sans-serif;font-weight:600;
+           font-size:18px;line-height:1.45;color:#fff;letter-spacing:-.002em;
+           background:#000;padding:6px 13px;border-radius:4px;white-space:nowrap}
+    </style><div class=row><div class=cap>${line}</div></div>`);
   await capPage.waitForTimeout(320);
   await capPage.screenshot({ path: join(subsDir, `${String(i).padStart(2, "0")}.png`), omitBackground: true });
 }
