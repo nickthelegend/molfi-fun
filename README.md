@@ -16,15 +16,15 @@ your position because they saw it coming.
 
 **Market contract** — [`0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9`](https://starkscan.co/contract/0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9)
 
-It reads **Pragma mainnet directly** — no relay, because Pragma is alive there — and holds four
-markets, each funded with 5 STRK of house bankroll so it can actually take a position rather than
-refusing every one. The five pairs Pragma does not carry (SOL, XRP, DOGE, LINK, AVAX) were
+**molfi.fun runs on this contract.** It reads **Pragma mainnet directly** — no relay, because
+Pragma publishes to mainnet itself — and the keeper lists four one-hour rounds against it,
+funded with house bankroll so the desk can take a position rather than refuse every one. The five pairs Pragma does not carry (SOL, XRP, DOGE, LINK, AVAX) were
 deliberately **not** listed: a market whose oracle cannot be read is one that could take a stake and
 never resolve.
 
 ### Mainnet transactions
 
-Every one below is `ACCEPTED_ON_L1` — finalised on Ethereum, not merely accepted on L2.
+Every one below succeeded on Starknet mainnet; the deployment set is finalised on Ethereum.
 
 | # | What it did | Transaction |
 | --- | --- | --- |
@@ -42,6 +42,10 @@ Every one below is `ACCEPTED_ON_L1` — finalised on Ethereum, not merely accept
 | 12 | Funded market 3 | [`0x0698df34713efeac…`](https://starkscan.co/tx/0x0698df34713efeac5b6da0424d7a9a139e6cc0b13517940a7a2111beb7271c1c) |
 | 13 | Sent bankroll for market 4 | [`0x07a1bfd57939b05f…`](https://starkscan.co/tx/0x07a1bfd57939b05f5245d3a945e32b04f913eb6a1280f42adb50c680804809b0) |
 | 14 | Funded market 4 | [`0x03977ebb9896e690…`](https://starkscan.co/tx/0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d) |
+| 15 | Settled market 1 (BTC/USD) | [`0x04c0af89fe966502…`](https://starkscan.co/tx/0x04c0af89fe96650260a78e7a5897aed6908a71ef82088ff79f7b9a830de1de43) |
+| 16 | Settled market 2 (ETH/USD) | [`0x00454fab7db36f4b…`](https://starkscan.co/tx/0x00454fab7db36f4b8d97da30b45e6ddd2d0555fd414eb4f4cb78490576545a3c) |
+| 17 | Settled market 3 (STRK/USD) | [`0x069c3b6c5507e59d…`](https://starkscan.co/tx/0x069c3b6c5507e59d742d4da9f66422ad4c60ee94bebd6b3be9e0cc46b6f650b6) |
+| 18 | Settled market 4 (WBTC/USD) | [`0x01a9dd70496e2441…`](https://starkscan.co/tx/0x01a9dd70496e244112bce6b9d98964278d3f17a4a033763e903e8cb5c5ba6dd7) |
 
 `strk20.json` carries the same list in machine-readable form.
 
@@ -174,9 +178,10 @@ checked against the chain rather than trusted.
 | --- | --- | --- |
 | STRK20 privacy pool | `0x0254a6b2…cfe0d91` | `0x040337b1…6ffe812a` |
 | molfi market | `0x053b1721…d3298f1f` | [`0x0215dc0b…65a3aaf9`](https://starkscan.co/contract/0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9) |
-| molfi up/down | `0x07881b0c…45c17ce9` | not deployed — one contract was the budget |
+| molfi up/down | `0x07881b0c…45c17ce9` | not deployed — one contract was the budget, so mainnet is range-only |
 | Price relay | `0x0275a7fd…456dfcbb` | not deployed, and should not be |
 | Settles against | the relay | Pragma directly |
+| What molfi.fun serves | — | **this one** |
 
 ### Why Sepolia needs a relay
 

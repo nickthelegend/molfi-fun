@@ -59,7 +59,11 @@
     "0x036733490c36806889348b6ab0d3879b439699b4c88729b0e63393b06c012e62",
     "0x0698df34713efeac5b6da0424d7a9a139e6cc0b13517940a7a2111beb7271c1c",
     "0x07a1bfd57939b05f5245d3a945e32b04f913eb6a1280f42adb50c680804809b0",
-    "0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d"
+    "0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d",
+    "0x04c0af89fe96650260a78e7a5897aed6908a71ef82088ff79f7b9a830de1de43",
+    "0x00454fab7db36f4b8d97da30b45e6ddd2d0555fd414eb4f4cb78490576545a3c",
+    "0x069c3b6c5507e59d742d4da9f66422ad4c60ee94bebd6b3be9e0cc46b6f650b6",
+    "0x01a9dd70496e244112bce6b9d98964278d3f17a4a033763e903e8cb5c5ba6dd7"
   ],
   "transactionLog": [
     {
@@ -113,6 +117,22 @@
     {
       "hash": "0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d",
       "what": "funded market 4"
+    },
+    {
+      "what": "settled market 1 (BTC/USD)",
+      "hash": "0x04c0af89fe96650260a78e7a5897aed6908a71ef82088ff79f7b9a830de1de43"
+    },
+    {
+      "what": "settled market 2 (ETH/USD)",
+      "hash": "0x00454fab7db36f4b8d97da30b45e6ddd2d0555fd414eb4f4cb78490576545a3c"
+    },
+    {
+      "what": "settled market 3 (STRK/USD)",
+      "hash": "0x069c3b6c5507e59d742d4da9f66422ad4c60ee94bebd6b3be9e0cc46b6f650b6"
+    },
+    {
+      "what": "settled market 4 (WBTC/USD)",
+      "hash": "0x01a9dd70496e244112bce6b9d98964278d3f17a4a033763e903e8cb5c5ba6dd7"
     }
   ],
   "complete": true

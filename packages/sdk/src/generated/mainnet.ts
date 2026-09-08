@@ -80,6 +80,22 @@ export const MAINNET_DEPLOYMENT = {
     {
       "hash": "0x03977ebb9896e69052857a2f18459e39792550514b5a5136c9052baddba8a76d",
       "what": "funded market 4"
+    },
+    {
+      "hash": "0x04c0af89fe96650260a78e7a5897aed6908a71ef82088ff79f7b9a830de1de43",
+      "what": "settled market 1 (BTC/USD)"
+    },
+    {
+      "hash": "0x00454fab7db36f4b8d97da30b45e6ddd2d0555fd414eb4f4cb78490576545a3c",
+      "what": "settled market 2 (ETH/USD)"
+    },
+    {
+      "hash": "0x069c3b6c5507e59d742d4da9f66422ad4c60ee94bebd6b3be9e0cc46b6f650b6",
+      "what": "settled market 3 (STRK/USD)"
+    },
+    {
+      "hash": "0x01a9dd70496e244112bce6b9d98964278d3f17a4a033763e903e8cb5c5ba6dd7",
+      "what": "settled market 4 (WBTC/USD)"
     }
   ],
   explorer: "https://starkscan.co",

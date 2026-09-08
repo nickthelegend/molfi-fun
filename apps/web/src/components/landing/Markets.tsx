@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { MARKETS } from "@molfi/sdk";
+import { NETWORK } from "@/lib/chain";
 import { CoinMark } from "@/components/CoinMark";
 import { fetchJson } from "@/lib/fetchJson";
 import { useGsap } from "./useGsap";
@@ -32,6 +33,9 @@ interface Row {
   /** How old the *settlement* feed is, when it is too old to quote on. Null when healthy. */
   staleMinutes: number | null;
 }
+
+/** A pair is listable where the oracle it settles against actually publishes. */
+const listable = (settle: string) => NETWORK !== "mainnet" || settle === "pragma";
 
 export function Markets() {
   const [rows, setRows] = useState<Row[]>(
@@ -123,12 +127,30 @@ export function Markets() {
     });
   });
 
+  /**
+   * Which pairs this chain can actually settle.
+   *
+   * Four settle against Pragma, which is on mainnet. Five settle against molfi's own median,
+   * relayed on chain — and that relay only exists on Sepolia, because Pragma stopped
+   * publishing there. So the same nine pairs are nine tradeable markets on the testnet and
+   * four on mainnet, and the page has to say so rather than counting the ones it wishes it had.
+   */
+  const tradeable = rows.filter((r) => listable(r.settle));
+
   return (
     <section ref={scope} data-mk="root" className="border-t border-white/5 px-5 py-24">
       <div className="mx-auto w-full max-w-[1000px]">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <h2 className="font-display text-[clamp(1.9rem,5vw,3.2rem)] font-extrabold leading-[1.02] tracking-[-0.02em]">
-            Nine markets, live.
+            {/*
+              Counted, not written down. The heading said "Nine markets, live." on a network
+              that lists four of them — the five that settle against molfi's own relayed median
+              have no relay on mainnet, so the page was advertising markets nobody could trade.
+              A number in prose is a number that goes stale silently.
+            */}
+            {tradeable.length === MARKETS.length
+              ? `${MARKETS.length} markets, live.`
+              : `${tradeable.length} markets, live on mainnet.`}
           </h2>
           <p className="mono text-[9.5px] leading-relaxed tracking-[0.14em] text-white/30">
             PRICES READ NOW · NOT A SNAPSHOT
@@ -161,6 +183,18 @@ export function Markets() {
               <div className="mono mt-2 text-[8.5px] tracking-[0.1em] text-white/25">
                 {r.settle === "pragma" ? "SETTLES ON PRAGMA" : "SETTLES ON MOLFI'S MEDIAN"}
               </div>
+              {/*
+                A pair whose settlement oracle is not on this chain is priced and not listed,
+                and the card has to say which. The mark above is a real number either way — it
+                comes from molfi's own median across five exchanges — but a card that shows a
+                live price and nothing else reads as an invitation to trade something that
+                cannot be traded here.
+              */}
+              {!listable(r.settle) ? (
+                <div className="mono mt-1 text-[8.5px] leading-relaxed tracking-[0.1em] text-white/35">
+                  PRICED, NOT LISTED HERE · NEEDS MOLFI&rsquo;S RELAY
+                </div>
+              ) : null}
               {r.staleMinutes !== null ? (
                 <div className="mono mt-1 text-[8.5px] tracking-[0.1em] text-amber">
                   FEED {r.staleMinutes}M OLD

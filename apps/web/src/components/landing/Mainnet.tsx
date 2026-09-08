@@ -17,11 +17,14 @@ import { useGsap } from "./useGsap";
  * submission manifest was hand-maintained, drifted to `sepolia`, and told a checker molfi
  * had never touched mainnet while fourteen finalised transactions sat in the repo.
  *
- * The live product runs on Sepolia deliberately, and this section says so rather than
- * letting a mainnet address imply that a mainnet trade is what the button above does. It
- * also says what is *not* done — the three transactions through the STRK20 pool — because a
- * page that lists only the finished work is the kind of evidence a sceptic discounts
- * entirely.
+ * The desk above now trades on this contract, so the footer says so. It used to say the
+ * opposite — the product ran on Sepolia while this section listed mainnet transactions, and
+ * the honest thing then was to keep a mainnet address from implying a mainnet trade. That
+ * caveat became the false statement the moment the site moved, which is what a hardcoded
+ * claim about a runtime fact always becomes.
+ *
+ * It still says what is *not* done — the three transactions through the STRK20 pool — because
+ * a page that lists only finished work is the kind of evidence a sceptic discounts entirely.
  */
 export function Mainnet() {
   const scope = useGsap(({ gsap, root }) => {
@@ -141,7 +144,7 @@ export function Mainnet() {
         </div>
 
         <p className="mono mt-6 text-[9.5px] leading-relaxed tracking-[0.1em] text-white/20">
-          THE DESK ABOVE TRADES ON SEPOLIA. MAINNET HOLDS THE CONTRACT, NOT YOUR STAKE.
+          THE DESK ABOVE TRADES HERE. REAL STRK, REAL SETTLEMENT, REAL PAYOUT.
         </p>
       </div>
     </section>
