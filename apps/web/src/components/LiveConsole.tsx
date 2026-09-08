@@ -21,6 +21,7 @@ import { errorText } from "@/lib/pool";
 import type { Route } from "@/lib/wallet";
 import type { Wallet } from "@/components/PrivyGate";
 import type { SignerInterface } from "starknet";
+import { NETWORK } from "@/lib/chain";
 import { useBand } from "@/lib/useBand";
 import { useRounds } from "@/lib/useRounds";
 import { GameSwitch, type Game } from "./device/GameSwitch";
@@ -133,6 +134,16 @@ const COIN_TONE: Record<string, string> = {
  * not know. Positions come from the browser's own store of secrets, and the chain is asked
  * only to confirm what it holds under a commitment the browser derived.
  */
+/**
+ * The pairs the deck may put on screen, which depends on the chain it is pointed at.
+ *
+ * Five of the nine settle against molfi's own median, relayed on chain. That relay exists only
+ * on Sepolia — Pragma stopped publishing there, so molfi couriers mainnet's median across — and
+ * on mainnet those five have no settlement oracle at all. They are still priced, because the
+ * five-exchange median is an off-chain read that works anywhere; they are not tradeable.
+ */
+const TRADEABLE = NETWORK === "mainnet" ? MARKETS.filter((m) => m.settle === "pragma") : MARKETS;
+
 export function LiveConsole({
   wallet: privyWallet,
   signer,
@@ -185,7 +196,7 @@ export function LiveConsole({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const market = useMemo(
-    () => MARKETS.find((m) => m.key === marketKey) ?? MARKETS[0],
+    () => TRADEABLE.find((m) => m.key === marketKey) ?? TRADEABLE[0],
     [marketKey],
   );
   const live = useLiveDesk(market, tier);
@@ -256,7 +267,7 @@ export function LiveConsole({
    * capital for a game whose point is already made by one — and a trader who switched market
    * deserves to be told that rather than left looking at what appears to be breakage.
    */
-  const directionPair = MARKETS[0]?.symbol ?? "BTC";
+  const directionPair = TRADEABLE[0]?.symbol ?? "BTC";
   const directionRunsHere = market.symbol === directionPair;
   const noRoundReason = directionRunsHere
     ? "NO OPEN ROUND"
@@ -558,8 +569,15 @@ export function LiveConsole({
                     symbol={market.symbol}
                     tone={COIN_TONE[market.key] ?? "#f7931a"}
                     onClick={() => {
-                      const i = MARKETS.findIndex((m) => m.key === market.key);
-                      setMarketKey(MARKETS[(i + 1) % MARKETS.length].key);
+                      /*
+                        Cycles only through pairs this chain lists. Stepping through all nine
+                        on mainnet landed on SOL, XRP, DOGE, LINK or AVAX — priced, because
+                        molfi's own median still quotes them, and unlistable, because the relay
+                        they settle against is not deployed there. The deck would have shown a
+                        live price and a round that does not exist.
+                      */
+                      const i = TRADEABLE.findIndex((m) => m.key === market.key);
+                      setMarketKey(TRADEABLE[(i + 1) % TRADEABLE.length].key);
                     }}
                   />
                   <div className="tnum mt-1 font-display text-[34px] font-bold leading-none text-white">

@@ -23,7 +23,7 @@ import { CTA } from "@/components/landing/CTA";
  *   Hero       — what is it (the real console, showing the real BTC price)
  *   ChainSees  — the claim I would not believe (the real calldata of a real trade)
  *   Games      — what can I actually do (the deck's own switch, the real mechanics)
- *   Markets    — on what (nine markets at their live prices, oracle named per market)
+ *   Markets    — on what (every pair at its live price, oracle named, listable or not)
  *   Proof      — has anyone run it (counts read from the chain and the keeper)
  *   Mainnet    — is it real (the mainnet contract, every transaction linked to Starkscan)
  *   CTA        — one key

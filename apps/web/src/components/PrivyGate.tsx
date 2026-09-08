@@ -4,6 +4,11 @@ import { PrivyProvider, useIdentityToken, usePrivy } from "@privy-io/react-auth"
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { MARKETS } from "@molfi/sdk";
+import { NETWORK } from "@/lib/chain";
+
+/** Pairs whose settlement oracle actually publishes on the chain this deployment serves. */
+const LISTED_HERE =
+  NETWORK === "mainnet" ? MARKETS.filter((m) => m.settle === "pragma").length : MARKETS.length;
 import { CoinMark, StarknetSpark } from "@/components/CoinMark";
 import { Signer, type SignerInterface } from "starknet";
 import { PrivySigner } from "@/lib/privy-signer";
@@ -507,7 +512,12 @@ function Shell({ children }: { children: React.ReactNode }) {
               <CoinMark key={m.key} coin={m.key} size={26} />
             ))}
             <span className="mono ml-1 text-[9.5px] tracking-[0.14em] text-white/30">
-              {MARKETS.length} MARKETS
+              {/*
+                The count for this chain, not the count of pairs molfi knows about. Five of the
+                nine settle against a relayed median that only exists on Sepolia, so on mainnet
+                the door was promising nine markets to someone who would find four behind it.
+              */}
+              {LISTED_HERE} MARKETS
             </span>
           </div>
 
