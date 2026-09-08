@@ -1,68 +1,79 @@
 [
   {
     "id": "intro",
-    "seconds": 6.6,
-    "leadIn": 0.69,
-    "consoleErrors": []
+    "seconds": 6.8,
+    "leadIn": 0.91,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "landing",
-    "seconds": 8.9,
-    "leadIn": 0.37,
-    "consoleErrors": []
+    "seconds": 9,
+    "leadIn": 0.5,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "problem",
     "seconds": 6.2,
-    "leadIn": 0.37,
-    "consoleErrors": []
+    "leadIn": 0.38,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "privacy",
-    "seconds": 16.6,
-    "leadIn": 3.33,
-    "consoleErrors": []
+    "seconds": 17.3,
+    "leadIn": 4,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "desk-range",
-    "seconds": 6.1,
-    "leadIn": 1.14,
-    "consoleErrors": []
+    "seconds": 15.3,
+    "leadIn": 1.51,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "desk-updown",
-    "seconds": 4.2,
-    "leadIn": 1.32,
-    "consoleErrors": []
+    "seconds": 8.6,
+    "leadIn": 1.43,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "verify",
-    "seconds": 11.7,
-    "leadIn": 2.17,
-    "consoleErrors": []
+    "seconds": 11.5,
+    "leadIn": 2,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "audit",
-    "seconds": 14.4,
-    "leadIn": 1.17,
-    "consoleErrors": []
+    "seconds": 14.7,
+    "leadIn": 1.43,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "keeper",
-    "seconds": 10.2,
-    "leadIn": 0.9,
-    "consoleErrors": []
+    "seconds": 10.1,
+    "leadIn": 0.82,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "mainnet",
-    "seconds": 15,
-    "leadIn": 7.24,
-    "consoleErrors": []
+    "seconds": 15.2,
+    "leadIn": 7.41,
+    "consoleErrors": [],
+    "failure": null
   },
   {
     "id": "outro",
-    "seconds": 6.7,
-    "leadIn": 0.79,
-    "consoleErrors": []
+    "seconds": 6.6,
+    "leadIn": 0.71,
+    "consoleErrors": [],
+    "failure": null
   }
 ]

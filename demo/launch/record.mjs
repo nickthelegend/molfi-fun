@@ -22,7 +22,7 @@
  */
 
 import { chromium } from "playwright";
-import { mkdirSync, rmSync, readdirSync, renameSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, readdirSync, renameSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +35,22 @@ const args = Object.fromEntries(
   ),
 );
 const BASE = String(args.base ?? "https://molfi.fun").replace(/\/$/, "");
+/**
+ * Where the *desk* is recorded, which is not always where the site is.
+ *
+ * Production gates `/play` behind a Privy login, so pointing the camera at it records the front
+ * door. The console itself is the same build reading the same chain; it just needs a wallet, and
+ * locally the repo's development door supplies one. Everything on screen — markets, prices,
+ * quotes, the multiplier — is still read live from Starknet.
+ */
+const DESK_BASE = String(args["desk-base"] ?? BASE).replace(/\/$/, "");
 const ONLY = args.only ? String(args.only).split(",").map((s) => s.trim()) : null;
+
+/** The running order, so a merged log keeps the cut's sequence rather than run order. */
+const SCENE_ORDER = [
+  "intro", "landing", "problem", "privacy", "desk-range", "desk-updown",
+  "verify", "audit", "keeper", "mainnet", "outro",
+];
 
 /** 1280x720 keeps the deck legible at YouTube's smallest sane size without letterboxing. */
 const SIZE = { width: 1280, height: 720 };
@@ -57,6 +72,22 @@ async function until(page, fn, timeout = 25_000) {
     } catch { /* mid-navigation */ }
     if (Date.now() > deadline) return false;
     await sleep(250);
+  }
+}
+
+/**
+ * Refuse to film the wrong screen.
+ *
+ * The first take marked both desk beats on the words CONNECT TO PLAY, because the readiness
+ * check listed the gate as an acceptable state. It rolled, every control click found nothing and
+ * was skipped by a `count()` guard, and the cut narrated "pick a band" over a login card. A wait
+ * that accepts the wrong screen is worse than no wait: it fails silently and only the finished
+ * video shows it. This throws instead, and the scene is reported as failed rather than shipped.
+ */
+async function mustSee(page, label, fn, timeout = 30_000) {
+  if (!(await until(page, fn, timeout))) {
+    const seen = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 120)).catch(() => "?");
+    throw new Error(`never reached "${label}" — screen said: ${seen}`);
   }
 }
 
@@ -108,11 +139,13 @@ async function scene(browser, id, body) {
    * painted; that offset is written next to the clip and the assembler trims it.
    */
   let leadIn = 0;
+  let failure = null;
   const ready = () => { if (!leadIn) leadIn = (Date.now() - started) / 1000; };
   try {
     await body(page, ready);
   } catch (e) {
-    log(`  ! ${id} threw: ${String(e.message).slice(0, 140)}`);
+    failure = String(e.message).slice(0, 160);
+    log(`  ! ${id} FAILED: ${failure}`);
   }
   // A beat of stillness at the end so a cut never lands mid-motion.
   await sleep(700);
@@ -130,7 +163,7 @@ async function scene(browser, id, body) {
   // exactly there can still catch the tail of a fade.
   const trim = leadIn ? Number((leadIn + 0.25).toFixed(2)) : 0;
   log(`  ${id.padEnd(12)} ${secs}s  lead-in ${trim}s${errors.length ? `  CONSOLE: ${errors.slice(0, 2).join(" | ")}` : ""}`);
-  return { id, seconds: Number(secs), leadIn: trim, consoleErrors: errors };
+  return { id, seconds: Number(secs), leadIn: trim, consoleErrors: errors, failure };
 }
 
 /**
@@ -219,13 +252,16 @@ made.push(await scene(browser, "privacy", async (page, ready) => {
 }));
 
 made.push(await scene(browser, "desk-range", async (page, ready) => {
-  await page.goto(`${BASE}/play`, { waitUntil: "domcontentloaded" });
-  await until(page, () => /BAND|CONNECT TO PLAY|CANNOT OPEN/.test(document.body.innerText), 30_000);
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  // The deck, and nothing that merely looks like progress. BAND only exists on the console.
+  await mustSee(page, "the range deck", () => /BAND/.test(document.body.innerText) && !/CONNECT TO PLAY/.test(document.body.innerText));
   ready();
   await sleep(2600);
   const click = async (label) => {
     const b = page.locator(`button:text-is("${label}")`).first();
-    if (await b.count()) { await b.click(); await sleep(1100); }
+    if (!(await b.count())) throw new Error(`control "${label}" is not on screen`);
+    await b.click();
+    await sleep(1100);
   };
   for (const _ of [0, 1, 2]) await click("+");
   for (const _ of [0, 1]) await click("−");
@@ -234,14 +270,19 @@ made.push(await scene(browser, "desk-range", async (page, ready) => {
 }));
 
 made.push(await scene(browser, "desk-updown", async (page, ready) => {
-  await page.goto(`${BASE}/play`, { waitUntil: "domcontentloaded" });
-  await until(page, () => /RANGE|CONNECT TO PLAY|CANNOT OPEN/.test(document.body.innerText), 30_000);
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await mustSee(page, "the deck's game switch", () => /RANGE/.test(document.body.innerText) && !/CONNECT TO PLAY/.test(document.body.innerText));
   ready();
   await sleep(2200);
   const ud = page.locator('button:text-is("UP / DOWN")').first();
-  if (await ud.count()) { await ud.click(); await sleep(3000); }
+  if (!(await ud.count())) throw new Error("UP / DOWN key is not on screen");
+  await ud.click();
+  await mustSee(page, "the direction keys", () => /▲ UP/.test(document.body.innerText), 10_000);
+  await sleep(2600);
   const rg = page.locator('button:text-is("RANGE")').first();
-  if (await rg.count()) { await rg.click(); await sleep(2000); }
+  if (!(await rg.count())) throw new Error("RANGE key is not on screen");
+  await rg.click();
+  await sleep(1800);
 }));
 
 made.push(await scene(browser, "verify", async (page, ready) => {
@@ -316,7 +357,25 @@ made.push(await scene(browser, "outro", async (page, ready) => {
 await browser.close();
 
 const recorded = made.filter(Boolean);
-writeFileSync(join(HERE, "recorded.json"), JSON.stringify(recorded, null, 2) + "\n");
+/**
+ * Merged, never replaced.
+ *
+ * `--only` re-shoots one scene; writing just those results wiped the lead-in offsets for every
+ * scene that was not in this run, and the assembler then stopped trimming their black
+ * navigation frames. A partial run must leave the rest of the log alone.
+ */
+const logPath = join(HERE, "recorded.json");
+const previous = existsSync(logPath)
+  ? Object.fromEntries(JSON.parse(readFileSync(logPath, "utf8")).map((r) => [r.id, r]))
+  : {};
+for (const r of recorded) previous[r.id] = r;
+const ordered = SCENE_ORDER.filter((id) => previous[id]).map((id) => previous[id]);
+writeFileSync(logPath, JSON.stringify(ordered, null, 2) + "\n");
+const broken = recorded.filter((r) => r.failure);
+if (broken.length) {
+  log(`\nFAILED scenes — do not assemble these, fix and re-record:`);
+  for (const b of broken) log(`  ${b.id}: ${b.failure}`);
+}
 const dirty = recorded.filter((r) => r.consoleErrors.length);
 log(`\n${recorded.length} scene(s) recorded into ${RAW}`);
 if (dirty.length) {
