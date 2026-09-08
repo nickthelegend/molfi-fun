@@ -378,7 +378,16 @@ made.push(await scene(browser, "privacy", async (page, ready) => {
  * 1280x720 with no zoom and no crop: the three-column desk lands console-centred with the
  * chain panel and the round list either side, which is both the whole interface and legible.
  */
-const TALL = {};
+/**
+ * The desk is filmed at 1600x900 — sixteen by nine, just larger.
+ *
+ * At 1280x720 the console's own 831-pixel body did not fit: the payout panel, the game switch
+ * and the stake keys sat below the fold in every desk take, so the beat about choosing a size
+ * never showed the control that chooses it. A taller viewport of the same shape fits the whole
+ * chassis with the side panels either side, and scales to 720 with no letterboxing and nothing
+ * cut off anything.
+ */
+const TALL = { width: 1600, height: 900 };
 
 /** The deck is only worth filming when it has a live round on it. */
 const liveDeck = (page) =>
@@ -648,17 +657,47 @@ made.push(await scene(browser, "audit", async (page, ready) => {
 }));
 
 /** The claim: the band revealed for the first time, and the payout landing. */
-made.push(await scene(browser, "payout", async (page, ready) => {
-  if (!TAKE.claim) throw new Error("NO_TAKE_TXS: take-txs.json has no claim hash — the payout has not happened yet");
-  await page.goto(`${TAKE.explorer}/tx/${TAKE.claim}`, { waitUntil: "domcontentloaded" });
-  await mustSee(page, "the claim transaction", () => /claim|Succeeded|SUCCEEDED/i.test(document.body.innerText), 45_000);
+/**
+ * The claim, on the desk, with the band revealed for the first time.
+ *
+ * This used to be a block explorer page for a transaction from an earlier take. It is the
+ * product's own flow now: the position is restored into the browser that will claim it, the
+ * deck offers CLAIM because the chain says the round settled inside the band, and the payout
+ * lands while the camera is still on it.
+ *
+ * The claim key only appears for a position that actually won. If this round landed outside
+ * the band there is nothing to claim and the scene fails rather than filming a button that is
+ * not there — losing is a real outcome and it needs its own beat, not this one dressed up.
+ */
+made.push(await scene(browser, "payout", async (page, ready, frame) => {
+  if (!TAKE.storedPosition) {
+    throw new Error("NO_TAKE_TXS: no stored position from this take — record trade-live first");
+  }
+  await page.addInitScript((pos) => {
+    try {
+      window.localStorage.setItem("molfi.positions.v1", JSON.stringify([pos]));
+    } catch {
+      /* storage refused; the mustSee below will say so */
+    }
+  }, TAKE.storedPosition);
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  await mustSee(
+    page,
+    "a settled, winning position with a claim offered",
+    () => /CLAIM \d+ POSITION/.test(document.body.innerText),
+    90_000,
+  );
   ready();
-  await sleep(6000);
-  await glide(page, 700, 2200);
-  await sleep(5500);
-  await glide(page, 1250, 2200);
-  await sleep(4500);
-}));
+  await sleep(3000);
+
+  const claim = page.locator('button:has-text("CLAIM")').first();
+  if (!(await claim.count())) throw new Error("the CLAIM key is not on screen");
+  await claim.click();
+  // The payout is a transaction; hold until the deck says it landed rather than on a timer.
+  await mustSee(page, "the payout land", () => /CLAIMED/.test(document.body.innerText), 150_000);
+  await sleep(7000);
+}, TALL));
 
 made.push(await scene(browser, "keeper", async (page, ready) => {
   await page.goto(`${BASE}/keeper`, { waitUntil: "domcontentloaded" });

@@ -35,13 +35,27 @@ const log = [
   ...rec.transactionLog.map((t) => ({ hash: t.hash, what: t.what })),
 ];
 
+/**
+ * A felt as the chain writes it: no leading zeros.
+ *
+ * `sncast` and the deploy record hand back zero-padded 64-character hashes, and Starknet's own
+ * canonical form is the short one — `starknet_getTransactionByHash` on
+ * `0x00d87d1a99…3524` answers with `transaction_hash: 0xd87d1a99…3524`. Both address the same
+ * transaction, so nothing on chain cares, and anything comparing the two as *strings* does:
+ * a submission checker read this manifest, matched no transaction, and reported that molfi had
+ * made none — with eighteen of them finalised on mainnet.
+ *
+ * So the manifest states hashes the way the chain states them.
+ */
+const felt = (h) => "0x" + BigInt(h).toString(16);
+
 const manifest = {
   network: rec.network,
   demo_url: "https://molfi.fun",
   demo_video: "https://molfi.fun/molfi-demo.mp4",
   repository: "https://github.com/nickthelegend/molfi-fun",
-  contracts: [rec.market],
-  transactions: log.map((t) => t.hash),
+  contracts: [felt(rec.market)],
+  transactions: log.map((t) => felt(t.hash)),
 };
 
 const ts = `/** GENERATED — do not edit by hand. Produced by \`node scripts/sync-manifest.mjs\`

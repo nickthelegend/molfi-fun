@@ -195,7 +195,16 @@ for (const [i, n] of narration.entries()) {
 
   // Audio is retimed by the same multiplier. atempo preserves pitch, so a 2x scene still sounds
   // like the same narrator rather than a chipmunk.
-  const af = speed === 1 ? "anull" : `atempo=${Math.min(2, speed).toFixed(4)}${speed > 2 ? `,atempo=${(speed / 2).toFixed(4)}` : ""}`;
+  /*
+    Silence after the line, or the hold never happens.
+
+    `-shortest` ends each segment with whichever stream runs out first, and with narration
+    shorter than the footage that is always the audio — so every scene came out exactly the
+    length of its own sentence and the holds, the whole point of trimming the script, were
+    cut off. `apad` runs the track out to the segment's length so the picture gets its silence.
+  */
+  const tempo = speed === 1 ? "" : `atempo=${Math.min(2, speed).toFixed(4)}${speed > 2 ? `,atempo=${(speed / 2).toFixed(4)}` : ""},`;
+  const af = `${tempo}apad`;
 
   sh("ffmpeg", [
     "-y", "-loglevel", "error",
