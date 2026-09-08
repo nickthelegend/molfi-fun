@@ -30,6 +30,17 @@ export const SEPOLIA_RPC =
 export const MAINNET_RPC =
   process.env.MAINNET_RPC_URL ?? "https://api.cartridge.gg/x/starknet/mainnet";
 
+/**
+ * The node for the chain the keeper acts on. One name, so nothing can pick the other one.
+ *
+ * There were two ways to reach a node here — `provider`, and a raw `fetch` inside `batchCall`
+ * that talked to `SEPOLIA_RPC` directly to send a JSON-RPC array the SDK has no method for.
+ * Pointing `provider` at mainnet therefore moved half the reads and left the batched half
+ * asking a Sepolia node about a mainnet contract, which answers, truthfully and uselessly,
+ * "Contract not found". Anything that needs a URL takes this one.
+ */
+export const RPC_URL = NETWORK === "mainnet" ? MAINNET_RPC : SEPOLIA_RPC;
+
 export const MARKET = required("MOLFI_MARKET");
 /**
  * The direction game, optional.
@@ -66,9 +77,7 @@ function required(name: string): string {
  * testnet. Wrong in the most expensive direction: every claim it made about where it was
  * would have been false, and nothing would have failed.
  */
-export const provider = new RpcProvider({
-  nodeUrl: NETWORK === "mainnet" ? MAINNET_RPC : SEPOLIA_RPC,
-});
+export const provider = new RpcProvider({ nodeUrl: RPC_URL });
 export const mainnet = new RpcProvider({ nodeUrl: MAINNET_RPC });
 
 export const account = new Account({
@@ -148,7 +157,7 @@ async function batchCall(
    */
   const felt = (v: string) => (v.startsWith("0x") ? v : "0x" + BigInt(v).toString(16));
 
-  const res = await fetch(SEPOLIA_RPC, {
+  const res = await fetch(RPC_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(
@@ -365,7 +374,9 @@ async function syncNonce(): Promise<bigint> {
 async function bareEstimate(call: Call | Call[], nonce: bigint): Promise<BareEstimate> {
   const calls = Array.isArray(call) ? call : [call];
   const ZERO = { max_amount: "0x0", max_price_per_unit: "0x0" };
-  const res = await fetch(SEPOLIA_RPC, {
+  // The chain being paid, not always Sepolia — a fee estimated on the wrong node is not an
+  // estimate of anything.
+  const res = await fetch(RPC_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
