@@ -43,25 +43,24 @@
   },
   {
     "id": "trade-live",
-    "seconds": 166.3,
-    "leadIn": 3.09,
+    "seconds": 40.5,
+    "leadIn": 3.37,
     "consoleErrors": [
-      "Failed to load resource: the server responded with a status of 403 (Forbidden)",
-      "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+      "Failed to load resource: the server responded with a status of 403 (Forbidden)"
     ],
-    "failure": "never reached \"the position land on chain\" — screen said: THIS ROUND #9 CLOSES IN 6:31 MARK 78,566.00 HOUSE BANKROLL 4.000 STRK STAKED INTO IT 4.000 STRK RESERV"
+    "failure": null
   },
   {
     "id": "riding",
-    "seconds": 15.7,
-    "leadIn": 3.95,
+    "seconds": 17.2,
+    "leadIn": 5.45,
     "consoleErrors": [],
     "failure": null
   },
   {
     "id": "trade",
-    "seconds": 23.7,
-    "leadIn": 2.2,
+    "seconds": 23.2,
+    "leadIn": 1.75,
     "consoleErrors": [],
     "failure": null
   },
@@ -81,8 +80,8 @@
   },
   {
     "id": "payout",
-    "seconds": 24.1,
-    "leadIn": 2.77,
+    "seconds": 24.7,
+    "leadIn": 2.57,
     "consoleErrors": [],
     "failure": null
   },

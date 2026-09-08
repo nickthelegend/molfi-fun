@@ -96,6 +96,22 @@ export const MAINNET_DEPLOYMENT = {
     {
       "hash": "0x01a9dd70496e244112bce6b9d98964278d3f17a4a033763e903e8cb5c5ba6dd7",
       "what": "settled market 4 (WBTC/USD)"
+    },
+    {
+      "hash": "0x038d9ac3763dc9962b6fdca87e08f3204d9c1448a97d99036f20d23e50b37998",
+      "what": "trader account deployed"
+    },
+    {
+      "hash": "0x681430bd0b6b1933c64c89b665bc27f656d07342d618778f58bcbef5c87f579",
+      "what": "opened a position on market 9 (1 STRK)"
+    },
+    {
+      "hash": "0x07dac15e91e32fca138fe9d9e00b55c1025027b1619f2a2174a2abf771541dcf",
+      "what": "claimed it — band revealed, 1.6227 STRK paid"
+    },
+    {
+      "hash": "0x6feb9e34cdf229dc18bc83708dd9114fbded34ea789a886d62bbabf1e5c396a",
+      "what": "opened a position on market 13 (1 STRK)"
     }
   ],
   explorer: "https://starkscan.co",

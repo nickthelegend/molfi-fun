@@ -29,7 +29,7 @@
   },
   {
     "id": "riding",
-    "line": "One riding. The chain took a hash and a stake. Your band is not in it."
+    "line": "One riding. The chain took a hash and a stake. Your band is not in it, and neither is your name."
   },
   {
     "id": "trade",
@@ -45,7 +45,7 @@
   },
   {
     "id": "payout",
-    "line": "Settled inside the band. Claiming reveals it for the first time and pays out."
+    "line": "It settled inside the band. The claim reveals the band on chain for the first time and pays one point six two STRK back."
   },
   {
     "id": "keeper",

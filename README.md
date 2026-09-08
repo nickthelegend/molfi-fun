@@ -46,6 +46,10 @@ Every one below succeeded on Starknet mainnet; the deployment set is finalised o
 | 16 | Settled market 2 (ETH/USD) | [`0x454fab7db36f4b…`](https://starkscan.co/tx/0x454fab7db36f4b8d97da30b45e6ddd2d0555fd414eb4f4cb78490576545a3c) |
 | 17 | Settled market 3 (STRK/USD) | [`0x69c3b6c5507e59…`](https://starkscan.co/tx/0x69c3b6c5507e59d742d4da9f66422ad4c60ee94bebd6b3be9e0cc46b6f650b6) |
 | 18 | Settled market 4 (WBTC/USD) | [`0x1a9dd70496e244…`](https://starkscan.co/tx/0x1a9dd70496e244112bce6b9d98964278d3f17a4a033763e903e8cb5c5ba6dd7) |
+| 19 | Trader account deployed | [`0x38d9ac3763dc99…`](https://starkscan.co/tx/0x38d9ac3763dc9962b6fdca87e08f3204d9c1448a97d99036f20d23e50b37998) |
+| 20 | Opened a position on market 9 (1 STRK) | [`0x681430bd0b6b19…`](https://starkscan.co/tx/0x681430bd0b6b1933c64c89b665bc27f656d07342d618778f58bcbef5c87f579) |
+| 21 | Claimed it — band revealed, 1.6227 STRK paid | [`0x7dac15e91e32fc…`](https://starkscan.co/tx/0x7dac15e91e32fca138fe9d9e00b55c1025027b1619f2a2174a2abf771541dcf) |
+| 22 | Opened a position on market 13 (1 STRK) | [`0x6feb9e34cdf229…`](https://starkscan.co/tx/0x6feb9e34cdf229dc18bc83708dd9114fbded34ea789a886d62bbabf1e5c396a) |
 
 `strk20.json` carries the same list in machine-readable form.
 
