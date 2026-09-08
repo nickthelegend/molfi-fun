@@ -9,8 +9,8 @@
   },
   {
     "id": "landing",
-    "seconds": 16.1,
-    "leadIn": 0.54,
+    "seconds": 16.3,
+    "leadIn": 0.5,
     "crop": null,
     "consoleErrors": [],
     "failure": null
@@ -18,7 +18,7 @@
   {
     "id": "problem",
     "seconds": 18.8,
-    "leadIn": 0.39,
+    "leadIn": 0.42,
     "crop": null,
     "consoleErrors": [],
     "failure": null

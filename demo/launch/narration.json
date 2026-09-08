@@ -35,9 +35,14 @@
     "seconds": 12.561
   },
   {
+    "id": "trade-live",
+    "line": "So here it is, for real. Widen the band, set the size, press the key. The first press connects the wallet. The second one signs, and this is a live transaction going to Starknet. When the chain answers, the counter moves: one position riding, and the band you chose is nowhere in it.",
+    "seconds": 18.193
+  },
+  {
     "id": "trade",
-    "line": "Now a real one. One STRK staked at one-point-two-five times, on Bitcoin, on a live market. What the chain receives is the money, a hash, and two width ratios. Not the band. Not the price you picked. The transaction is right here, and anyone can open it.",
-    "seconds": 17.767
+    "line": "Here is that same transaction on the block explorer. The money, a hash, and two width ratios. Not the band. Not the price you picked. Anyone can open it.",
+    "seconds": 10.577
   },
   {
     "id": "verify",
