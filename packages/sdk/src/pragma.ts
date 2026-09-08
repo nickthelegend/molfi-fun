@@ -21,17 +21,39 @@ export const PRAGMA = {
 /** Pragma normalises spot medians to 8 decimals. */
 export const PRICE_DECIMALS = 8;
 
-/** How old a print may be before molfi refuses to quote on it. */
-export const MAX_PRICE_AGE_SECONDS = 600;
+/**
+ * How old a print may be before molfi refuses to quote on it.
+ *
+ * 600s was chosen against a belief about Pragma that is true on the testnet relay and false on
+ * mainnet: that a print arrives every seven to ten minutes. Mainnet's aggregator publishes on
+ * *deviation*, not on a heartbeat. Measured over four and a half minutes of polling, BTC, ETH
+ * and WBTC did not republish once and their prints aged from 1024s to 1309s; only STRK, the
+ * most volatile of the four, printed twice. In a quiet hour those pairs go twenty minutes
+ * between prints as a matter of course.
+ *
+ * So on mainnet a 600s rule does not protect anybody — it closes the desk for most of every
+ * hour, which is what it did: every pair unquotable, the console showing dashes, on the chain
+ * the product had just moved to.
+ *
+ * 1800s is the honest number for that oracle. It is deliberately still a refusal and not an
+ * infinity: past half an hour the mark is old enough that the band around it is guesswork, and
+ * the desk should say so rather than sell it. The staleness is shown on the deck either way —
+ * quoting on an old price silently would be the actual dishonesty.
+ */
+export const MAX_PRICE_AGE_SECONDS =
+  (process.env.NEXT_PUBLIC_NETWORK ?? process.env.MOLFI_NETWORK ?? "sepolia") === "mainnet"
+    ? 1800
+    : 600;
 
 /**
  * The contract's own limit, which is looser than the desk's.
  *
  * Two different questions with two different answers. **Quoting** on a ten-minute-old price
  * means selling a band around a number that has moved, so the desk refuses at 600s.
- * **Settling** against one is the contract's rule and it is 900s, because Pragma publishes
- * every seven to ten minutes and a stricter settlement rule would leave markets that can
- * never resolve.
+ * **Settling** against one is the contract's rule and it is 900s. It is compiled into the
+ * deployed class and cannot be widened from here, so on mainnet a round whose cutoff lands in
+ * a quiet stretch waits for Pragma's next print before it can settle. The keeper retries every
+ * cycle, so those markets settle late rather than never.
  *
  * Anything that decides whether a price is good enough to *act on chain* must use this one.
  * Using the desk's number there stalls the relay for a third of every publish cycle.
