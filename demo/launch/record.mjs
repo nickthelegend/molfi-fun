@@ -341,14 +341,27 @@ made.push(await scene(browser, "problem", async (page, ready) => {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await until(page, () => document.querySelectorAll("section").length > 3);
   ready();
+  /*
+    Aimed at the felts, and held while they arrive.
+
+    This section is pinned and scrub-driven: the calldata lights one felt at a time as the
+    page scrolls *through* the pin, so where you stop decides what is on screen. The previous
+    take stopped in a dead zone and spent four and a half seconds on an almost-black frame with
+    two lines of small type in it — blackdetect found it before I did.
+
+    So the scroll walks the pin's own range in steps instead of jumping to the section top:
+    each pause lands on more of the exhibit than the last.
+  */
   const seesY = await page.evaluate(() => {
-    const el = document.querySelectorAll("section")[1];
-    return el ? el.getBoundingClientRect().top + window.scrollY - 60 : 800;
+    const el = document.querySelector("[data-sees=root]") ?? document.querySelectorAll("section")[1];
+    return el ? el.getBoundingClientRect().top + window.scrollY : 800;
   });
-  await glide(page, seesY, 2400);
-  await sleep(6000);
-  await glide(page, seesY + 520, 2600);
-  await sleep(6500);
+  await glide(page, seesY, 2200);
+  await sleep(2500);
+  for (const step of [420, 840, 1260, 1680]) {
+    await glide(page, seesY + step, 1500);
+    await sleep(2200);
+  }
 }));
 
 made.push(await scene(browser, "privacy", async (page, ready) => {

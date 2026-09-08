@@ -50,6 +50,7 @@ Every one below succeeded on Starknet mainnet; the deployment set is finalised o
 | 20 | Opened a position on market 9 (1 STRK) | [`0x681430bd0b6b19…`](https://starkscan.co/tx/0x681430bd0b6b1933c64c89b665bc27f656d07342d618778f58bcbef5c87f579) |
 | 21 | Claimed it — band revealed, 1.6227 STRK paid | [`0x7dac15e91e32fc…`](https://starkscan.co/tx/0x7dac15e91e32fca138fe9d9e00b55c1025027b1619f2a2174a2abf771541dcf) |
 | 22 | Opened a position on market 13 (1 STRK) | [`0x6feb9e34cdf229…`](https://starkscan.co/tx/0x6feb9e34cdf229dc18bc83708dd9114fbded34ea789a886d62bbabf1e5c396a) |
+| 23 | Claimed the market 13 position on the desk — 1.6227 STRK paid | [`0x66fdd014ab68cf…`](https://starkscan.co/tx/0x66fdd014ab68cf5d278275fcd1427b0ca3cd58d486f3ace21a0cba1dea59f3c) |
 
 `strk20.json` carries the same list in machine-readable form.
 
