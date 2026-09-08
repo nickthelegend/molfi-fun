@@ -4,6 +4,7 @@ import { ChainSees } from "@/components/landing/ChainSees";
 import { Games } from "@/components/landing/Games";
 import { Markets } from "@/components/landing/Markets";
 import { Proof } from "@/components/landing/Proof";
+import { Mainnet } from "@/components/landing/Mainnet";
 import { CTA } from "@/components/landing/CTA";
 
 /**
@@ -23,6 +24,7 @@ import { CTA } from "@/components/landing/CTA";
  *   Games      — what can I actually do (the deck's own switch, the real mechanics)
  *   Markets    — on what (nine markets at their live prices, oracle named per market)
  *   Proof      — has anyone run it (counts read from the chain and the keeper)
+ *   Mainnet    — is it real (the mainnet contract, every transaction linked to Starkscan)
  *   CTA        — one key
  *
  * Every number on the page is fetched. There is no placeholder copy and no illustrated UI:
@@ -59,6 +61,7 @@ export default function Home() {
       <Games />
       <Markets />
       <Proof />
+      <Mainnet />
       <CTA />
     </main>
   );

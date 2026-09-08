@@ -1,6 +1,7 @@
 {
   "network": "mainnet",
   "deployedAt": "2026-09-07T17:23:04.557Z",
+  "accountDeployTx": "0x00d87d1a993560448ca27ed54ab8b0b2f56aa34d01133d881928aa528fbb3524",
   "classHash": "0x0099e28661d9a1023b7d95d45e40dd5608fe32079a99f9bd6e18b37964dc8417",
   "market": "0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9",
   "oracle": "0x2a85bd616f912537c50a49a4076db02c00b29b2cdc8a197ce92ed1837fa875b",

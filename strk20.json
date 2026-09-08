@@ -2,6 +2,7 @@
   "network": "mainnet",
   "demo_url": "https://molfi.fun",
   "demo_video": "https://molfi.fun/molfi-demo.mp4",
+  "repository": "https://github.com/nickthelegend/molfi-fun",
   "contracts": [
     "0x0215dc0b029cfa4d3671494ad4ddcd9ceede531867487a9970b094a665a3aaf9"
   ],

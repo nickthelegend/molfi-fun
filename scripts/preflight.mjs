@@ -11,6 +11,9 @@
  */
 
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { hash } from "starknet";
 import {
   MARKETS,
@@ -21,6 +24,8 @@ import {
   pairId,
 } from "../packages/sdk/src/index.ts";
 import { NETWORKS, STRK_TOKEN } from "../packages/sdk/src/networks.ts";
+
+const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) =>
@@ -229,6 +234,22 @@ if (config.market) {
   }
 } else {
   ok("no molfi contract is deployed here yet", "a deploy would be the first");
+}
+
+// ---- what the repo claims about mainnet ---------------------------------------------------
+/*
+  `strk20.json` and the landing page's mainnet strip restate `deployments/mainnet.json`. Both
+  were hand-maintained once, and the manifest drifted to `sepolia` while fourteen finalised
+  mainnet transactions sat in the record — which is exactly how a submission checker concluded
+  molfi had never deployed. They are generated now; this is the guard that says so out loud.
+*/
+{
+  const r = spawnSync(process.execPath, ["scripts/sync-manifest.mjs", "--check"], {
+    cwd: ROOT_DIR,
+    encoding: "utf8",
+  });
+  if (r.status === 0) ok("the submission manifest matches the deploy record");
+  else bad("the submission manifest is stale", "run `node scripts/sync-manifest.mjs`");
 }
 
 // ---- verdict -----------------------------------------------------------------------------
