@@ -155,6 +155,19 @@ export function markClaimed(commitment: string, txHash: string): void {
   write(read().map((p) => (p.commitment === commitment ? { ...p, claimedTxHash: txHash } : p)));
 }
 
+/**
+ * Record the transaction that opened a position, once it is known.
+ *
+ * A position is written to the store *before* it is sent — deliberately, because the secret is
+ * the only key to the payout and losing it to a dropped connection is unrecoverable. The
+ * consequence was that the hash never came back: the store held a commitment with no link to
+ * the transaction that created it, so the browser could show you a position and never show you
+ * where it happened. `StoredCommon.txHash` had been declared for this and nothing ever set it.
+ */
+export function rememberTx(commitment: string, txHash: string): void {
+  write(read().map((p) => (p.commitment === commitment ? { ...p, txHash } : p)));
+}
+
 export function forget(commitment: string): void {
   write(read().filter((p) => p.commitment !== commitment));
 }

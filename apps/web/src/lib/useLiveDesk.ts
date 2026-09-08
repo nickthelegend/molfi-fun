@@ -50,6 +50,7 @@ import {
   remember,
   rememberDirection,
   subscribe,
+  rememberTx,
   type StoredPosition,
 } from "./positions";
 import { fetchJson } from "./fetchJson";
@@ -829,6 +830,8 @@ export function useLiveDesk(market: MarketDef, tier: number) {
         if (r.ok && chosen === "direct") {
           await provider.waitForTransaction(r.txHash!).catch(() => undefined);
         }
+        // The store already holds the position; now it can hold where it happened too.
+        if (r.ok && r.txHash) rememberTx(entry.commitment, r.txHash);
         setState((s) => ({
           ...s,
           pending: null,

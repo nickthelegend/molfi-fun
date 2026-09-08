@@ -44,6 +44,12 @@ const leadIns = existsSync(join(HERE, "recorded.json"))
   ? Object.fromEntries(JSON.parse(readFileSync(join(HERE, "recorded.json"), "utf8")).map((r) => [r.id, r.leadIn ?? 0]))
   : {};
 
+/** Extra seconds of picture after each line, so the film is not the length of the script. */
+const holds = existsSync(join(HERE, "scenes.json"))
+  ? Object.fromEntries(
+      JSON.parse(readFileSync(join(HERE, "scenes.json"), "utf8")).map((s) => [s.id, s.hold ?? 0]),
+    )
+  : {};
 const speeds = useSpeeds && existsSync(join(HERE, "scenes.json"))
   ? Object.fromEntries(JSON.parse(readFileSync(join(HERE, "scenes.json"), "utf8")).map((s) => [s.id, s.speed]))
   : {};
@@ -159,8 +165,19 @@ for (const [i, n] of narration.entries()) {
    */
   const lead = Number(leadIns[n.id] ?? 0);
   const vDur = probe(video) - lead;
-  /** The narration is the clock; a multiplier shortens both together so they stay in sync. */
-  const target = n.seconds / speed;
+  /**
+   * The narration sets the floor, not the length.
+   *
+   * Pacing every scene to exactly its own line meant a shorter script made a shorter film —
+   * so trimming the explaining, which was the point, also deleted the showing. `hold` buys
+   * picture after the sentence ends: the line lands, and then the product is on screen doing
+   * something with nobody talking over it.
+   *
+   * Divided by `speed` with the narration so a runtime pass moves both and the voice stays
+   * on its own footage.
+   */
+  const hold = Number(holds[n.id] ?? 0) || 0;
+  const target = (n.seconds + hold) / speed;
   const seg = join(WORK, `${String(i).padStart(2, "0")}-${n.id}.mp4`);
 
   /**
@@ -198,11 +215,17 @@ for (const [i, n] of narration.entries()) {
     segment to its own narration, so timing the cues from the raw footage would put them
     progressively further ahead of the picture as the cut went on.
   */
+  /*
+    Cues share the *spoken* part of the scene, not the whole clip. With a hold on the end, the
+    last caption would otherwise stretch across seconds of silence and sit under a picture it
+    stopped describing.
+  */
+  const spoken = Math.min(actual, n.seconds / speed);
   const parts = phrases(n.line);
   const chars = parts.reduce((a, t) => a + t.length, 0);
   let at = clock;
   for (const t of parts) {
-    const share = (t.length / chars) * actual;
+    const share = (t.length / chars) * spoken;
     cues.push({ start: at, end: at + share, text: t });
     at += share;
   }

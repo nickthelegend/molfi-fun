@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
+import { ADDRESSES } from "./chain";
 
 /**
  * The direction game's rounds, polled from the chain.
@@ -58,6 +59,18 @@ export function useRounds(pair: string): RoundsState {
   });
 
   useEffect(() => {
+    /*
+      Do not ask for a game that is not deployed here.
+
+      `/api/rounds` answers 503 with "the direction game is not deployed on mainnet", which is
+      the correct answer — and polling it every few seconds turned that correct answer into a
+      steady stream of failed requests in the console of an otherwise healthy page. The
+      deployment already knows the contract is absent before the first fetch.
+    */
+    if (!ADDRESSES.upDownMarket) {
+      setState((s) => ({ ...s, ready: true, error: null }));
+      return;
+    }
     let alive = true;
     const read = async () => {
       try {

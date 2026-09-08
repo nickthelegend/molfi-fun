@@ -1,62 +1,77 @@
 [
   {
     "id": "intro",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 3.23
   },
   {
     "id": "landing",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 7.53
   },
   {
     "id": "problem",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 4.31
   },
   {
     "id": "deck-open",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 8.61
   },
   {
     "id": "deck-band",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 10.76
   },
   {
     "id": "deck-pays",
-    "speed": 1.1526
-  },
-  {
-    "id": "deck-updown",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 7.53
   },
   {
     "id": "trade-live",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 13.99
+  },
+  {
+    "id": "riding",
+    "speed": 1,
+    "hold": 9.69
   },
   {
     "id": "trade",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 6.46
   },
   {
     "id": "verify",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 6.46
   },
   {
     "id": "settle",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 7.53
   },
   {
     "id": "payout",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 7.53
   },
   {
     "id": "keeper",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 5.38
   },
   {
     "id": "mainnet",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 7.53
   },
   {
     "id": "outro",
-    "speed": 1.1526
+    "speed": 1,
+    "hold": 3.23
   }
 ]

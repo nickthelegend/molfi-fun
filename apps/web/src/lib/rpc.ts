@@ -16,8 +16,35 @@ import { NETWORKS, type NetworkName } from "@molfi/sdk";
 
 export const NETWORK = (process.env.MOLFI_NETWORK ?? "mainnet") as NetworkName;
 
-/** The configured endpoint, if there is one. */
-export const RPC_URL = process.env.STARKNET_RPC_URL ?? NETWORKS[NETWORK].rpcUrl;
+/**
+ * The configured endpoint, if there is one and it is for the right chain.
+ *
+ * `STARKNET_RPC_URL` is named for no network in particular and is nearly always set to one.
+ * Point the deployment at mainnet while that variable still holds a Sepolia URL and every
+ * read asks a Sepolia node about a mainnet contract — which answers, politely, that there is
+ * nothing there. `market_count` comes back zero, the API returns an empty list, and the desk
+ * renders "no open market" with no error anywhere: a completely dead product reported as a
+ * quiet one.
+ *
+ * It cost an hour here and the same shape cost another in the keeper. So a URL that names a
+ * different network than the deployment is ignored, loudly, rather than trusted.
+ */
+const configuredRpc = process.env.STARKNET_RPC_URL;
+const namesOtherNetwork =
+  Boolean(configuredRpc) &&
+  (NETWORK === "mainnet"
+    ? /sepolia|goerli|testnet/i.test(configuredRpc!)
+    : NETWORK === "sepolia" && /mainnet/i.test(configuredRpc!));
+
+if (namesOtherNetwork) {
+  console.warn(
+    `[molfi] STARKNET_RPC_URL points at a different network than MOLFI_NETWORK=${NETWORK}. ` +
+      `Ignoring it and using ${NETWORKS[NETWORK].rpcUrl}. Reading one chain for another's ` +
+      `contracts returns empty answers rather than errors, which looks exactly like an idle market.`,
+  );
+}
+
+export const RPC_URL = (!namesOtherNetwork && configuredRpc) || NETWORKS[NETWORK].rpcUrl;
 
 /** The keyless public endpoint for this network. Rate limited, always there. */
 export const FALLBACK_RPC_URL = NETWORKS[NETWORK].rpcUrl;

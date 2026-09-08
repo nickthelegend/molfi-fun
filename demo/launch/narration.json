@@ -1,77 +1,77 @@
 [
   {
     "id": "intro",
-    "line": "molfi. A prediction market where your position is a commitment, not an order. Live on Starknet mainnet.",
-    "seconds": 6.972
+    "line": "molfi. Prediction markets where nobody can see your position. Live on Starknet mainnet.",
+    "seconds": 5.905
   },
   {
     "id": "landing",
-    "line": "Nine markets, priced live off the chain. Four of them settle against Pragma. The other five had no Starknet oracle at all, so molfi built its own: a median across five exchanges, published with the real number of sources behind every print.",
-    "seconds": 15.953
+    "line": "Four markets, priced live off the chain, settling against Pragma.",
+    "seconds": 4.433
   },
   {
     "id": "problem",
-    "line": "Here is the problem molfi exists for. On a public chain, your order is a signal before it is ever a trade. Anyone watching the mempool can price against it, crowd into it, or simply get there first. On every other prediction market, betting is a public act.",
-    "seconds": 16.785
+    "line": "On a public chain your order is a signal before it is a trade. Anyone can price against it.",
+    "seconds": 6.183
   },
   {
     "id": "deck-open",
-    "line": "So this is the desk. One market, one clock, one live price read straight off Starknet. Nothing on this screen is a mock-up, and nothing on it is cached.",
-    "seconds": 9.959
+    "line": "This is the desk. One market, one clock, one live price.",
+    "seconds": 4.113
   },
   {
     "id": "deck-band",
-    "line": "You pick a band around that price, and a window of time it has to hold inside it. Widen the band and you are asking for something likely, so the odds get short. Tighten it and the payout climbs. Every quote comes from the same table the contract itself settles with, so the number you are shown is the number you are charged.",
-    "seconds": 19.473
+    "line": "Pick a band. Widen it, the payout drops. Tighten it, the payout climbs.",
+    "seconds": 5.116
   },
   {
     "id": "deck-pays",
-    "line": "Then you choose how long. Fifteen minutes, an hour, or four. Each one is a different distribution, measured from real market tape rather than assumed, and the payout moves with every choice you make.",
-    "seconds": 12.348
-  },
-  {
-    "id": "deck-updown",
-    "line": "Or skip the band completely and just call the direction. Up or down, against a reference price fixed the moment the round was listed. Same console, same settlement, one less decision to make.",
-    "seconds": 12.561
+    "line": "Pick how long it holds. Fifteen minutes, an hour, four.",
+    "seconds": 3.708
   },
   {
     "id": "trade-live",
-    "line": "So here it is, for real. Widen the band, set the size, press the key. The first press connects the wallet. The second one signs, and this is a live transaction going to Starknet. When the chain answers, the counter moves: one position riding, and the band you chose is nowhere in it.",
-    "seconds": 18.193
+    "line": "Watch a real one. Set the size, press the key. That is a live mainnet transaction.",
+    "seconds": 5.863
+  },
+  {
+    "id": "riding",
+    "line": "One riding. The chain took a hash and a stake. Your band is not in it.",
+    "seconds": 4.711
   },
   {
     "id": "trade",
-    "line": "Here is that same transaction on the block explorer. The money, a hash, and two width ratios. Not the band. Not the price you picked. Anyone can open it.",
-    "seconds": 10.577
+    "line": "Same transaction on the explorer. A commitment, a size, two width ratios.",
+    "seconds": 5.692
   },
   {
     "id": "verify",
-    "line": "Anyone can look that commitment up, and molfi will show them exactly what it stores. The stake is public. The size is public. The address is public. The band you actually chose is simply not in there.",
-    "seconds": 13.137
+    "line": "Anyone can look it up. Stake public. Band absent.",
+    "seconds": 3.921
   },
   {
     "id": "settle",
-    "line": "When the round closes, the market recomputes itself in front of you. The price it settled at, how old that price was, how many publishers stood behind it, every check re-run live in your browser with no wallet and no account.",
-    "seconds": 14.225
+    "line": "The market recomputes itself in your browser. No wallet, no account.",
+    "seconds": 4.775
   },
   {
     "id": "payout",
-    "line": "It settled at seventy-nine thousand three hundred and forty-six, inside the band. Claiming reveals that band on chain for the very first time, and pays one-point-two-five STRK back to the address that staked it. Until this moment, nobody could have known what was being bet.",
-    "seconds": 17.447
+    "line": "Settled inside the band. Claiming reveals it for the first time and pays out.",
+    "seconds": 5.159
   },
   {
     "id": "keeper",
-    "line": "A keeper lists the rounds and settles whatever is due, on its own infrastructure, on a loop. It cannot see a single position while it does it, and settlement is permissionless: if the keeper vanished tonight, anyone at all could poke an expired market and pay everybody out.",
-    "seconds": 16.721
+    "line": "A keeper lists and settles. It cannot see a position, and anyone can poke an expired market.",
+    "seconds": 6.353
   },
   {
     "id": "mainnet",
-    "line": "And molfi is live on Starknet mainnet. The market contract is deployed and reading Pragma directly, with four markets funded and open, and fourteen transactions finalised all the way down to Ethereum. Every one of them is linked in the repository.",
-    "seconds": 16.636
+    "line": "Live on Starknet mainnet. Eighteen transactions, finalised.",
+    "seconds": 4.497
   },
   {
     "id": "outro",
-    "line": "molfi. Your band, your size, and your name. None of them are the market's business. Thanks for watching.",
-    "seconds": 6.481
+    "line": "molfi dot fun. Your band, your size, your name. None of it is the market's business.",
+    "seconds": 5.777
   }
 ]

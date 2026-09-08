@@ -1011,7 +1011,12 @@ export function LiveConsole({
                 * placed inside the product — the menu still has it for anyone who wants it.
                 */}
               <KeyFrame>
-                <GameSwitch game={game} onChange={setGame} />
+                {/*
+                  Offered only where it can be played. The direction contract is a second
+                  deployment and mainnet has one; a switch that flips to a game with no
+                  contract behind it is a button whose only outcome is an error.
+                */}
+                {ADDRESSES.upDownMarket ? <GameSwitch game={game} onChange={setGame} /> : null}
               </KeyFrame>
             </div>
 

@@ -73,8 +73,8 @@ const ONLY = args.only ? String(args.only).split(",").map((s) => s.trim()) : nul
 /** The running order, so a merged log keeps the cut's sequence rather than run order. */
 const SCENE_ORDER = [
   "intro", "landing", "problem",
-  "deck-open", "deck-band", "deck-pays", "deck-updown",
-  "trade-live", "trade", "verify", "settle", "payout", "keeper", "mainnet", "outro",
+  "deck-open", "deck-band", "deck-pays",
+  "trade-live", "riding", "trade", "verify", "settle", "payout", "keeper", "mainnet", "outro",
 ];
 
 /** 1280x720 keeps the deck legible at YouTube's smallest sane size without letterboxing. */
@@ -183,7 +183,23 @@ async function scene(browser, id, body, opts = {}) {
   });
   const page = await context.newPage();
   const errors = [];
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 120)); });
+  /*
+    Console errors from the product, not from the internet.
+
+    The rule is that footage must be clean, and it is worth keeping — a scene recorded over a
+    failing page is a scene of a broken product. But the bypass wallet used for recording has
+    no Privy session, so Privy's own endpoint answers 403 on every take, and a guard that
+    cannot be satisfied is a guard everybody learns to ignore. Third-party origins are recorded
+    separately and reported, without failing the take; anything from molfi still fails it.
+  */
+  const foreign = [];
+  page.on("console", (m) => {
+    if (m.type() !== "error") return;
+    const text = m.text().slice(0, 160);
+    const from = m.location?.()?.url ?? "";
+    const ours = !from || from.startsWith(BASE) || from.startsWith(DESK_BASE);
+    (ours ? errors : foreign).push(text);
+  });
   page.on("pageerror", (e) => errors.push(`EXCEPTION ${String(e.message).slice(0, 120)}`));
 
   const started = Date.now();
@@ -246,7 +262,7 @@ async function scene(browser, id, body, opts = {}) {
   // A quarter second of margin: `ready()` fires on the first painted frame, and trimming to
   // exactly there can still catch the tail of a fade.
   const trim = leadIn ? Number((leadIn + 0.25).toFixed(2)) : 0;
-  log(`  ${id.padEnd(12)} ${secs}s  lead-in ${trim}s${errors.length ? `  CONSOLE: ${errors.slice(0, 2).join(" | ")}` : ""}`);
+  log(`  ${id.padEnd(12)} ${secs}s  lead-in ${trim}s${errors.length ? `  CONSOLE: ${errors.slice(0, 2).join(" | ")}` : ""}${foreign.length ? `  (${foreign.length} third-party)` : ""}`);
   return { id, seconds: Number(secs), leadIn: trim, consoleErrors: errors, failure };
 }
 
@@ -428,42 +444,14 @@ made.push(await scene(browser, "deck-pays", async (page, ready, frame) => {
   await sleep(3500);
 }, TALL));
 
-made.push(await scene(browser, "deck-updown", async (page, ready, frame) => {
-  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
-  await liveDeck(page);
-  // Travels, because the direction switch changes the screen and lights the keys, and on a
-  // device this size those two things are nowhere near each other.
-  await frame(".shell", SIZE.width, SIZE.height, true);
-  ready();
-  await sleep(1600);
-  const ud = page.locator('button:text-is("UP / DOWN")').first();
-  if (!(await ud.count())) throw new Error("UP / DOWN key is not on screen");
-  await ud.click();
-  await mustSee(page, "the direction keys", () => /▲ UP/.test(document.body.innerText), 12_000);
-  await sleep(7500);
-  const rg = page.locator('button:text-is("RANGE")').first();
-  if (!(await rg.count())) throw new Error("RANGE key is not on screen");
-  await rg.click();
-  await sleep(1600);
-}, TALL));
+/*
+  The direction beat is gone with the network.
 
-/**
- * The whole trade, taken on the console, in one unbroken shot.
- *
- * This is the beat the previous cuts did not have. They filmed a deck nobody could trade on
- * and then cut to a block explorer, so the product was never once seen doing the thing it is
- * for — the narration said "a position" over a page of hexadecimal.
- *
- * Here the camera stays on the device while a person would use it: widen the band, set the
- * size, press the key. The first press connects the wallet and the address appears on the
- * strip; the second signs and broadcasts. The shot holds until the chain answers and the
- * RIDING counter moves, because the wait is the honest part — this is a real transaction on
- * Starknet Sepolia and it takes as long as it takes.
- *
- * Nothing is simulated. A run of this scene costs real testnet STRK and leaves a real position
- * on a real market, which is why the stake is trimmed down first: a take should not cost five
- * STRK to re-shoot.
- */
+  UpDownMarket is a second deployment and only Sepolia has it, so on mainnet the switch is not
+  rendered and there is nothing to film. Filming it against the testnet and cutting it into a
+  mainnet film would be showing a feature the live product does not have.
+*/
+
 made.push(await scene(browser, "trade-live", async (page, ready, frame) => {
   await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
   await liveDeck(page);
@@ -513,6 +501,78 @@ made.push(await scene(browser, "trade-live", async (page, ready, frame) => {
     return Boolean(m) && Number(m[1]) > n;
   }, 150_000, before);
   await sleep(6000);
+
+  /*
+    Write down what this take just did.
+
+    Every beat after this one — the explorer, /verify, the market page — has to name *this*
+    position, and the previous cut named a Sepolia one because the hashes were typed in once
+    and the network moved underneath them. So the scene that creates the position is the scene
+    that records it, and the rest read from the file.
+
+    The store is the browser's own: the same record the desk uses to claim later, secret and
+    all, so nothing here is a second copy that can disagree with the first.
+  */
+  const stored = await page.evaluate(() => {
+    try {
+      const raw = window.localStorage.getItem("molfi.positions.v1");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const latest = stored[stored.length - 1];
+  if (!latest) throw new Error("the deck reported a position but stored none — nothing to name later");
+  TAKE.network = "mainnet";
+  TAKE.explorer = "https://starkscan.co";
+  TAKE.commitment = latest.commitment;
+  TAKE.marketId = latest.marketId;
+  TAKE.pair = latest.pair;
+  TAKE.stakeStrk = String(Number(BigInt(latest.stake)) / 1e18);
+  // No fallback. A hash left over from another take under narration describing this one is
+  // the exact lie this file exists to prevent.
+  if (!latest.txHash) throw new Error("NO_TAKE_TXS: the stored position carries no open transaction hash");
+  TAKE.open = latest.txHash;
+  TAKE.claim = null;
+  TAKE.storedPosition = latest;
+  writeFileSync(join(HERE, "take-txs.json"), JSON.stringify(TAKE, null, 2) + "\n");
+  log(`    take: market #${TAKE.marketId} · ${String(TAKE.commitment).slice(0, 14)}…`);
+}, TALL));
+
+/**
+ * The desk right after the trade lands, with the whole terminal on screen.
+ *
+ * The panel on the left is the position exactly as the contract received it — commitment,
+ * stake, multiplier, route — and then YOUR BAND and YOUR NAME, marked NOT STORED. The panel on
+ * the right shows it riding with the band sealed. This is the product's whole claim, visible
+ * in one frame, on the screen that just made it true.
+ */
+made.push(await scene(browser, "riding", async (page, ready, frame) => {
+  /*
+    Each scene records in its own browser context, which is what keeps one clip per beat — and
+    it means an empty `localStorage`. The position this beat is about was opened in the take
+    before it, so the deck here had nothing to show and the panel rendered its empty state.
+
+    Restored, not invented: this is the record the previous scene read out of the browser that
+    made it, written to disk and put back. The chain is still the source of everything on
+    screen; the store only says which commitment to ask about.
+  */
+  if (!TAKE.storedPosition) {
+    throw new Error("NO_TAKE_TXS: no stored position from this take — record trade-live first");
+  }
+  await page.addInitScript((pos) => {
+    try {
+      window.localStorage.setItem("molfi.positions.v1", JSON.stringify([pos]));
+    } catch {
+      /* a context with storage disabled will fail the mustSee below, loudly */
+    }
+  }, TAKE.storedPosition);
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  await mustSee(page, "the chain's view of a real position",
+    () => /NOT STORED/.test(document.body.innerText) && /COMMITMENT/.test(document.body.innerText), 30_000);
+  ready();
+  await sleep(11_000);
 }, TALL));
 
 /**
@@ -535,7 +595,21 @@ made.push(await scene(browser, "trade", async (page, ready) => {
 }));
 
 made.push(await scene(browser, "settle", async (page, ready) => {
-  await page.goto(`${BASE}/m/${TAKE.marketId}`, { waitUntil: "domcontentloaded" });
+  /*
+    A market that has actually settled, chosen at record time.
+
+    This pointed at `TAKE.marketId` — the round the take just opened into, which by definition
+    has not settled yet — and after the move to mainnet that id did not exist there at all, so
+    the beat filmed a 404. The audit page is only worth showing on a settled round anyway:
+    that is where the recomputation lives.
+  */
+  const settled = await fetch(`${BASE}/api/markets`)
+    .then((r) => r.json())
+    .then((d) => (d.markets ?? []).filter((m) => m.isSettled).sort((a, b) => b.id - a.id)[0])
+    .catch(() => null);
+  if (!settled) throw new Error("no settled market on this network to audit");
+  log(`    auditing market #${settled.id} (${settled.pair})`);
+  await page.goto(`${BASE}/m/${settled.id}`, { waitUntil: "domcontentloaded" });
   await mustSee(page, "the market's own audit", () => /check/i.test(document.body.innerText), 30_000);
   ready();
   await sleep(4500);
