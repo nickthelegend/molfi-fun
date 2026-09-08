@@ -7,28 +7,48 @@ import { useGsap } from "./useGsap";
  * The argument the whole product rests on, shown rather than claimed.
  *
  * Every prediction market says "private". The only version of that claim worth anything is the
- * bytes: this is the real calldata of a real `open_ticket`, transaction
- * `0x46a766ea…` on Sepolia — four felts, and none of them is the side that was bet. It is not
- * a diagram of what the transaction would look like. It is what it was.
+ * bytes: this is the real calldata of a real `open_position`, transaction `0x6feb9e34…` on
+ * Starknet **mainnet** — eight felts, and the band is not among them. It is not a diagram of
+ * what the transaction would look like. It is what it was.
+ *
+ * It used to be a Sepolia `open_ticket`, which was true when the product ran on Sepolia and
+ * became a testnet transaction illustrating a mainnet product the day it moved.
  *
  * Pinned and scrubbed, because the point is a *comparison* and a comparison needs both halves
  * on screen at once, held there long enough to read. The felts light one at a time as the
  * reader scrolls, which paces four facts that would otherwise arrive as one block of hex.
  */
 
-/** The real second call of that multicall: round id, commitment, stake low, stake high. */
+/**
+ * The real second call of that multicall, felt for felt.
+ *
+ * The two reach ratios are the interesting ones. They are the band's *width* from its own
+ * midpoint with the price divided out, which is exactly what the contract needs to price the
+ * position and settle it — and says nothing about where that midpoint was. Two identical
+ * numbers here mean a symmetric band; they do not say a symmetric band around what.
+ */
 const FELTS = [
-  { hex: "0x7", what: "round id", note: "which 15-minute round. Public, and has to be." },
+  { hex: "0xd", what: "market id", note: "market 13. Which round, and it has to be public." },
   {
-    hex: "0x7ff5f363…4dd6064a",
+    hex: "0xf2155993…ad5adf772",
     what: "commitment",
-    note: "poseidon(tag, secret, round, side). One-way. The side is inside it and cannot be read out.",
+    note: "poseidon(tag, secret, band low, band high). One-way. The band is inside it and cannot be read out.",
   },
-  { hex: "0x4563918244f40000", what: "stake, low limb", note: "5 STRK. The chain must charge you." },
+  {
+    hex: "0x35124",
+    what: "low reach ratio",
+    note: "217,892 — how far the band reaches below its midpoint, as a fraction of spot. A width, not a place.",
+  },
+  {
+    hex: "0x35124",
+    what: "high reach ratio",
+    note: "The same going up. Prices the position exactly; locates it nowhere.",
+  },
+  { hex: "0xde0b6b3a7640000", what: "stake, low limb", note: "1 STRK. The chain must charge you." },
   { hex: "0x0", what: "stake, high limb", note: "The u256's other half." },
 ];
 
-const HIDDEN = ["which way you bet", "whether you won, until you claim", "your band, on the range game"];
+const HIDDEN = ["the band you actually picked", "the price you were betting around", "whether you won, until you claim"];
 
 export function ChainSees() {
   const scope = useGsap(({ gsap, root }) => {
@@ -67,7 +87,7 @@ export function ChainSees() {
           This is the whole transaction.
         </h2>
         <p className="mono mt-3 text-[10px] tracking-[0.16em] text-white/35">
-          OPEN_TICKET · 0x46A766EA… · SEPOLIA · SUCCEEDED
+          OPEN_POSITION · 0x6FEB9E34… · MAINNET · SUCCEEDED
         </p>
 
         <div className="mt-9 grid gap-8 md:grid-cols-[1.25fr_1fr]">
@@ -108,7 +128,7 @@ export function ChainSees() {
 
             <motion.a
               data-sees="proof"
-              href="https://sepolia.voyager.online/tx/0x46a766ea4b8d3b1b0c08c87feabffae5364eda1d98febfe2154ee940d4ab7ab"
+              href="https://starkscan.co/tx/0x6feb9e34cdf229dc18bc83708dd9114fbded34ea789a886d62bbabf1e5c396a"
               target="_blank"
               rel="noreferrer noopener"
               whileHover={{ x: 3 }}

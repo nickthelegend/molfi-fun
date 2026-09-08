@@ -679,17 +679,48 @@ made.push(await scene(browser, "audit", async (page, ready) => {
  *
  * The hash is this take's own, written by the scene that opened the position.
  */
-made.push(await scene(browser, "payout", async (page, ready) => {
-  if (!TAKE.claim) throw new Error("NO_TAKE_TXS: this take has no claim transaction yet");
-  await page.goto(`${TAKE.explorer}/tx/${TAKE.claim}`, { waitUntil: "domcontentloaded" });
-  await mustSee(page, "the claim transaction", () => /claim|Succeeded|SUCCEEDED/i.test(document.body.innerText), 45_000);
+/**
+ * The claim, on the desk, with the band revealed for the first time.
+ *
+ * This was a block explorer page for a while, because the console offered no way to claim: the
+ * first press of any key silently connected a wallet and did nothing, so CLAIM looked dead and
+ * the payout had to be taken from the command line. That is fixed, so the beat is the product's
+ * own flow again — the deck offers CLAIM because the chain says this round settled inside the
+ * band, and the payout lands while the camera is still on it.
+ *
+ * The key only appears for a position that actually won. If this round landed outside the band
+ * there is nothing to claim, and the scene fails rather than filming a button that is not
+ * there: losing is a real outcome and it needs its own beat, not this one dressed up.
+ */
+made.push(await scene(browser, "payout", async (page, ready, frame) => {
+  if (!TAKE.storedPosition) {
+    throw new Error("NO_TAKE_TXS: no stored position from this take — record trade-live first");
+  }
+  await page.addInitScript((pos) => {
+    try {
+      window.localStorage.setItem("molfi.positions.v1", JSON.stringify([pos]));
+    } catch {
+      /* storage refused; the mustSee below will say so */
+    }
+  }, TAKE.storedPosition);
+  await page.goto(`${DESK_BASE}/play`, { waitUntil: "domcontentloaded" });
+  await liveDeck(page);
+  await mustSee(
+    page,
+    "a settled, winning position with a claim offered",
+    () => /CLAIM \d+ POSITION/.test(document.body.innerText),
+    120_000,
+  );
   ready();
-  await sleep(6000);
-  await glide(page, 700, 2200);
-  await sleep(6000);
-  await glide(page, 1250, 2200);
-  await sleep(5000);
-}));
+  await sleep(4000);
+
+  const claim = page.locator('button:has-text("CLAIM")').first();
+  if (!(await claim.count())) throw new Error("the CLAIM key is not on screen");
+  await claim.click();
+  // A payout is a transaction; hold until the deck says it landed rather than on a timer.
+  await mustSee(page, "the payout land", () => /CLAIMED/.test(document.body.innerText), 180_000);
+  await sleep(8000);
+}, TALL));
 
 made.push(await scene(browser, "keeper", async (page, ready) => {
   await page.goto(`${BASE}/keeper`, { waitUntil: "domcontentloaded" });

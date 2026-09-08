@@ -12,16 +12,16 @@
   "accountDeploy": "0x067ba388c2e968544a68689420cad825412ab0e9fe34659970b8d84d98397dbe",
   "approve": "0x062f4e84d3a46d4758f4566b7dd0249a3211325499ec26b2a05eaeefdc3db849",
   "open": "0x6feb9e34cdf229dc18bc83708dd9114fbded34ea789a886d62bbabf1e5c396a",
-  "claim": null,
+  "claim": "0x66fdd014ab68cf5d278275fcd1427b0ca3cd58d486f3ace21a0cba1dea59f3c",
   "payoutStrk": "1.6227",
   "explorer": "https://starkscan.co",
   "outcome": "won",
   "bandLow1e8": "7918360292114",
   "bandHigh1e8": "7945499707886",
-  "bandLow": "78417.39",
-  "bandHigh": "78759.07",
+  "bandLow": "78213.24",
+  "bandHigh": "78554.02",
   "settledPrice1e8": "7934641100661",
-  "settledPrice": "78575.91",
+  "settledPrice": "78418.90",
   "settledPublishers": 10,
   "storedPosition": {
     "secret": "0x5c69a06e2e4d3d6b501963389ded41879023696c2f25c6a788cfbcbf5ccb69",
@@ -35,5 +35,6 @@
     "stake": "1000000000000000000",
     "openedAt": 1788849322,
     "txHash": "0x6feb9e34cdf229dc18bc83708dd9114fbded34ea789a886d62bbabf1e5c396a"
-  }
+  },
+  "claimedOnDesk": true
 }
