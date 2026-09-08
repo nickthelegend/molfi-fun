@@ -41,7 +41,23 @@ export const FAUCET_ADDRESS = address ?? null;
  * money and it is the difference between a judge playing the product and a judge reading
  * about it.
  */
-export const DRIP_AMOUNT = 12_000_000_000_000_000_000n; // 12 STRK
+const ON_MAINNET = (process.env.MOLFI_NETWORK ?? "sepolia") === "mainnet";
+
+/**
+ * Twelve on the testnet, one on mainnet, because one of those is real money.
+ *
+ * On Sepolia the drip costs nothing and generosity is free: twelve covers a ten-STRK position
+ * with the fees for its whole life around it. On mainnet the same number would hand a stranger
+ * twelve STRK of the desk's own float, and the float is finite — it would fund about twenty
+ * people and then the door would shut for everyone after them.
+ *
+ * One STRK is deliberately enough and no more: it deploys the account, pays for a trade and
+ * the claim after it, and leaves something to stake. Someone who wants a larger position
+ * brings their own, which is what every other mainnet product asks.
+ */
+export const DRIP_AMOUNT = ON_MAINNET
+  ? 1_000_000_000_000_000_000n // 1 STRK
+  : 12_000_000_000_000_000_000n; // 12 STRK
 
 /**
  * The balance below which a drip is offered.
@@ -51,7 +67,9 @@ export const DRIP_AMOUNT = 12_000_000_000_000_000_000n; // 12 STRK
  * empty accounts. This is above one round-trip's fees so the answer arrives before the
  * account is stuck rather than after.
  */
-export const TOP_UP_BELOW = 2_000_000_000_000_000_000n; // 2 STRK
+export const TOP_UP_BELOW = ON_MAINNET
+  ? 300_000_000_000_000_000n // 0.3 STRK — above a round trip's fees, below a stake
+  : 2_000_000_000_000_000_000n; // 2 STRK
 
 const provider = new RpcProvider({ nodeUrl: RPC_URL });
 
