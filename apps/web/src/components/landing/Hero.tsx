@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { ConsoleStage } from "@/components/ConsoleStage";
+import { NETWORK } from "@/lib/chain";
 import { StarknetSpark } from "@/components/CoinMark";
 import { fetchJson } from "@/lib/fetchJson";
 import { useGsap } from "./useGsap";
@@ -99,18 +100,39 @@ export function Hero() {
      * Scrubbed rather than triggered: the object should feel like it has weight and is being
      * left behind, which only reads if it tracks the scroll position exactly.
      */
-    gsap.to("[data-hero=device]", {
-      yPercent: -18,
-      scale: 0.86,
-      opacity: 0.25,
-      ease: "none",
-      scrollTrigger: {
-        trigger: root,
-        start: "top top",
-        end: "bottom top",
-        scrub: 0.6,
+    /*
+     * On the wrapper, not on the device — and from explicit values, not from "whatever it is now".
+     *
+     * This used to target `[data-hero=device]`, the same element the intro fades in, and both
+     * tweens own `opacity`, `scale` and `yPercent`. A scrubbed tween records its starting values
+     * when it is built and again on every ScrollTrigger refresh, and it was built while the
+     * intro's `from()` was holding the device at `opacity: 0`. So the scrub's "top of the page"
+     * state was *invisible*. The console appeared for the length of the intro and then vanished
+     * the first time anything redrew the scrub — a 40px wheel tick took it to 0.01, scrolling
+     * back to the top left it at exactly 0, and a resize kept it there. Nothing errored.
+     *
+     * Two elements, two owners: the intro animates the device, the drift animates its wrapper.
+     * Nested opacities multiply and transforms compose, so neither can overwrite the other, and
+     * `fromTo` pins the drift's start to the authored state so a refresh at any moment records
+     * the right one.
+     */
+    gsap.fromTo(
+      "[data-hero=drift]",
+      { yPercent: 0, scale: 1, opacity: 1 },
+      {
+        yPercent: -18,
+        scale: 0.86,
+        opacity: 0.25,
+        ease: "none",
+        immediateRender: false,
+        scrollTrigger: {
+          trigger: root,
+          start: "top top",
+          end: "bottom top",
+          scrub: 0.6,
+        },
       },
-    });
+    );
   });
 
   return (
@@ -149,7 +171,8 @@ export function Hero() {
             <StarknetSpark size={14} />
           </span>
           <span className="mono text-[10px] tracking-[0.22em] text-white/40">
-            STARKNET · SEPOLIA · LIVE
+            {/* Read, not written: this said SEPOLIA on a page serving mainnet. */}
+            STARKNET · {NETWORK.toUpperCase()} · LIVE
           </span>
         </div>
 
@@ -171,8 +194,10 @@ export function Hero() {
           aspect ratio here is the device's own, so both renderers get the same shape and the
           hero looks identical whichever one the browser can run.
         */}
-        <div data-hero="device" className="relative aspect-[0.66] w-[min(255px,54vw)]">
-          <ConsoleStage spot={spot} />
+        <div data-hero="drift">
+          <div data-hero="device" className="relative aspect-[0.66] w-[min(255px,54vw)]">
+            <ConsoleStage spot={spot} />
+          </div>
         </div>
 
         <h1 className="mt-5 text-center font-display text-[clamp(2.6rem,9vw,5.2rem)] font-extrabold leading-[0.92] tracking-[-0.03em]">
